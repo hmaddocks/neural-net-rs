@@ -1,10 +1,12 @@
 use matrix::matrix::Matrix;
-
 use crate::activations::Activation;
+use anyhow::{Result, anyhow};
+use rayon::prelude::*;
 
+/// A neural network implementation with configurable layers and activation function
 #[derive(Builder)]
 pub struct Network {
-    layers: Vec<usize>, // amount of neurons in each layer, [72,16,10]
+    layers: Vec<usize>,
     weights: Vec<Matrix>,
     biases: Vec<Matrix>,
     data: Vec<Matrix>,
@@ -13,77 +15,105 @@ pub struct Network {
 }
 
 impl Network {
+    /// Creates a new neural network with the specified layer sizes, activation function, and learning rate
     pub fn new(layers: Vec<usize>, activation: Activation, learning_rate: f64) -> Self {
-        let mut weights = vec![];
+        let (weights, biases): (Vec<Matrix>, Vec<Matrix>) = layers.windows(2)
+            .map(|window| {
+                (
+                    Matrix::random(window[1], window[0]),
+                    Matrix::random(window[1], 1)
+                )
+            })
+            .unzip();
 
-        let mut biases = vec![];
-
-        for i in 0..layers.len() - 1 {
-            weights.push(Matrix::random(layers[i + 1], layers[i]));
-            biases.push(Matrix::random(layers[i + 1], 1));
-        }
+        // Pre-allocate data vector with capacity
+        let mut data = Vec::with_capacity(layers.len());
+        data.resize(layers.len(), Matrix::default());
 
         Network {
             layers,
             weights,
             biases,
-            data: vec![],
+            data,
             activation,
             learning_rate,
         }
     }
 
-    pub fn feed_forward(&mut self, inputs: Matrix) -> Matrix {
-        assert!(
-            self.layers[0] == inputs.data.len(),
-            "Invalid Number of Inputs"
-        );
-        //   println!("{:?} {:?}",self.weights[0],inputs);
-        //   println!("{:?}",self.weights[0].dot_multiply(&inputs).add(&self.biases[0]));
-
-        let mut current = inputs;
-
-        self.data = vec![current.clone()];
-
-        for i in 0..self.layers.len() - 1 {
-            current = self.weights[i]
-                .dot_multiply(&current)
-                .add(&self.biases[i])
-                .map(self.activation.function);
-
-            self.data.push(current.clone());
+    /// Performs forward propagation through the network
+    pub fn feed_forward(&mut self, inputs: &Matrix) -> Result<Matrix> {
+        if self.layers[0] != inputs.data().len() {
+            return Err(anyhow!("Invalid number of inputs: expected {}, got {}", 
+                self.layers[0], inputs.data().len()));
         }
 
-        current
+        // Store input in data vector
+        self.data[0] = inputs.clone();
+        let mut current = inputs.clone();
+
+        // Process each layer
+        for i in 0..self.layers.len() - 1 {
+            current = {
+                let weighted = self.weights[i].dot_multiply(&current);
+                let biased = weighted.add(&self.biases[i]);
+                let activated = biased.map(self.activation.function);
+                self.data[i + 1] = activated.clone();
+                activated
+            };
+        }
+
+        Ok(current)
     }
 
-    pub fn back_propogate(&mut self, inputs: Matrix, targets: Matrix) {
-        let mut errors = targets.subtract(&inputs);
-
-        let mut gradients = inputs.clone().map(self.activation.derivative);
+    /// Performs backpropagation to update weights and biases
+    pub fn back_propogate(&mut self, outputs: Matrix, targets: &Matrix) {
+        let mut errors = targets.subtract(&outputs);
+        let mut gradients = outputs.map(self.activation.derivative);
 
         for i in (0..self.layers.len() - 1).rev() {
-            gradients = gradients.elementwise_multiply(&errors).map(|x| x * 0.5); // learning rate
+            // Calculate gradients
+            gradients = gradients
+                .elementwise_multiply(&errors)
+                .map(|x| x * self.learning_rate);
 
-            self.weights[i] =
-                self.weights[i].add(&gradients.dot_multiply(&self.data[i].transpose()));
-
+            // Update weights and biases
+            let weight_deltas = gradients.dot_multiply(&self.data[i].transpose());
+            self.weights[i] = self.weights[i].add(&weight_deltas);
             self.biases[i] = self.biases[i].add(&gradients);
 
+            // Prepare for next layer
             errors = self.weights[i].transpose().dot_multiply(&errors);
             gradients = self.data[i].map(self.activation.derivative);
         }
     }
 
-    pub fn train(&mut self, inputs: Vec<Vec<f64>>, targets: Vec<Vec<f64>>, epochs: u32) {
-        for i in 1..=epochs {
-            if epochs < 100 || i % (epochs / 100) == 0 {
-                println!("Epoch {} of {}", i, epochs);
+    /// Trains the network using the provided inputs and targets
+    pub fn train(&mut self, inputs: Vec<Vec<f64>>, targets: Vec<Vec<f64>>, epochs: u32) -> Result<()> {
+        if inputs.len() != targets.len() {
+            return Err(anyhow!("Number of inputs must match number of targets"));
+        }
+
+        // Pre-compute matrices for inputs and targets
+        let input_matrices: Vec<Matrix> = inputs.into_par_iter()
+            .map(Matrix::from)
+            .collect();
+        let target_matrices: Vec<Matrix> = targets.into_par_iter()
+            .map(Matrix::from)
+            .collect();
+
+        // Training loop
+        for epoch in 1..=epochs {
+            if epochs < 100 || epoch % (epochs / 100) == 0 {
+                println!("Epoch {} of {}", epoch, epochs);
             }
-            for j in 0..inputs.len() {
-                let outputs = self.feed_forward(Matrix::from(inputs[j].clone()));
-                self.back_propogate(outputs, Matrix::from(targets[j].clone()));
+
+            // Process each training example
+            for (input, target) in input_matrices.iter().zip(target_matrices.iter()) {
+                let outputs = self.feed_forward(input)?;
+                self.back_propogate(outputs, target);
             }
         }
+
+        Ok(())
     }
 }

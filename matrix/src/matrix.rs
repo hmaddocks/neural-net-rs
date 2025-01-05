@@ -1,162 +1,270 @@
 use crate::macros::*;
 use rand::Rng;
+use rayon::prelude::*;
 use std::fmt;
+
+// Adjust threshold based on matrix size for better performance
+const PARALLEL_THRESHOLD: usize = 500; // Lower threshold for more parallel operations
+const CHUNK_SIZE: usize = 32; // Cache-friendly chunk size for matrix operations
 
 #[derive(Debug, Clone)]
 pub struct Matrix {
-    pub rows: usize,
-    pub cols: usize,
-    pub data: Vec<f64>,
+    pub(crate) rows: usize,
+    pub(crate) cols: usize,
+    pub(crate) data: Vec<f64>,
 }
 
-// access through  i* numofcols + j
 impl Matrix {
-    pub fn elementwise_multiply(&self, other: &Matrix) -> Matrix {
-        if self.rows != other.rows || self.cols != other.cols {
-            panic!("Attempted to multiply by matrix of incorrect dimensions");
-        }
-
-        let mut result_data = vec![0.0; self.cols * self.rows];
-        for i in 0..self.data.len() {
-            // double check this
-            result_data[i] = self.data[i] * other.data[i]
-        }
-
-        Matrix {
-            rows: self.rows,
-            cols: self.cols,
-            data: result_data,
-        }
-    }
-    pub fn random(rows: usize, cols: usize) -> Matrix {
-        let mut buffer = Vec::<f64>::with_capacity(rows * cols);
-
-        for _ in 0..rows * cols {
-            let num = rand::thread_rng().gen_range(0.0..1.0);
-
-            buffer.push(num);
-        }
-
-        Matrix {
-            rows,
-            cols,
-            data: buffer,
-        }
+    #[must_use]
+    pub fn new(rows: usize, cols: usize, data: Vec<f64>) -> Self {
+        assert_eq!(
+            data.len(),
+            rows * cols,
+            "Data length must match rows * cols"
+        );
+        Self { rows, cols, data }
     }
 
-    pub fn new(rows: usize, cols: usize, data: Vec<f64>) -> Matrix {
-        assert!(data.len() - 1 != rows * cols, "Invalid Size");
-        Matrix { rows, cols, data }
+    #[inline(always)]
+    #[must_use]
+    pub fn rows(&self) -> usize {
+        self.rows
     }
 
-    pub fn zeros(rows: usize, cols: usize) -> Matrix {
-        Matrix {
+    #[inline(always)]
+    #[must_use]
+    pub fn cols(&self) -> usize {
+        self.cols
+    }
+
+    #[inline(always)]
+    #[must_use]
+    pub fn data(&self) -> &[f64] {
+        &self.data
+    }
+
+    #[must_use]
+    pub fn random(rows: usize, cols: usize) -> Self {
+        let data = (0..rows * cols)
+            .into_par_iter()
+            .map_init(rand::thread_rng, |rng, _| rng.gen_range(-1.0..1.0))
+            .collect();
+
+        Self { rows, cols, data }
+    }
+
+    #[must_use]
+    pub fn zeros(rows: usize, cols: usize) -> Self {
+        Self {
             rows,
             cols,
             data: vec![0.0; cols * rows],
         }
     }
 
-    pub fn add(&self, other: &Matrix) -> Matrix {
-        if self.rows != other.rows || self.cols != other.cols {
-            panic!("Attempted to add matrix of incorrect dimensions");
-        }
+    #[must_use]
+    pub fn elementwise_multiply(&self, other: &Matrix) -> Matrix {
+        assert_eq!(self.rows, other.rows, "Matrix rows must match");
+        assert_eq!(self.cols, other.cols, "Matrix columns must match");
 
-        let mut buffer = Vec::<f64>::with_capacity(self.rows * self.cols);
-
-        for i in 0..self.data.len() {
-            let result = self.data[i] + other.data[i];
-
-            buffer.push(result);
-        }
+        let data = if self.data.len() >= PARALLEL_THRESHOLD {
+            self.data
+                .par_iter()
+                .zip(other.data.par_iter())
+                .map(|(&a, &b)| a * b)
+                .collect()
+        } else {
+            // Use SIMD-friendly iterator for small matrices
+            self.data
+                .iter()
+                .zip(other.data.iter())
+                .map(|(&a, &b)| a * b)
+                .collect()
+        };
 
         Matrix {
             rows: self.rows,
             cols: self.cols,
-            data: buffer,
+            data,
         }
     }
 
-    pub fn subtract(&self, other: &Matrix) -> Matrix {
-        assert!(
-            self.rows == other.rows && self.cols == other.cols,
-            "Cannot subtract matrices with different dimensions"
+    #[must_use]
+    pub fn dot_multiply(&self, other: &Matrix) -> Matrix {
+        assert_eq!(
+            self.cols, other.rows,
+            "Invalid matrix dimensions for multiplication"
         );
 
-        let mut buffer = Vec::<f64>::with_capacity(self.rows * self.cols);
+        let mut result = vec![0.0; self.rows * other.cols];
+        let other_t = other.transpose(); // Transpose for better cache locality
 
-        for i in 0..self.data.len() {
-            let result = self.data[i] - other.data[i];
+        if self.rows * other.cols >= PARALLEL_THRESHOLD {
+            result
+                .par_chunks_mut(other.cols)
+                .enumerate()
+                .for_each(|(i, row)| {
+                    for j in (0..other.cols).step_by(CHUNK_SIZE) {
+                        let chunk_end = (j + CHUNK_SIZE).min(other.cols);
+                        let row_offset = i * self.cols;
 
-            buffer.push(result);
-        }
+                        // Process in cache-friendly chunks
+                        for jj in j..chunk_end {
+                            unsafe {
+                                let mut sum = 0.0;
+                                let other_col_offset = jj * other.rows;
 
-        Matrix {
-            rows: self.rows,
-            cols: self.cols,
-            data: buffer,
-        }
-    }
+                                // Use pointer arithmetic for faster access
+                                let self_ptr = self.data.as_ptr().add(row_offset);
+                                let other_ptr = other_t.data.as_ptr().add(other_col_offset);
 
-    pub fn dot_multiply(&self, other: &Matrix) -> Matrix {
-        if self.cols != other.rows {
-            panic!("Attempted to multiply by matrix of incorrect dimensions");
-        }
+                                for k in 0..self.cols {
+                                    sum += *self_ptr.add(k) * *other_ptr.add(k);
+                                }
+                                *row.get_unchecked_mut(jj) = sum;
+                            }
+                        }
+                    }
+                });
+        } else {
+            // Sequential version for small matrices
+            for i in 0..self.rows {
+                let row_offset = i * self.cols;
+                for j in 0..other.cols {
+                    unsafe {
+                        let mut sum = 0.0;
+                        let other_col_offset = j * other.rows;
 
-        let mut result_data = vec![0.0; self.rows * other.cols];
+                        let self_ptr = self.data.as_ptr().add(row_offset);
+                        let other_ptr = other_t.data.as_ptr().add(other_col_offset);
 
-        for i in 0..self.rows {
-            for j in 0..other.cols {
-                let mut sum = 0.0;
-                for k in 0..self.cols {
-                    sum += self.data[i * self.cols + k] * other.data[k * other.cols + j];
+                        for k in 0..self.cols {
+                            sum += *self_ptr.add(k) * *other_ptr.add(k);
+                        }
+                        *result.get_unchecked_mut(i * other.cols + j) = sum;
+                    }
                 }
-                result_data[i * other.cols + j] = sum;
             }
         }
 
         Matrix {
             rows: self.rows,
             cols: other.cols,
-            data: result_data,
+            data: result,
         }
     }
 
-    pub fn transpose(&self) -> Matrix {
-        let mut buffer = vec![0.0; self.cols * self.rows];
+    #[must_use]
+    pub fn transpose(&self) -> Self {
+        let mut data = vec![0.0; self.rows * self.cols];
 
-        for i in 0..self.rows {
-            for j in 0..self.cols {
-                buffer[j * self.rows + i] = self.data[i * self.cols + j];
+        if self.data.len() >= PARALLEL_THRESHOLD {
+            data.par_chunks_mut(self.rows)
+                .enumerate()
+                .for_each(|(j, chunk)| {
+                    for i in 0..self.rows {
+                        chunk[i] = unsafe { *self.data.get_unchecked(i * self.cols + j) };
+                    }
+                });
+        } else {
+            for i in 0..self.rows {
+                for j in 0..self.cols {
+                    data[j * self.rows + i] =
+                        unsafe { *self.data.get_unchecked(i * self.cols + j) };
+                }
             }
         }
 
         Matrix {
             rows: self.cols,
             cols: self.rows,
-            data: buffer,
+            data,
         }
     }
 
-    pub fn map(&mut self, func: fn(&f64) -> f64) -> Matrix {
-        let mut result = Matrix {
-            rows: self.rows,
-            cols: self.cols,
-            data: Vec::with_capacity(self.data.len()),
+    #[must_use]
+    pub fn map<F>(&self, f: F) -> Self
+    where
+        F: Fn(f64) -> f64 + Sync + Send,
+    {
+        let data = if self.data.len() >= PARALLEL_THRESHOLD {
+            self.data.par_iter().map(|&x| f(x)).collect()
+        } else {
+            self.data.iter().map(|&x| f(x)).collect()
         };
 
-        result.data.extend(self.data.iter().map(|&val| func(&val)));
+        Matrix {
+            rows: self.rows,
+            cols: self.cols,
+            data,
+        }
+    }
 
-        result
+    #[must_use]
+    pub fn add(&self, other: &Matrix) -> Matrix {
+        assert_eq!(self.rows, other.rows, "Matrix rows must match");
+        assert_eq!(self.cols, other.cols, "Matrix columns must match");
+
+        let data = if self.data.len() >= PARALLEL_THRESHOLD {
+            self.data
+                .par_iter()
+                .zip(other.data.par_iter())
+                .map(|(&a, &b)| a + b)
+                .collect()
+        } else {
+            self.data
+                .iter()
+                .zip(other.data.iter())
+                .map(|(&a, &b)| a + b)
+                .collect()
+        };
+
+        Matrix {
+            rows: self.rows,
+            cols: self.cols,
+            data,
+        }
+    }
+
+    #[must_use]
+    pub fn subtract(&self, other: &Matrix) -> Matrix {
+        assert_eq!(self.rows, other.rows, "Matrix rows must match");
+        assert_eq!(self.cols, other.cols, "Matrix columns must match");
+
+        let data = if self.data.len() >= PARALLEL_THRESHOLD {
+            self.data
+                .par_iter()
+                .zip(other.data.par_iter())
+                .map(|(&a, &b)| a - b)
+                .collect()
+        } else {
+            self.data
+                .iter()
+                .zip(other.data.iter())
+                .map(|(&a, &b)| a - b)
+                .collect()
+        };
+
+        Matrix {
+            rows: self.rows,
+            cols: self.cols,
+            data,
+        }
     }
 }
+
+impl Default for Matrix {
+    fn default() -> Self {
+        Self::zeros(0, 0)
+    }
+}
+
 impl From<Vec<f64>> for Matrix {
     fn from(vec: Vec<f64>) -> Self {
         let rows = vec.len();
-        let cols = 1;
         Matrix {
             rows,
-            cols,
+            cols: 1,
             data: vec,
         }
     }
@@ -170,14 +278,14 @@ impl PartialEq for Matrix {
 
 impl fmt::Display for Matrix {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for row in 0..self.rows {
-            for col in 0..self.cols {
-                write!(f, "{}", self.data[row * self.cols + col])?;
-                if col < self.cols - 1 {
-                    write!(f, "\t")?; // Separate columns with a tab
-                }
+        for i in 0..self.rows {
+            for j in 0..self.cols {
+                write!(f, "{:8.4}", unsafe {
+                    // SAFETY: Indices are guaranteed to be in bounds by the matrix dimensions
+                    *self.data.get_unchecked(i * self.cols + j)
+                })?;
             }
-            writeln!(f)?; // Move to the next line after each row
+            writeln!(f)?;
         }
         Ok(())
     }
@@ -199,7 +307,7 @@ mod tests {
         assert_eq!(matrix.data.len(), rows * cols);
 
         for &num in &matrix.data {
-            assert!(num >= 0.0 && num < 1.0);
+            assert!(num >= -1.0 && num < 1.0);
         }
     }
 
@@ -356,7 +464,7 @@ mod tests {
 
     #[test]
     fn test_map_add_one() {
-        let mut matrix = Matrix {
+        let matrix = Matrix {
             rows: 2,
             cols: 2,
             data: vec![1.0, 2.0, 3.0, 4.0],
@@ -375,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_map_square() {
-        let mut matrix = Matrix {
+        let matrix = Matrix {
             rows: 2,
             cols: 2,
             data: vec![1.0, 2.0, 3.0, 4.0],

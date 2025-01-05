@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 neural-network = { path = "../neural-network" }
+anyhow = "1.0"

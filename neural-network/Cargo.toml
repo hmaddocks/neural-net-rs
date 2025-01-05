@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 derive_builder = "0.12.0"
 matrix = {path = "../matrix"}
+anyhow = "1.0"
+rayon = "1.8"
