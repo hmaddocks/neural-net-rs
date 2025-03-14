@@ -1,6 +1,6 @@
-use std::fs::File;
-use std::io::{self, Read};
-use std::path::PathBuf;
+mod mnist;
+
+use mnist::{MnistData, MnistError, INPUT_NODES, OUTPUT_NODES};
 use matrix::matrix::Matrix;
 use neural_network::activations::SIGMOID;
 use neural_network::network::Network;
@@ -8,211 +8,191 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
 
-const IMAGE_MAGIC_NUMBER: u32 = 2051;
-const LABEL_MAGIC_NUMBER: u32 = 2049;
-const BATCH_SIZE: usize = 100;
-const EPOCHS: u32 = 30;
-const LEARNING_RATE: f64 = 0.1;
-
-struct MnistData {
-    images: Vec<Matrix>,
-    labels: Vec<Matrix>,
+#[derive(Debug)]
+pub struct TrainingConfig {
+    batch_size: usize,
+    epochs: u32,
+    learning_rate: f64,
+    hidden_layers: Vec<usize>,
 }
 
-fn read_u32(file: &mut File) -> io::Result<u32> {
-    let mut buffer = [0; 4];
-    file.read_exact(&mut buffer)?;
-    Ok(u32::from_be_bytes(buffer))
+impl Default for TrainingConfig {
+    fn default() -> Self {
+        Self {
+            batch_size: 100,
+            epochs: 30,
+            learning_rate: 0.1,
+            hidden_layers: vec![128, 64],
+        }
+    }
 }
 
-fn read_mnist_images(path: PathBuf, progress: &ProgressBar) -> io::Result<Vec<Matrix>> {
-    let mut file = File::open(&path)?;
-    
-    // Read header
-    let magic_number = read_u32(&mut file)?;
-    if magic_number != IMAGE_MAGIC_NUMBER {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid magic number for images file",
-        ));
-    }
-
-    let num_images = read_u32(&mut file)? as usize;
-    let num_rows = read_u32(&mut file)? as usize;
-    let num_cols = read_u32(&mut file)? as usize;
-    let pixels_per_image = num_rows * num_cols;
-
-    progress.set_length(num_images as u64);
-    progress.set_message("Loading images...");
-
-    // Read image data
-    let mut images = Vec::with_capacity(num_images);
-    let mut buffer = vec![0u8; pixels_per_image];
-
-    for _ in 0..num_images {
-        file.read_exact(&mut buffer)?;
-        
-        // Convert u8 pixels to f64 and normalize to range [0, 1]
-        let data: Vec<f64> = buffer
-            .iter()
-            .map(|&pixel| f64::from(pixel) / 255.0)
-            .collect();
-
-        images.push(Matrix::new(pixels_per_image, 1, data));
-        progress.inc(1);
-    }
-
-    progress.finish_with_message("Images loaded successfully");
-    Ok(images)
+struct Trainer {
+    network: Network,
+    config: TrainingConfig,
 }
 
-fn read_mnist_labels(path: PathBuf, progress: &ProgressBar) -> io::Result<Vec<Matrix>> {
-    let mut file = File::open(&path)?;
-    
-    // Read header
-    let magic_number = read_u32(&mut file)?;
-    if magic_number != LABEL_MAGIC_NUMBER {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Invalid magic number for labels file",
-        ));
+impl Trainer {
+    fn new(config: TrainingConfig) -> Self {
+        let mut layer_sizes = vec![INPUT_NODES];
+        layer_sizes.extend(&config.hidden_layers);
+        layer_sizes.push(OUTPUT_NODES);
+
+        let network = Network::new(
+            layer_sizes,
+            SIGMOID,
+            config.learning_rate,
+        );
+
+        Self { network, config }
     }
 
-    let num_labels = read_u32(&mut file)? as usize;
-    progress.set_length(num_labels as u64);
-    progress.set_message("Loading labels...");
+    fn train(&mut self, data: &MnistData) -> Result<(), MnistError> {
+        let multi_progress = MultiProgress::new();
+        let epoch_style = create_progress_style(
+            "{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} Epoch {msg}"
+        );
+        let batch_style = create_progress_style(
+            "{spinner:.yellow} [{elapsed_precise}] {bar:40.yellow/blue} {pos:>7}/{len:7} Batch {msg}"
+        );
 
-    let mut labels = Vec::with_capacity(num_labels);
-    let mut buffer = [0u8; 1];
+        let epoch_progress = multi_progress.add(ProgressBar::new(self.config.epochs as u64));
+        let batch_progress = multi_progress.add(ProgressBar::new(0));
+        epoch_progress.set_style(epoch_style);
+        batch_progress.set_style(batch_style);
 
-    for _ in 0..num_labels {
-        file.read_exact(&mut buffer)?;
-        
-        // Create one-hot encoded vector for the label
-        let mut data = vec![0.0; 10];
-        data[buffer[0] as usize] = 1.0;
-        
-        labels.push(Matrix::new(10, 1, data));
-        progress.inc(1);
-    }
+        println!("\nStarting training with batch size {}", self.config.batch_size);
+        let mut indices: Vec<usize> = (0..data.len()).collect();
+        let mut rng = thread_rng();
 
-    progress.finish_with_message("Labels loaded successfully");
-    Ok(labels)
-}
+        for epoch in 1..=self.config.epochs {
+            indices.shuffle(&mut rng);
+            let (mut correct, mut total) = (0, 0);
 
-fn load_mnist_data() -> io::Result<MnistData> {
-    let multi_progress = MultiProgress::new();
-    let sty = ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
-        .unwrap()
-        .progress_chars("##-");
+            batch_progress.set_length((indices.len() / self.config.batch_size) as u64);
+            batch_progress.set_position(0);
+            batch_progress.set_message(format!("in Epoch {}", epoch));
 
-    let images_progress = multi_progress.add(ProgressBar::new(0));
-    let labels_progress = multi_progress.add(ProgressBar::new(0));
-    images_progress.set_style(sty.clone());
-    labels_progress.set_style(sty);
+            for batch_indices in indices.chunks(self.config.batch_size) {
+                for &idx in batch_indices {
+                    let output = self.network.feed_forward(&data.images()[idx])
+                        .map_err(|e| MnistError::DataMismatch(e.to_string()))?;
+                    self.network.back_propogate(output.clone(), &data.labels()[idx]);
 
-    let home = std::env::var("HOME").expect("HOME environment variable not set");
-    let images_path = PathBuf::from(&home).join("Documents/NMIST/train-images-idx3-ubyte");
-    let labels_path = PathBuf::from(&home).join("Documents/NMIST/train-labels-idx1-ubyte");
-
-    let images = read_mnist_images(images_path, &images_progress)?;
-    let labels = read_mnist_labels(labels_path, &labels_progress)?;
-
-    if images.len() != labels.len() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Number of images does not match number of labels",
-        ));
-    }
-
-    Ok(MnistData { images, labels })
-}
-
-fn train_network(data: &MnistData) -> io::Result<Network> {
-    println!("\nInitializing neural network...");
-    let mut network = Network::new(
-        vec![784, 128, 64, 10],  // Input layer: 784 (28x28), Hidden layers: 128, 64, Output layer: 10 (digits 0-9)
-        SIGMOID,
-        LEARNING_RATE,
-    );
-
-    let multi_progress = MultiProgress::new();
-    let epoch_style = ProgressStyle::with_template(
-        "{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} Epoch {msg}"
-    ).unwrap().progress_chars("##-");
-    
-    let batch_style = ProgressStyle::with_template(
-        "{spinner:.yellow} [{elapsed_precise}] {bar:40.yellow/blue} {pos:>7}/{len:7} Batch {msg}"
-    ).unwrap().progress_chars("##-");
-
-    let epoch_progress = multi_progress.add(ProgressBar::new(EPOCHS as u64));
-    let batch_progress = multi_progress.add(ProgressBar::new(0));
-    epoch_progress.set_style(epoch_style);
-    batch_progress.set_style(batch_style);
-
-    println!("\nStarting training with batch size {}", BATCH_SIZE);
-    let mut indices: Vec<usize> = (0..data.images.len()).collect();
-    let mut rng = thread_rng();
-
-    for epoch in 1..=EPOCHS {
-        // Shuffle indices for random batch selection
-        indices.shuffle(&mut rng);
-        let mut correct = 0;
-        let mut total = 0;
-
-        batch_progress.set_length((indices.len() / BATCH_SIZE) as u64);
-        batch_progress.set_position(0);
-        batch_progress.set_message(format!("in Epoch {}", epoch));
-
-        // Process in batches
-        for batch_indices in indices.chunks(BATCH_SIZE) {
-            for &idx in batch_indices {
-                let output = network.feed_forward(&data.images[idx])
-                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
-                network.back_propogate(output.clone(), &data.labels[idx]);
-
-                // Calculate accuracy
-                let predicted = output.data().iter()
-                    .enumerate()
-                    .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-                    .map(|(idx, _)| idx)
-                    .unwrap();
-                let actual = data.labels[idx].data().iter()
-                    .enumerate()
-                    .find(|(_, &val)| val == 1.0)
-                    .map(|(idx, _)| idx)
-                    .unwrap();
-                if predicted == actual {
-                    correct += 1;
+                    if self.get_prediction(&output) == self.get_prediction(&data.labels()[idx]) {
+                        correct += 1;
+                    }
+                    total += 1;
                 }
-                total += 1;
+                batch_progress.inc(1);
             }
-            batch_progress.inc(1);
+
+            let accuracy = (correct as f64 / total as f64) * 100.0;
+            epoch_progress.set_message(format!("- Accuracy: {:.2}%", accuracy));
+            epoch_progress.inc(1);
         }
 
-        let accuracy = (correct as f64 / total as f64) * 100.0;
-        epoch_progress.set_message(format!("- Accuracy: {:.2}%", accuracy));
-        epoch_progress.inc(1);
+        epoch_progress.finish_with_message("Training completed!");
+        batch_progress.finish_and_clear();
+        Ok(())
     }
 
-    epoch_progress.finish_with_message("Training completed!");
-    batch_progress.finish_and_clear();
-    Ok(network)
+    fn get_prediction(&self, matrix: &Matrix) -> usize {
+        matrix.data()
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .map(|(idx, _)| idx)
+            .unwrap()
+    }
 }
 
-fn main() -> io::Result<()> {
-    println!("Loading MNIST dataset...");
-    let data = load_mnist_data()?;
-    println!("\nSuccessfully loaded {} training examples", data.images.len());
+fn create_progress_style(template: &str) -> ProgressStyle {
+    ProgressStyle::with_template(template)
+        .unwrap()
+        .progress_chars("##-")
+}
 
-    match train_network(&data) {
-        Ok(_) => {
-            println!("\nTraining completed successfully!");
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!("\nError during training: {}", e);
-            Err(e)
-        }
+fn main() -> Result<(), MnistError> {
+    println!("Loading MNIST dataset...");
+    let data = mnist::load_mnist_data()?;
+    println!("\nSuccessfully loaded {} training examples", data.len());
+
+    let config = TrainingConfig::default();
+    let mut trainer = Trainer::new(config);
+
+    println!("\nInitializing neural network...");
+    trainer.train(&data)?;
+    println!("\nTraining completed successfully!");
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_training_config_default() {
+        let config = TrainingConfig::default();
+        assert_eq!(config.batch_size, 100);
+        assert_eq!(config.epochs, 30);
+        assert_eq!(config.learning_rate, 0.1);
+        assert_eq!(config.hidden_layers, vec![128, 64]);
+    }
+
+    #[test]
+    fn test_trainer_initialization() {
+        let config = TrainingConfig::default();
+        let mut trainer = Trainer::new(config);
+        
+        // Test the trainer by feeding forward a sample input
+        let input = Matrix::zeros(INPUT_NODES, 1);
+        let result = trainer.network.feed_forward(&input);
+        assert!(result.is_ok());
+        
+        let output = result.unwrap();
+        assert_eq!(output.rows(), OUTPUT_NODES);
+        assert_eq!(output.cols(), 1);
+    }
+
+    #[test]
+    fn test_get_prediction() {
+        let config = TrainingConfig::default();
+        let trainer = Trainer::new(config);
+        
+        // Create a test output matrix with a clear maximum
+        let mut data = vec![0.1; 10];
+        data[3] = 0.9;  // Make class 3 the predicted class
+        let output = Matrix::new(10, 1, data);
+        
+        assert_eq!(trainer.get_prediction(&output), 3);
+    }
+
+    #[test]
+    fn test_trainer_single_batch() -> Result<(), MnistError> {
+        let config = TrainingConfig {
+            batch_size: 2,
+            epochs: 1,
+            learning_rate: 0.1,
+            hidden_layers: vec![4],  // Smaller network for testing
+        };
+        let mut trainer = Trainer::new(config);
+        
+        // Create minimal test data
+        let images = vec![Matrix::zeros(INPUT_NODES, 1), Matrix::zeros(INPUT_NODES, 1)];
+        let mut label_data1 = vec![0.0; OUTPUT_NODES];
+        let mut label_data2 = vec![0.0; OUTPUT_NODES];
+        label_data1[0] = 1.0;  // First image is class 0
+        label_data2[1] = 1.0;  // Second image is class 1
+        let labels = vec![
+            Matrix::new(OUTPUT_NODES, 1, label_data1),
+            Matrix::new(OUTPUT_NODES, 1, label_data2),
+        ];
+        
+        let data = MnistData::new(images, labels)?;
+        trainer.train(&data)?;
+        
+        Ok(())
     }
 }

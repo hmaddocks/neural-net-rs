@@ -10,3 +10,9 @@ matrix = { path = "../matrix" }
 neural-network = { path = "../neural-network" }
 rand = "0.8"
 indicatif = { version = "0.17", features = ["rayon"] }
+thiserror = "1.0"
+
+[dev-dependencies]
+tempfile = "3.8"
+assert_fs = "1.0"
+predicates = "3.0"
