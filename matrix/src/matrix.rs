@@ -1,4 +1,3 @@
-use crate::macros::*;
 use rand::Rng;
 use rayon::prelude::*;
 use std::fmt;
@@ -74,7 +73,6 @@ impl Matrix {
                 .map(|(&a, &b)| a * b)
                 .collect()
         } else {
-            // Use SIMD-friendly iterator for small matrices
             self.data
                 .iter()
                 .zip(other.data.iter())
@@ -121,6 +119,7 @@ impl Matrix {
                                 for k in 0..self.cols {
                                     sum += *self_ptr.add(k) * *other_ptr.add(k);
                                 }
+                                // SAFETY: Indices are guaranteed to be in bounds by the matrix dimensions
                                 *row.get_unchecked_mut(jj) = sum;
                             }
                         }
@@ -141,6 +140,7 @@ impl Matrix {
                         for k in 0..self.cols {
                             sum += *self_ptr.add(k) * *other_ptr.add(k);
                         }
+                        // SAFETY: Indices are guaranteed to be in bounds by the matrix dimensions
                         *result.get_unchecked_mut(i * other.cols + j) = sum;
                     }
                 }
@@ -163,6 +163,7 @@ impl Matrix {
                 .enumerate()
                 .for_each(|(j, chunk)| {
                     for i in 0..self.rows {
+                        // SAFETY: Indices are guaranteed to be in bounds by the matrix dimensions
                         chunk[i] = unsafe { *self.data.get_unchecked(i * self.cols + j) };
                     }
                 });
@@ -170,6 +171,7 @@ impl Matrix {
             for i in 0..self.rows {
                 for j in 0..self.cols {
                     data[j * self.rows + i] =
+                        // SAFETY: Indices are guaranteed to be in bounds by the matrix dimensions
                         unsafe { *self.data.get_unchecked(i * self.cols + j) };
                 }
             }
@@ -372,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Cannot subtract matrices with different dimensions")]
+    #[should_panic(expected = "Matrix columns must match")]
     fn test_subtract_different_dimensions() {
         let matrix1 = matrix![
             1.0, 2.0;

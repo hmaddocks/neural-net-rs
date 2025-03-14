@@ -6,5 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+matrix = { path = "../matrix" }
 neural-network = { path = "../neural-network" }
-anyhow = "1.0"
+rand = "0.8"
+indicatif = { version = "0.17", features = ["rayon"] }

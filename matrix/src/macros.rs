@@ -1,5 +1,3 @@
-use crate::matrix::Matrix;
-
 #[macro_export]
 macro_rules! matrix {
     ( $( $($val:expr),+ );* $(;)? ) => {
@@ -30,7 +28,7 @@ macro_rules! matrix {
 
 #[cfg(test)]
 mod tests {
-    use super::Matrix;
+    use crate::matrix::Matrix;
 
     #[test]
     fn test_matrix_macro() {
