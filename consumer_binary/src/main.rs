@@ -47,6 +47,8 @@ mod tests {
             epochs: 1,
             learning_rate: 0.1,
             hidden_layers: vec![4],
+            early_stopping_patience: 5,
+            early_stopping_min_delta: 0.001,
         };
 
         let mut trainer = Trainer::new(config);

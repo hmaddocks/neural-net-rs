@@ -13,6 +13,8 @@ pub struct TrainingConfig {
     pub epochs: u32,
     pub learning_rate: f64,
     pub hidden_layers: Vec<usize>,
+    pub early_stopping_patience: u32,
+    pub early_stopping_min_delta: f64,
 }
 
 impl Default for TrainingConfig {
@@ -22,6 +24,8 @@ impl Default for TrainingConfig {
             epochs: 30,
             learning_rate: 0.1,
             hidden_layers: vec![128, 64],
+            early_stopping_patience: 5,
+            early_stopping_min_delta: 0.001,
         }
     }
 }
@@ -64,6 +68,9 @@ impl Trainer {
         let mut indices: Vec<usize> = (0..data.len()).collect();
         let mut rng = thread_rng();
 
+        let mut best_accuracy = 0.0;
+        let mut patience_counter = 0;
+
         for epoch in 1..=self.config.epochs {
             indices.shuffle(&mut rng);
             let (mut correct, mut total) = (0, 0);
@@ -89,6 +96,19 @@ impl Trainer {
             let accuracy = (correct as f64 / total as f64) * 100.0;
             epoch_progress.set_message(format!("- Accuracy: {:.2}%", accuracy));
             epoch_progress.inc(1);
+
+            // Early stopping check
+            if accuracy > best_accuracy + self.config.early_stopping_min_delta {
+                best_accuracy = accuracy;
+                patience_counter = 0;
+            } else {
+                patience_counter += 1;
+                if patience_counter >= self.config.early_stopping_patience {
+                    epoch_progress.finish_with_message(format!("Early stopping at epoch {} with best accuracy: {:.2}%", epoch, best_accuracy));
+                    batch_progress.finish_and_clear();
+                    return Ok(());
+                }
+            }
         }
 
         epoch_progress.finish_with_message("Training completed!");
@@ -136,6 +156,8 @@ mod tests {
         assert_eq!(config.epochs, 30);
         assert_eq!(config.learning_rate, 0.1);
         assert_eq!(config.hidden_layers, vec![128, 64]);
+        assert_eq!(config.early_stopping_patience, 5);
+        assert_eq!(config.early_stopping_min_delta, 0.001);
     }
 
     #[test]
@@ -173,6 +195,8 @@ mod tests {
             epochs: 1,
             learning_rate: 0.1,
             hidden_layers: vec![4],  // Smaller network for testing
+            early_stopping_patience: 5,
+            early_stopping_min_delta: 0.001,
         };
         let mut trainer = Trainer::new(config);
         
