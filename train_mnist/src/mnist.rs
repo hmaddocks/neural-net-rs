@@ -122,7 +122,9 @@ pub(crate) fn create_test_progress_bar() -> ProgressBar {
     let pb = ProgressBar::new(2);
     pb.set_style(
         indicatif::ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+            .template(
+                "{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+            )
             .unwrap()
             .progress_chars("=>-"),
     );
@@ -309,7 +311,9 @@ pub fn load_mnist_test_data() -> Result<MnistData, MnistError> {
 
 /// Gets the actual digit from a one-hot encoded label matrix
 pub fn get_actual_digit(label: &Matrix) -> usize {
-    label.data().iter()
+    label
+        .data()
+        .iter()
         .enumerate()
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
         .map(|(idx, _)| idx)
