@@ -870,6 +870,7 @@ dependencies = [
 name = "train_mnist"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "assert_fs",
  "image",
  "indicatif",
@@ -877,6 +878,7 @@ dependencies = [
  "neural-network",
  "predicates",
  "rand",
+ "rayon",
  "tempfile",
  "thiserror",
 ]

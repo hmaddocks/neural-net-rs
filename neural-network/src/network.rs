@@ -7,7 +7,7 @@ use std::fs;
 use std::path::Path;
 
 /// A neural network implementation with configurable layers and activation function
-#[derive(Serialize, Deserialize, Builder)]
+#[derive(Serialize, Deserialize, Clone, Builder)]
 pub struct Network {
     layers: Vec<usize>,
     weights: Vec<Matrix>,

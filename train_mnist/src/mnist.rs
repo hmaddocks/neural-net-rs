@@ -42,6 +42,9 @@ pub enum MnistError {
         rows: usize,
         cols: usize,
     },
+    /// Error for missing HOME directory environment variable
+    #[error("HOME environment variable not set")]
+    HomeDirNotFound,
 }
 
 /// Container for MNIST dataset pairs (images and their corresponding labels)
@@ -112,6 +115,18 @@ fn create_progress_style(template: &str) -> ProgressStyle {
     ProgressStyle::with_template(template)
         .unwrap()
         .progress_chars("##-")
+}
+
+/// Creates a progress bar for test data loading
+pub(crate) fn create_test_progress_bar() -> ProgressBar {
+    let pb = ProgressBar::new(2);
+    pb.set_style(
+        indicatif::ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+            .unwrap()
+            .progress_chars("=>-"),
+    );
+    pb
 }
 
 /// Reads MNIST image data from an IDX file format.
@@ -260,15 +275,52 @@ pub fn load_mnist_data() -> Result<MnistData, MnistError> {
     MnistData::new(images, labels)
 }
 
+/// Loads MNIST test data from the default location.
+///
+/// This function attempts to load MNIST test data from the following default paths:
+/// * Images: ~/Documents/NMIST/t10k-images-idx3-ubyte
+/// * Labels: ~/Documents/NMIST/t10k-labels-idx1-ubyte
+///
+/// # Returns
+/// * `Ok(MnistData)` containing paired test images and labels
+/// * `Err(MnistError)` if loading fails
+///
+/// # Environment Variables
+/// Requires the HOME environment variable to be set
+pub fn load_mnist_test_data() -> Result<MnistData, MnistError> {
+    let home = std::env::var("HOME").map_err(|_| MnistError::HomeDirNotFound)?;
+    let mnist_dir = Path::new(&home).join("Documents").join("NMIST");
+
+    let test_images_path = mnist_dir.join("t10k-images-idx3-ubyte");
+    let test_labels_path = mnist_dir.join("t10k-labels-idx1-ubyte");
+
+    let progress_bar = create_test_progress_bar();
+    progress_bar.set_message("Loading test images...");
+    let images = read_mnist_images(test_images_path, &progress_bar)?;
+    progress_bar.inc(1);
+
+    progress_bar.set_message("Loading test labels...");
+    let labels = read_mnist_labels(test_labels_path, &progress_bar)?;
+    progress_bar.inc(1);
+
+    progress_bar.finish_with_message("Test data loaded successfully!");
+    MnistData::new(images, labels)
+}
+
+/// Gets the actual digit from a one-hot encoded label matrix
+pub fn get_actual_digit(label: &Matrix) -> usize {
+    label.data().iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+        .map(|(idx, _)| idx)
+        .unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use assert_fs::prelude::*;
     use std::io::Write;
-
-    fn create_test_progress_bar() -> ProgressBar {
-        ProgressBar::hidden()
-    }
 
     fn create_test_mnist_file(
         path: &Path,
