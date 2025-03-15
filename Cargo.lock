@@ -122,21 +122,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "consumer_binary"
-version = "0.1.0"
-dependencies = [
- "assert_fs",
- "image",
- "indicatif",
- "matrix",
- "neural-network",
- "predicates",
- "rand",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
 name = "crc32fast"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -879,6 +864,21 @@ dependencies = [
  "flate2",
  "jpeg-decoder",
  "weezl",
+]
+
+[[package]]
+name = "train_mnist"
+version = "0.1.0"
+dependencies = [
+ "assert_fs",
+ "image",
+ "indicatif",
+ "matrix",
+ "neural-network",
+ "predicates",
+ "rand",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]

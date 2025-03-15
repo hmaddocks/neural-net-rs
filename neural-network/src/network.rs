@@ -1,8 +1,8 @@
-use matrix::matrix::Matrix;
 use crate::activations::Activation;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
+use matrix::matrix::Matrix;
 use rayon::prelude::*;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
@@ -21,11 +21,12 @@ pub struct Network {
 impl Network {
     /// Creates a new neural network with the specified layer sizes, activation function, and learning rate
     pub fn new(layers: Vec<usize>, activation: Activation, learning_rate: f64) -> Self {
-        let (weights, biases): (Vec<Matrix>, Vec<Matrix>) = layers.windows(2)
+        let (weights, biases): (Vec<Matrix>, Vec<Matrix>) = layers
+            .windows(2)
             .map(|window| {
                 (
                     Matrix::random(window[1], window[0]),
-                    Matrix::random(window[1], 1)
+                    Matrix::random(window[1], 1),
                 )
             })
             .unzip();
@@ -47,8 +48,11 @@ impl Network {
     /// Performs forward propagation through the network
     pub fn feed_forward(&mut self, inputs: &Matrix) -> Result<Matrix> {
         if self.layers[0] != inputs.data().len() {
-            return Err(anyhow!("Invalid number of inputs: expected {}, got {}", 
-                self.layers[0], inputs.data().len()));
+            return Err(anyhow!(
+                "Invalid number of inputs: expected {}, got {}",
+                self.layers[0],
+                inputs.data().len()
+            ));
         }
 
         // Store input in data vector
@@ -92,18 +96,19 @@ impl Network {
     }
 
     /// Trains the network using the provided inputs and targets
-    pub fn train(&mut self, inputs: Vec<Vec<f64>>, targets: Vec<Vec<f64>>, epochs: u32) -> Result<()> {
+    pub fn train(
+        &mut self,
+        inputs: Vec<Vec<f64>>,
+        targets: Vec<Vec<f64>>,
+        epochs: u32,
+    ) -> Result<()> {
         if inputs.len() != targets.len() {
             return Err(anyhow!("Number of inputs must match number of targets"));
         }
 
         // Pre-compute matrices for inputs and targets
-        let input_matrices: Vec<Matrix> = inputs.into_par_iter()
-            .map(Matrix::from)
-            .collect();
-        let target_matrices: Vec<Matrix> = targets.into_par_iter()
-            .map(Matrix::from)
-            .collect();
+        let input_matrices: Vec<Matrix> = inputs.into_par_iter().map(Matrix::from).collect();
+        let target_matrices: Vec<Matrix> = targets.into_par_iter().map(Matrix::from).collect();
 
         // Training loop
         for epoch in 1..=epochs {

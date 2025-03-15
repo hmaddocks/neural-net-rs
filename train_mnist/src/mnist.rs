@@ -64,7 +64,7 @@ impl MnistData {
     ///
     /// # Example
     /// ```
-    /// use consumer_binary::mnist::MnistData;
+    /// use train_mnist::mnist::MnistData;
     /// use matrix::matrix::Matrix;
     ///
     /// let images = vec![Matrix::new(784, 1, vec![0.5; 784])];

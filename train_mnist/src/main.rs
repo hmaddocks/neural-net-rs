@@ -2,8 +2,8 @@ mod mnist;
 mod training;
 
 use mnist::MnistError;
-use training::{Trainer, TrainingConfig};
 use std::path::Path;
+use training::{Trainer, TrainingConfig};
 
 fn main() -> Result<(), MnistError> {
     println!("Loading MNIST dataset...");
@@ -28,8 +28,8 @@ fn main() -> Result<(), MnistError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mnist::{INPUT_NODES, OUTPUT_NODES};
     use matrix::matrix::Matrix;
+    use mnist::{INPUT_NODES, OUTPUT_NODES};
 
     #[test]
     fn test_end_to_end() -> Result<(), MnistError> {

@@ -1,5 +1,5 @@
 [package]
-name = "consumer_binary"
+name = "train_mnist"
 version = "0.1.0"
 edition = "2021"
 
