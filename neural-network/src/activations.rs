@@ -9,19 +9,21 @@ pub struct Activation {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-enum ActivationType {
+pub enum ActivationType {
     Sigmoid,
     // Add other activation types as needed
 }
 
+const SIGMOID_IMPL: Activation = Activation {
+    function: |x| 1.0 / (1.0 + E.powf(-x)),
+    derivative: |x| x * (1.0 - x),
+    activation_type: ActivationType::Sigmoid,
+};
+
 impl Activation {
     pub fn new(activation_type: ActivationType) -> Self {
         match activation_type {
-            ActivationType::Sigmoid => Self {
-                function: |x| 1.0 / (1.0 + E.powf(-x)),
-                derivative: |x| x * (1.0 - x),
-                activation_type,
-            },
+            ActivationType::Sigmoid => SIGMOID_IMPL,
         }
     }
 }
@@ -45,8 +47,4 @@ impl<'de> Deserialize<'de> for Activation {
     }
 }
 
-pub const SIGMOID: Activation = Activation {
-    function: |x| 1.0 / (1.0 + E.powf(-x)),
-    derivative: |x| x * (1.0 - x),
-    activation_type: ActivationType::Sigmoid,
-};
+pub const SIGMOID: Activation = SIGMOID_IMPL;
