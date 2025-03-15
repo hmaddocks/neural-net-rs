@@ -11,6 +11,7 @@ neural-network = { path = "../neural-network" }
 rand = "0.8"
 indicatif = { version = "0.17", features = ["rayon"] }
 thiserror = "1.0"
+image = "0.24"
 
 [dev-dependencies]
 tempfile = "3.8"
