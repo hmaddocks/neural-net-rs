@@ -2,13 +2,17 @@ use matrix::matrix::Matrix;
 use crate::activations::Activation;
 use anyhow::{Result, anyhow};
 use rayon::prelude::*;
+use serde::{Serialize, Deserialize};
+use std::fs;
+use std::path::Path;
 
 /// A neural network implementation with configurable layers and activation function
-#[derive(Builder)]
+#[derive(Serialize, Deserialize, Builder)]
 pub struct Network {
     layers: Vec<usize>,
     weights: Vec<Matrix>,
     biases: Vec<Matrix>,
+    #[serde(skip)]
     data: Vec<Matrix>,
     activation: Activation,
     learning_rate: f64,
@@ -115,5 +119,21 @@ impl Network {
         }
 
         Ok(())
+    }
+
+    /// Saves the network to a file in JSON format
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let json = serde_json::to_string_pretty(self)?;
+        fs::write(path, json)?;
+        Ok(())
+    }
+
+    /// Loads a network from a JSON file
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let json = fs::read_to_string(path)?;
+        let mut network: Network = serde_json::from_str(&json)?;
+        // Reinitialize data vector
+        network.data = vec![Matrix::default(); network.layers.len()];
+        Ok(network)
     }
 }

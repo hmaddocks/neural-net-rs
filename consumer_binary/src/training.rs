@@ -5,6 +5,7 @@ use neural_network::network::Network;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
+use std::path::Path;
 
 #[derive(Debug)]
 pub struct TrainingConfig {
@@ -102,6 +103,19 @@ impl Trainer {
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
             .map(|(idx, _)| idx)
             .unwrap()
+    }
+
+    /// Saves the trained network to a file
+    pub fn save_network<P: AsRef<Path>>(&self, path: P) -> Result<(), MnistError> {
+        self.network.save(path)
+            .map_err(|e| MnistError::DataMismatch(e.to_string()))
+    }
+
+    /// Loads a trained network from a file
+    pub fn load_network<P: AsRef<Path>>(path: P, config: TrainingConfig) -> Result<Self, MnistError> {
+        let network = Network::load(path)
+            .map_err(|e| MnistError::DataMismatch(e.to_string()))?;
+        Ok(Self { network, config })
     }
 }
 

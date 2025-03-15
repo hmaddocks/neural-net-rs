@@ -1,12 +1,13 @@
 use rand::Rng;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 // Adjust threshold based on matrix size for better performance
 const PARALLEL_THRESHOLD: usize = 500; // Lower threshold for more parallel operations
 const CHUNK_SIZE: usize = 32; // Cache-friendly chunk size for matrix operations
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Matrix {
     pub(crate) rows: usize,
     pub(crate) cols: usize,
