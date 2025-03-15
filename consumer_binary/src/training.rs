@@ -1,3 +1,11 @@
+//! Training module for the neural network implementation.
+//! 
+//! This module provides the training infrastructure for the neural network, including:
+//! - Configuration management via `TrainingConfig`
+//! - Training loop implementation with early stopping
+//! - Progress visualization using progress bars
+//! - Model persistence through save/load functionality
+
 use crate::mnist::{MnistData, MnistError, INPUT_NODES, OUTPUT_NODES};
 use matrix::matrix::Matrix;
 use neural_network::activations::SIGMOID;
@@ -7,13 +15,20 @@ use rand::thread_rng;
 use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
 use std::path::Path;
 
+/// Configuration parameters for neural network training.
 #[derive(Debug)]
 pub struct TrainingConfig {
+    /// Size of each training batch
     pub batch_size: usize,
+    /// Number of training epochs
     pub epochs: u32,
+    /// Learning rate for gradient descent
     pub learning_rate: f64,
+    /// Number of nodes in each hidden layer
     pub hidden_layers: Vec<usize>,
+    /// Number of epochs to wait for improvement before early stopping
     pub early_stopping_patience: u32,
+    /// Minimum improvement in accuracy required to reset patience counter
     pub early_stopping_min_delta: f64,
 }
 
@@ -30,12 +45,24 @@ impl Default for TrainingConfig {
     }
 }
 
+/// Trainer manages the neural network training process.
+/// 
+/// The trainer handles:
+/// - Network initialization
+/// - Training loop execution
+/// - Early stopping
+/// - Progress visualization
+/// - Model persistence
 pub struct Trainer {
     network: Network,
     config: TrainingConfig,
 }
 
 impl Trainer {
+    /// Creates a new trainer with the specified configuration.
+    /// 
+    /// # Arguments
+    /// * `config` - Training configuration parameters
     pub fn new(config: TrainingConfig) -> Self {
         let mut layer_sizes = vec![INPUT_NODES];
         layer_sizes.extend(&config.hidden_layers);
@@ -50,6 +77,20 @@ impl Trainer {
         Self { network, config }
     }
 
+    /// Trains the neural network using the provided MNIST data.
+    /// 
+    /// This function:
+    /// - Initializes progress bars for visualization
+    /// - Shuffles training data for each epoch
+    /// - Processes data in batches
+    /// - Updates network weights using backpropagation
+    /// - Implements early stopping based on accuracy plateaus
+    /// 
+    /// # Arguments
+    /// * `data` - MNIST training data
+    /// 
+    /// # Returns
+    /// * `Result<(), MnistError>` - Ok if training completes successfully
     pub fn train(&mut self, data: &MnistData) -> Result<(), MnistError> {
         let multi_progress = MultiProgress::new();
         let epoch_style = create_progress_style(
@@ -116,6 +157,13 @@ impl Trainer {
         Ok(())
     }
 
+    /// Gets the predicted class index from a network output matrix.
+    /// 
+    /// # Arguments
+    /// * `matrix` - Output matrix from the neural network
+    /// 
+    /// # Returns
+    /// * `usize` - Index of the highest probability class
     pub fn get_prediction(&self, matrix: &Matrix) -> usize {
         matrix.data()
             .iter()
@@ -125,13 +173,26 @@ impl Trainer {
             .unwrap()
     }
 
-    /// Saves the trained network to a file
+    /// Saves the trained network to a file in JSON format.
+    /// 
+    /// # Arguments
+    /// * `path` - Path where the network should be saved
+    /// 
+    /// # Returns
+    /// * `Result<(), MnistError>` - Ok if save succeeds
     pub fn save_network<P: AsRef<Path>>(&self, path: P) -> Result<(), MnistError> {
         self.network.save(path)
             .map_err(|e| MnistError::DataMismatch(e.to_string()))
     }
 
-    /// Loads a trained network from a file
+    /// Loads a trained network from a file.
+    /// 
+    /// # Arguments
+    /// * `path` - Path to the saved network file
+    /// * `config` - Configuration for the trainer
+    /// 
+    /// # Returns
+    /// * `Result<Self, MnistError>` - Ok(Trainer) if load succeeds
     pub fn load_network<P: AsRef<Path>>(path: P, config: TrainingConfig) -> Result<Self, MnistError> {
         let network = Network::load(path)
             .map_err(|e| MnistError::DataMismatch(e.to_string()))?;
@@ -139,6 +200,13 @@ impl Trainer {
     }
 }
 
+/// Creates a progress bar style with the specified template.
+/// 
+/// # Arguments
+/// * `template` - Template string for the progress bar
+/// 
+/// # Returns
+/// * `ProgressStyle` - Configured progress bar style
 fn create_progress_style(template: &str) -> ProgressStyle {
     ProgressStyle::with_template(template)
         .unwrap()
