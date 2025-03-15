@@ -157,33 +157,81 @@ fn main() -> Result<(), Box<dyn Error>> {
     // - Correct: Number of times the model correctly identified this digit
     // - Total: Total number of test examples for this digit
     // - Accuracy: Percentage of correct predictions (Correct/Total * 100)
+    // - Precision: When the model predicts a digit, how often is it correct?
+    // - Recall: Out of all actual instances of a digit, how many were found?
+    // - F1 Score: Harmonic mean of precision and recall (balances both metrics)
     // - Avg Confidence: Average confidence score when predicting this digit,
     //                  showing how "sure" the model is about its predictions
     println!("\nPer-digit Performance:");
-    println!("Digit | Correct | Total | Accuracy | Avg Confidence");
-    println!("------|---------|--------|----------|---------------");
+    println!("Digit | Correct | Total | Accuracy | Precision | Recall | F1 Score");
+    println!("------|---------|--------|----------|-----------|--------|----------");
 
     let correct_by_digit = correct_per_digit.lock().unwrap();
     let total_by_digit = total_per_digit.lock().unwrap();
-    let conf_sums = confidence_sums.lock().unwrap();
-    let conf_counts = confidence_counts.lock().unwrap();
 
-    for digit in 0..10 {
-        let accuracy = (correct_by_digit[digit] as f64) / (total_by_digit[digit] as f64) * 100.0;
-        let avg_confidence = if conf_counts[digit] > 0 {
-            (conf_sums[digit] / conf_counts[digit] as f64) * 100.0
-        } else {
-            0.0
-        };
+    // Get all metrics first
+    let metrics: Vec<_> = {
+        let matrix = confusion_matrix.lock().unwrap();
+        (0..10)
+            .map(|digit| {
+                let accuracy =
+                    (correct_by_digit[digit] as f64) / (total_by_digit[digit] as f64) * 100.0;
+
+                // Calculate precision: TP / (TP + FP)
+                let true_positives = matrix[digit][digit] as f64;
+                let false_positives = (0..10).fold(0.0, |sum, i| {
+                    if i != digit {
+                        sum + matrix[i][digit] as f64
+                    } else {
+                        sum
+                    }
+                });
+                let precision = true_positives / (true_positives + false_positives);
+
+                // Calculate recall: TP / (TP + FN)
+                let false_negatives = (0..10).fold(0.0, |sum, j| {
+                    if j != digit {
+                        sum + matrix[digit][j] as f64
+                    } else {
+                        sum
+                    }
+                });
+                let recall = true_positives / (true_positives + false_negatives);
+
+                // Calculate F1 score: 2 * (precision * recall) / (precision + recall)
+                let f1_score = if precision + recall > 0.0 {
+                    2.0 * (precision * recall) / (precision + recall)
+                } else {
+                    0.0
+                };
+
+                (accuracy, precision, recall, f1_score)
+            })
+            .collect()
+    };
+
+    // Display metrics
+    for (digit, &(accuracy, precision, recall, f1_score)) in metrics.iter().enumerate() {
         println!(
-            "   {digit}  |   {correct:^5} |  {total:^4}  | {accuracy:>6.2}% |    {confidence:>6.2}%",
+            "   {digit}  |   {correct:^5} |  {total:^4}  | {accuracy:>6.2}% |  {precision:>6.2}% | {recall:>5.2}% |  {f1:>6.2}%",
             digit = digit,
             correct = correct_by_digit[digit],
             total = total_by_digit[digit],
             accuracy = accuracy,
-            confidence = avg_confidence
+            precision = precision * 100.0,
+            recall = recall * 100.0,
+            f1 = f1_score * 100.0
         );
     }
+
+    // Add explanatory comment for the metrics
+    println!("\nMetric Explanations:");
+    println!("- Precision: When the model predicts a digit, how often is it correct?");
+    println!("- Recall: Out of all actual instances of a digit, how many were found?");
+    println!("- F1 Score: Harmonic mean of precision and recall (balances both metrics)");
+    println!("  * Higher values are better (max 100%)");
+    println!("  * Low precision = Many false positives (predicts digit when it's not)");
+    println!("  * Low recall = Many false negatives (misses digit when it is present)");
 
     // Display confusion matrix
     println!("\nConfusion Matrix:");
@@ -191,16 +239,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("         | 0    1    2    3    4    5    6    7    8    9   ");
     println!("---------|--------------------------------------------");
 
-    // The confusion matrix shows how often the model confuses different digits:
-    // - Each ROW represents the actual digit
-    // - Each COLUMN represents what the model predicted
-    // - The numbers show how many times each combination occurred
-    // - The diagonal (where row = column) shows correct predictions
-    // - Off-diagonal numbers show mistakes
-    //
-    // Example: If matrix[5][3] = 39, this means:
-    // - 39 times when the actual digit was 5
-    // - The model incorrectly predicted it as 3
     let matrix = confusion_matrix.lock().unwrap();
     for i in 0..10 {
         print!("    {i}    |", i = i);
