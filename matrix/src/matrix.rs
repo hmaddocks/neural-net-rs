@@ -163,10 +163,10 @@ impl Matrix {
             data.par_chunks_mut(self.rows)
                 .enumerate()
                 .for_each(|(j, chunk)| {
-                    for i in 0..self.rows {
+                    chunk.iter_mut().enumerate().for_each(|(i, elem)| {
                         // SAFETY: Indices are guaranteed to be in bounds by the matrix dimensions
-                        chunk[i] = unsafe { *self.data.get_unchecked(i * self.cols + j) };
-                    }
+                        *elem = unsafe { *self.data.get_unchecked(i * self.cols + j) };
+                    });
                 });
         } else {
             for i in 0..self.rows {
