@@ -1,3 +1,9 @@
+//! MNIST dataset loader module for neural network training and testing.
+//!
+//! This module provides functionality to load and handle the MNIST dataset of handwritten digits.
+//! It includes utilities for reading both images and labels from the IDX file format used by MNIST.
+//! The data is normalized and converted into matrix format suitable for neural network training.
+
 use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use std::fs::File;
@@ -7,23 +13,38 @@ use thiserror::Error;
 
 pub const IMAGE_MAGIC_NUMBER: u32 = 2051;
 pub const LABEL_MAGIC_NUMBER: u32 = 2049;
-pub const INPUT_NODES: usize = 784; // 28x28 pixels
-pub const OUTPUT_NODES: usize = 10; // digits 0-9
+pub const INPUT_NODES: usize = 784;
+pub const OUTPUT_NODES: usize = 10;
 
+/// Errors that can occur while handling MNIST data
 #[derive(Debug, Error)]
 pub enum MnistError {
+    /// Wrapper for standard I/O errors
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    /// Error for invalid magic numbers in MNIST files
     #[error("Invalid magic number for {kind} file: expected {expected}, got {actual}")]
     InvalidMagicNumber {
         kind: &'static str,
         expected: u32,
         actual: u32,
     },
+    /// Error for mismatches between images and labels
     #[error("Data mismatch: {0}")]
     DataMismatch(String),
+    /// Error for invalid image dimensions
+    #[error(
+        "Invalid image dimensions: expected {expected} pixels, got {actual} pixels ({rows}x{cols})"
+    )]
+    InvalidDimensions {
+        expected: usize,
+        actual: usize,
+        rows: usize,
+        cols: usize,
+    },
 }
 
+/// Container for MNIST dataset pairs (images and their corresponding labels)
 #[derive(Debug)]
 pub struct MnistData {
     images: Vec<Matrix>,
@@ -31,6 +52,25 @@ pub struct MnistData {
 }
 
 impl MnistData {
+    /// Creates a new MnistData instance from vectors of image and label matrices.
+    ///
+    /// # Arguments
+    /// * `images` - Vector of matrices representing the images
+    /// * `labels` - Vector of matrices representing one-hot encoded labels
+    ///
+    /// # Returns
+    /// * `Ok(MnistData)` if the number of images matches the number of labels
+    /// * `Err(MnistError::DataMismatch)` if there's a mismatch between images and labels
+    ///
+    /// # Example
+    /// ```
+    /// use neural_network::mnist::MnistData;
+    /// use matrix::matrix::Matrix;
+    ///
+    /// let images = vec![Matrix::new(784, 1, vec![0.5; 784])];
+    /// let labels = vec![Matrix::new(10, 1, vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])];
+    /// let mnist_data = MnistData::new(images, labels).unwrap();
+    /// ```
     pub fn new(images: Vec<Matrix>, labels: Vec<Matrix>) -> Result<Self, MnistError> {
         if images.len() != labels.len() {
             return Err(MnistError::DataMismatch(format!(
@@ -60,18 +100,37 @@ impl MnistData {
     }
 }
 
+/// Reads a 32-bit unsigned integer in big-endian format from a file
 fn read_u32(file: &mut File) -> std::io::Result<u32> {
     let mut buffer = [0; 4];
     file.read_exact(&mut buffer)?;
     Ok(u32::from_be_bytes(buffer))
 }
 
+/// Creates a progress bar style with the specified template
 fn create_progress_style(template: &str) -> ProgressStyle {
     ProgressStyle::with_template(template)
         .unwrap()
         .progress_chars("##-")
 }
 
+/// Reads MNIST image data from an IDX file format.
+///
+/// # Arguments
+/// * `path` - Path to the MNIST image file
+/// * `progress` - Progress bar for tracking loading progress
+///
+/// # Returns
+/// * `Ok(Vec<Matrix>)` containing normalized image matrices (pixel values scaled to 0.0-1.0)
+/// * `Err(MnistError)` if file reading fails or format is invalid
+///
+/// # Format
+/// The IDX file format consists of:
+/// * 32-bit magic number (2051)
+/// * 32-bit number of images
+/// * 32-bit number of rows
+/// * 32-bit number of columns
+/// * Pixels in row-major order (1 byte per pixel)
 pub fn read_mnist_images(
     path: impl AsRef<Path>,
     progress: &ProgressBar,
@@ -92,6 +151,15 @@ pub fn read_mnist_images(
     let num_cols = read_u32(&mut file)? as usize;
     let pixels_per_image = num_rows * num_cols;
 
+    if pixels_per_image != INPUT_NODES {
+        return Err(MnistError::InvalidDimensions {
+            expected: INPUT_NODES,
+            actual: pixels_per_image,
+            rows: num_rows,
+            cols: num_cols,
+        });
+    }
+
     progress.set_length(num_images as u64);
     progress.set_message("Loading images...");
 
@@ -100,11 +168,7 @@ pub fn read_mnist_images(
 
     for _ in 0..num_images {
         file.read_exact(&mut buffer)?;
-        let data: Vec<f64> = buffer
-            .iter()
-            .map(|&pixel| f64::from(pixel) / 255.0)
-            .collect();
-
+        let data = Vec::from_iter(buffer.iter().map(|&pixel| f64::from(pixel) / 255.0));
         images.push(Matrix::new(pixels_per_image, 1, data));
         progress.inc(1);
     }
@@ -113,6 +177,21 @@ pub fn read_mnist_images(
     Ok(images)
 }
 
+/// Reads MNIST label data from an IDX file format.
+///
+/// # Arguments
+/// * `path` - Path to the MNIST label file
+/// * `progress` - Progress bar for tracking loading progress
+///
+/// # Returns
+/// * `Ok(Vec<Matrix>)` containing one-hot encoded label matrices
+/// * `Err(MnistError)` if file reading fails or format is invalid
+///
+/// # Format
+/// The IDX file format consists of:
+/// * 32-bit magic number (2049)
+/// * 32-bit number of labels
+/// * Labels (1 byte per label)
 pub fn read_mnist_labels(
     path: impl AsRef<Path>,
     progress: &ProgressBar,
@@ -148,6 +227,18 @@ pub fn read_mnist_labels(
     Ok(labels)
 }
 
+/// Loads both MNIST images and labels from the default location.
+///
+/// This function attempts to load MNIST data from the following default paths:
+/// * Images: ~/Documents/NMIST/train-images-idx3-ubyte
+/// * Labels: ~/Documents/NMIST/train-labels-idx1-ubyte
+///
+/// # Returns
+/// * `Ok(MnistData)` containing paired images and labels
+/// * `Err(MnistError)` if loading fails
+///
+/// # Environment Variables
+/// Requires the HOME environment variable to be set
 pub fn load_mnist_data() -> Result<MnistData, MnistError> {
     let multi_progress = indicatif::MultiProgress::new();
     let style = create_progress_style(
