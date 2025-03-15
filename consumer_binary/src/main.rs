@@ -3,6 +3,7 @@ mod training;
 
 use mnist::MnistError;
 use training::{Trainer, TrainingConfig};
+use std::path::Path;
 
 fn main() -> Result<(), MnistError> {
     println!("Loading MNIST dataset...");
@@ -15,6 +16,11 @@ fn main() -> Result<(), MnistError> {
     println!("\nInitializing neural network...");
     trainer.train(&data)?;
     println!("\nTraining completed successfully!");
+
+    // Save the trained network
+    let save_path = Path::new("trained_network.json");
+    trainer.save_network(save_path)?;
+    println!("\nNetwork saved to {}", save_path.display());
 
     Ok(())
 }
@@ -32,9 +38,9 @@ mod tests {
         let mut labels = vec![0.0; OUTPUT_NODES];
         labels[0] = 1.0;
         let labels = vec![Matrix::new(OUTPUT_NODES, 1, labels)];
-        
+
         let data = mnist::MnistData::new(images, labels)?;
-        
+
         // Train for a single epoch
         let config = TrainingConfig {
             batch_size: 1,
@@ -42,10 +48,10 @@ mod tests {
             learning_rate: 0.1,
             hidden_layers: vec![4],
         };
-        
+
         let mut trainer = Trainer::new(config);
         trainer.train(&data)?;
-        
+
         Ok(())
     }
 }
