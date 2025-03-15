@@ -10,6 +10,29 @@ use train_mnist::{
     training::{Trainer, TrainingConfig},
 };
 
+/// A confusion matrix for MNIST digit classification.
+///
+/// The matrix is a 10x10 grid where:
+/// - Rows represent the actual digit (0-9)
+/// - Columns represent what the model predicted (0-9)
+/// - Each cell [i][j] contains the count of how many times:
+///   * The actual digit was i
+///   * The model predicted j
+///
+/// Example:
+/// ```text
+/// Actual 5: |  12   1   0  39   4  808   8   3  11   6
+///           |   ↑   ↑   ↑   ↑   ↑   ↑    ↑   ↑   ↑   ↑
+/// Predicted |   0   1   2   3   4   5    6   7   8   9
+/// ```
+/// This row shows that when the actual digit was 5:
+/// - 808 times it was correctly predicted as 5
+/// - 39 times it was incorrectly predicted as 3
+/// - 12 times it was incorrectly predicted as 0
+/// - etc.
+///
+/// The diagonal (where row index equals column index) shows correct predictions.
+/// Everything off the diagonal represents mistakes.
 type ConfusionMatrix = [[u32; 10]; 10];
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -129,6 +152,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Correct predictions: {}", total_correct);
     println!("Overall accuracy: {:.2}%", total_accuracy);
 
+    // Display per-digit performance metrics:
+    // - Digit: The actual digit (0-9) being analyzed
+    // - Correct: Number of times the model correctly identified this digit
+    // - Total: Total number of test examples for this digit
+    // - Accuracy: Percentage of correct predictions (Correct/Total * 100)
+    // - Avg Confidence: Average confidence score when predicting this digit,
+    //                  showing how "sure" the model is about its predictions
     println!("\nPer-digit Performance:");
     println!("Digit | Correct | Total | Accuracy | Avg Confidence");
     println!("------|---------|--------|----------|---------------");
@@ -161,6 +191,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("         | 0    1    2    3    4    5    6    7    8    9   ");
     println!("---------|--------------------------------------------");
 
+    // The confusion matrix shows how often the model confuses different digits:
+    // - Each ROW represents the actual digit
+    // - Each COLUMN represents what the model predicted
+    // - The numbers show how many times each combination occurred
+    // - The diagonal (where row = column) shows correct predictions
+    // - Off-diagonal numbers show mistakes
+    //
+    // Example: If matrix[5][3] = 39, this means:
+    // - 39 times when the actual digit was 5
+    // - The model incorrectly predicted it as 3
     let matrix = confusion_matrix.lock().unwrap();
     for i in 0..10 {
         print!("    {i}    |", i = i);
