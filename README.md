@@ -6,7 +6,7 @@ This code was originally based on [neural-net-rs](https://github.com/your-userna
 
 This code (currently) implements a neural network to train and test on the MNIST dataset of handwritten digits.
 
-- - -
+---
 
 neural-net-rs is a Rust-based neural network framework designed for educational purposes. This project aims to provide a simple yet informative implementation of neural networks in the Rust programming language.
 
