@@ -6,17 +6,20 @@
 //! - Progress visualization using progress bars
 //! - Model persistence through save/load functionality
 
+use anyhow::Result;
 use crate::mnist::{MnistData, MnistError, INPUT_NODES, OUTPUT_NODES};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use neural_network::activations::SIGMOID;
 use neural_network::network::Network;
 use rand::seq::SliceRandom;
+use rand::Rng;
 use rand::thread_rng;
+use rayon::prelude::*;
 use std::path::Path;
 
 /// Configuration parameters for neural network training.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TrainingConfig {
     /// Size of each training batch
     pub batch_size: usize,
@@ -24,12 +27,16 @@ pub struct TrainingConfig {
     pub epochs: u32,
     /// Learning rate for gradient descent
     pub learning_rate: f64,
+    /// Momentum coefficient for weight updates
+    pub momentum: f64,
     /// Number of nodes in each hidden layer
     pub hidden_layers: Vec<usize>,
     /// Number of epochs to wait for improvement before early stopping
     pub early_stopping_patience: u32,
     /// Minimum improvement in accuracy required to reset patience counter
     pub early_stopping_min_delta: f64,
+    /// Number of threads to use for parallel training
+    pub num_threads: usize,
 }
 
 impl Default for TrainingConfig {
@@ -38,9 +45,11 @@ impl Default for TrainingConfig {
             batch_size: 100,
             epochs: 30,
             learning_rate: 0.001,
+            momentum: 0.9,
             hidden_layers: vec![128, 64],
             early_stopping_patience: 5,
             early_stopping_min_delta: 0.001,
+            num_threads: num_cpus::get(),
         }
     }
 }
@@ -121,6 +130,7 @@ pub struct Trainer {
     network: Network,
     config: TrainingConfig,
     history: TrainingHistory,
+    thread_networks: Vec<Network>,
 }
 
 impl Trainer {
@@ -133,13 +143,20 @@ impl Trainer {
         layer_sizes.extend(&config.hidden_layers);
         layer_sizes.push(OUTPUT_NODES);
 
-        let network = Network::new(layer_sizes, SIGMOID, config.learning_rate);
+        let main_network = Network::new(layer_sizes.clone(), SIGMOID, config.learning_rate);
+
+        // Create thread-specific networks
+        let thread_networks = (0..config.num_threads)
+            .map(|_| Network::new(layer_sizes.clone(), SIGMOID, config.learning_rate))
+            .collect();
+
         let history = TrainingHistory::new();
 
         Self {
-            network,
+            network: main_network,
             config,
             history,
+            thread_networks,
         }
     }
 
@@ -177,45 +194,88 @@ impl Trainer {
         batch_progress.set_style(batch_style);
 
         println!(
-            "\nStarting training with batch size {}",
-            self.config.batch_size
+            "\nStarting training with batch size {} using {} threads",
+            self.config.batch_size, self.config.num_threads
         );
         let mut indices: Vec<usize> = (0..data.len()).collect();
-        let mut rng = thread_rng();
+        let mut rng = rand::thread_rng();
 
         let mut best_accuracy = 0.0;
         let mut patience_counter = 0;
+
+        // Clone progress bar for thread updates
+        let thread_progress = batch_progress.clone();
 
         for epoch in 1..=self.config.epochs {
             indices.shuffle(&mut rng);
             let (mut correct, mut total) = (0, 0);
             let mut epoch_loss = 0.0;
 
-            batch_progress.set_length((indices.len() / self.config.batch_size) as u64);
+            // Split data into chunks for parallel processing
+            let chunk_size = indices.len() / self.config.num_threads;
+            let chunks: Vec<_> = indices.chunks(chunk_size).collect();
+
+            // Calculate total number of batches across all threads
+            let total_batches = chunks.iter()
+                .map(|chunk| (chunk.len() + self.config.batch_size - 1) / self.config.batch_size)
+                .sum::<usize>();
+            batch_progress.set_length(total_batches as u64);
             batch_progress.set_position(0);
             batch_progress.set_message(format!("in Epoch {}", epoch));
 
-            for batch_indices in indices.chunks(self.config.batch_size) {
-                for &idx in batch_indices {
-                    let output = self
-                        .network
-                        .feed_forward(&data.images()[idx])
-                        .map_err(|e| MnistError::DataMismatch(e.to_string()))?;
+            // Process chunks in parallel
+            let results: Vec<_> = chunks
+                .into_par_iter()
+                .enumerate()
+                .map(|(thread_idx, chunk)| {
+                    let mut thread_network = self.thread_networks[thread_idx].clone();
+                    let mut thread_correct = 0;
+                    let mut thread_total = 0;
+                    let mut thread_loss = 0.0;
 
-                    // Calculate loss before backpropagation
-                    let loss = calculate_loss(&output, &data.labels()[idx]);
-                    epoch_loss += loss;
+                    for batch_indices in chunk.chunks(self.config.batch_size) {
+                        for &idx in batch_indices {
+                            let output = thread_network
+                                .feed_forward(&data.images()[idx])
+                                .map_err(|e| MnistError::DataMismatch(e.to_string()))?;
 
-                    self.network
-                        .back_propogate(output.clone(), &data.labels()[idx]);
+                            let loss = calculate_loss(&output, &data.labels()[idx]);
+                            thread_loss += loss;
 
-                    if self.get_prediction(&output) == self.get_prediction(&data.labels()[idx]) {
-                        correct += 1;
+                            thread_network.back_propogate(output.clone(), &data.labels()[idx]);
+
+                            if self.get_prediction(&output)
+                                == self.get_prediction(&data.labels()[idx])
+                            {
+                                thread_correct += 1;
+                            }
+                            thread_total += 1;
+                        }
+                        // Update progress from thread
+                        thread_progress.inc(1);
                     }
-                    total += 1;
-                }
-                batch_progress.inc(1);
+
+                    Ok::<_, MnistError>((thread_network, thread_correct, thread_total, thread_loss))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // Synchronize networks and accumulate metrics
+            for (thread_idx, (thread_network, thread_correct, thread_total, thread_loss)) in
+                results.into_iter().enumerate()
+            {
+                self.thread_networks[thread_idx] = thread_network;
+                correct += thread_correct;
+                total += thread_total;
+                epoch_loss += thread_loss;
             }
+
+            // Synchronize all networks by averaging weights and velocities
+            for thread_network in &mut self.thread_networks {
+                thread_network.sync_with(&self.network)?;
+            }
+
+            // Update main network from first thread network (they should all be the same now)
+            self.network = self.thread_networks[0].clone();
 
             let accuracy = (correct as f64 / total as f64) * 100.0;
             let avg_loss = epoch_loss / total as f64;
@@ -301,21 +361,16 @@ impl Trainer {
             network,
             config,
             history: TrainingHistory::new(),
+            thread_networks: vec![],
         })
     }
 }
 
-/// Creates a progress bar style with the specified template.
-///
-/// # Arguments
-/// * `template` - Template string for the progress bar
-///
-/// # Returns
-/// * `ProgressStyle` - Configured progress bar style
+/// Helper function to create a consistent progress bar style
 fn create_progress_style(template: &str) -> ProgressStyle {
     ProgressStyle::with_template(template)
         .unwrap()
-        .progress_chars("##-")
+        .progress_chars("=> ")
 }
 
 /// Calculate mean squared error loss between predicted and target values
@@ -337,9 +392,11 @@ mod tests {
         assert_eq!(config.batch_size, 100);
         assert_eq!(config.epochs, 30);
         assert_eq!(config.learning_rate, 0.001);
+        assert_eq!(config.momentum, 0.9);
         assert_eq!(config.hidden_layers, vec![128, 64]);
         assert_eq!(config.early_stopping_patience, 5);
         assert_eq!(config.early_stopping_min_delta, 0.001);
+        assert_eq!(config.num_threads, num_cpus::get());
     }
 
     #[test]
@@ -376,9 +433,11 @@ mod tests {
             batch_size: 2,
             epochs: 1,
             learning_rate: 0.1,
+            momentum: 0.9,
             hidden_layers: vec![4], // Smaller network for testing
             early_stopping_patience: 5,
             early_stopping_min_delta: 0.001,
+            num_threads: 1,
         };
         let mut trainer = Trainer::new(config);
 

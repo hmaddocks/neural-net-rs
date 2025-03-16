@@ -4,6 +4,7 @@
 //! It includes utilities for reading both images and labels from the IDX file format used by MNIST.
 //! The data is normalized and converted into matrix format suitable for neural network training.
 
+use anyhow::Error as AnyhowError;
 use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use std::fs::File;
@@ -45,6 +46,9 @@ pub enum MnistError {
     /// Error for missing HOME directory environment variable
     #[error("HOME environment variable not set")]
     HomeDirNotFound,
+    /// Error for network-related issues
+    #[error("Network error: {0}")]
+    Network(#[from] AnyhowError),
 }
 
 /// Container for MNIST dataset pairs (images and their corresponding labels)

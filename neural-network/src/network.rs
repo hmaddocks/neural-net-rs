@@ -14,8 +14,13 @@ pub struct Network {
     biases: Vec<Matrix>,
     #[serde(skip)]
     data: Vec<Matrix>,
+    #[serde(skip)]
+    weight_velocities: Vec<Matrix>,
+    #[serde(skip)]
+    bias_velocities: Vec<Matrix>,
     activation: Activation,
     learning_rate: f64,
+    momentum: f64,
 }
 
 impl Network {
@@ -31,6 +36,17 @@ impl Network {
             })
             .unzip();
 
+        // Initialize velocities with zeros
+        let weight_velocities: Vec<Matrix> = layers
+            .windows(2)
+            .map(|window| Matrix::zeros(window[1], window[0]))
+            .collect();
+
+        let bias_velocities: Vec<Matrix> = layers
+            .windows(2)
+            .map(|window| Matrix::zeros(window[1], 1))
+            .collect();
+
         // Pre-allocate data vector with capacity
         let mut data = Vec::with_capacity(layers.len());
         data.resize(layers.len(), Matrix::default());
@@ -40,8 +56,11 @@ impl Network {
             weights,
             biases,
             data,
+            weight_velocities,
+            bias_velocities,
             activation,
             learning_rate,
+            momentum: 0.9, // Default momentum value
         }
     }
 
@@ -84,10 +103,18 @@ impl Network {
                 .elementwise_multiply(&errors)
                 .map(|x| x * self.learning_rate);
 
-            // Update weights and biases
+            // Calculate weight updates with momentum
             let weight_deltas = gradients.dot_multiply(&self.data[i].transpose());
-            self.weights[i] = self.weights[i].add(&weight_deltas);
-            self.biases[i] = self.biases[i].add(&gradients);
+            self.weight_velocities[i] = self.weight_velocities[i]
+                .map(|x| x * self.momentum)
+                .add(&weight_deltas);
+            self.weights[i] = self.weights[i].add(&self.weight_velocities[i]);
+
+            // Calculate bias updates with momentum
+            self.bias_velocities[i] = self.bias_velocities[i]
+                .map(|x| x * self.momentum)
+                .add(&gradients);
+            self.biases[i] = self.biases[i].add(&self.bias_velocities[i]);
 
             // Prepare for next layer
             errors = self.weights[i].transpose().dot_multiply(&errors);
@@ -137,8 +164,41 @@ impl Network {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let json = fs::read_to_string(path)?;
         let mut network: Network = serde_json::from_str(&json)?;
-        // Reinitialize data vector
+
+        // Reinitialize data and velocity vectors
         network.data = vec![Matrix::default(); network.layers.len()];
+        network.weight_velocities = network
+            .layers
+            .windows(2)
+            .map(|window| Matrix::zeros(window[1], window[0]))
+            .collect();
+        network.bias_velocities = network
+            .layers
+            .windows(2)
+            .map(|window| Matrix::zeros(window[1], 1))
+            .collect();
+
         Ok(network)
+    }
+
+    /// Synchronizes weights, biases and their velocities with another network
+    pub fn sync_with(&mut self, other: &Network) -> Result<()> {
+        if self.layers != other.layers {
+            return Err(anyhow!("Cannot sync networks with different architectures"));
+        }
+
+        // Average weights and velocities
+        for i in 0..self.weights.len() {
+            self.weights[i] = self.weights[i].add(&other.weights[i]).map(|x| x * 0.5);
+            self.biases[i] = self.biases[i].add(&other.biases[i]).map(|x| x * 0.5);
+            self.weight_velocities[i] = self.weight_velocities[i]
+                .add(&other.weight_velocities[i])
+                .map(|x| x * 0.5);
+            self.bias_velocities[i] = self.bias_velocities[i]
+                .add(&other.bias_velocities[i])
+                .map(|x| x * 0.5);
+        }
+
+        Ok(())
     }
 }
