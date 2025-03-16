@@ -11,8 +11,8 @@ use crate::training_history::TrainingHistory;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use mnist::mnist::{INPUT_NODES, MnistData, MnistError, OUTPUT_NODES};
-use neural_network::activations::SIGMOID;
-use neural_network::network::Network;
+use neural_network::Network;
+use neural_network::SIGMOID;
 use rand::seq::SliceRandom;
 use std::path::Path;
 

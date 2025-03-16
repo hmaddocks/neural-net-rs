@@ -2,7 +2,7 @@ use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
 use mnist;
 use mnist::mnist::get_actual_digit;
-use neural_network::network::Network;
+use neural_network::Network;
 use rayon::prelude::*;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};

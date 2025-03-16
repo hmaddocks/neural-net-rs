@@ -1,5 +1,5 @@
 use crate::activations::Activation;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use matrix::matrix::Matrix;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
