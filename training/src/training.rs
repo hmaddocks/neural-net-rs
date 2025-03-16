@@ -6,13 +6,13 @@
 //! - Progress visualization using progress bars
 //! - Model persistence through save/load functionality
 
-use crate::mnist::{MnistData, MnistError, INPUT_NODES, OUTPUT_NODES};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
+use mnist::mnist::{INPUT_NODES, MnistData, MnistError, OUTPUT_NODES};
 use neural_network::activations::SIGMOID;
 use neural_network::network::Network;
+// use rand::rng;
 use rand::seq::SliceRandom;
-use rand::thread_rng;
 use std::path::Path;
 
 /// Configuration parameters for neural network training.
@@ -168,7 +168,7 @@ impl Trainer {
             "{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} Epoch {msg}",
         );
         let batch_style = create_progress_style(
-            "{spinner:.yellow} [{elapsed_precise}] {bar:40.yellow/blue} {pos:>7}/{len:7} Batch {msg}"
+            "{spinner:.yellow} [{elapsed_precise}] {bar:40.yellow/blue} {pos:>7}/{len:7} Batch {msg}",
         );
 
         let epoch_progress = multi_progress.add(ProgressBar::new(self.config.epochs as u64));
@@ -181,7 +181,7 @@ impl Trainer {
             self.config.batch_size
         );
         let mut indices: Vec<usize> = (0..data.len()).collect();
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
 
         let mut best_accuracy = 0.0;
         let mut patience_counter = 0;

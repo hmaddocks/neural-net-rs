@@ -513,6 +513,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mnist"
+version = "0.1.0"
+dependencies = [
+ "assert_fs",
+ "image",
+ "indicatif",
+ "matrix",
+ "rayon",
+ "thiserror",
+]
+
+[[package]]
 name = "neural-network"
 version = "0.1.0"
 dependencies = [
@@ -875,11 +887,26 @@ dependencies = [
  "image",
  "indicatif",
  "matrix",
+ "mnist",
  "neural-network",
  "predicates",
  "rand",
  "rayon",
  "tempfile",
+ "thiserror",
+ "training",
+]
+
+[[package]]
+name = "training"
+version = "0.1.0"
+dependencies = [
+ "indicatif",
+ "matrix",
+ "mnist",
+ "neural-network",
+ "rand",
+ "rayon",
  "thiserror",
 ]
 

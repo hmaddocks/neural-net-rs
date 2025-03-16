@@ -1,0 +1,13 @@
+[package]
+name = "training"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mnist = { path = "../mnist" }
+indicatif = { version = "0.17", features = ["rayon"] }
+matrix = { path = "../matrix" }
+neural-network = { path = "../neural-network" }
+rand = "0.9"
+thiserror = "1.0"
+rayon = "1.8"

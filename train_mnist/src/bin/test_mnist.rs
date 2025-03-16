@@ -1,15 +1,13 @@
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
+use mnist::mnist;
 use neural_network::network::Network;
 use rayon::prelude::*;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use train_mnist::{
-    mnist,
-    training::{Trainer, TrainingConfig},
-};
+use training::training::{Trainer, TrainingConfig};
 
 /// Metrics for a single digit (0-9), tracking correct predictions and total occurrences.
 #[derive(Debug, Default)]

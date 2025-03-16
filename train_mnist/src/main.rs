@@ -1,13 +1,12 @@
-mod mnist;
-mod training;
+use mnist::mnist::MnistError;
+use training::training;
 
-use mnist::MnistError;
 use std::path::Path;
 use training::{Trainer, TrainingConfig};
 
 fn main() -> Result<(), MnistError> {
     println!("Loading MNIST dataset...");
-    let data = mnist::load_mnist_data()?;
+    let data = mnist::mnist::load_mnist_data()?;
     println!("\nSuccessfully loaded {} training examples", data.len());
 
     let config = TrainingConfig::default();
@@ -29,7 +28,7 @@ fn main() -> Result<(), MnistError> {
 mod tests {
     use super::*;
     use matrix::matrix::Matrix;
-    use mnist::{INPUT_NODES, OUTPUT_NODES};
+    use mnist::mnist::{INPUT_NODES, MnistData, OUTPUT_NODES};
 
     #[test]
     fn test_end_to_end() -> Result<(), MnistError> {
@@ -39,7 +38,7 @@ mod tests {
         labels[0] = 1.0;
         let labels = vec![Matrix::new(OUTPUT_NODES, 1, labels)];
 
-        let data = mnist::MnistData::new(images, labels)?;
+        let data = MnistData::new(images, labels)?;
 
         // Train for a single epoch
         let config = TrainingConfig {

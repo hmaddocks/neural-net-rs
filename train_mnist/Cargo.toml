@@ -9,6 +9,8 @@ edition = "2021"
 matrix = { path = "../matrix" }
 neural-network = { path = "../neural-network" }
 rand = "0.8"
+mnist = { path = "../mnist" }
+training = { path = "../training" }
 indicatif = { version = "0.17", features = ["rayon"] }
 thiserror = "1.0"
 image = "0.24"

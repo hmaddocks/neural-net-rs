@@ -1,7 +1,7 @@
 use image::{ImageBuffer, Luma};
 use indicatif::ProgressBar;
+use mnist::mnist::{read_mnist_images, read_mnist_labels};
 use std::path::PathBuf;
-use train_mnist::mnist::{read_mnist_images, read_mnist_labels};
 
 fn save_image(image_data: &[f64], index: usize, prefix: &str) -> Result<(), image::ImageError> {
     let img = ImageBuffer::from_fn(28, 28, |x, y| {
