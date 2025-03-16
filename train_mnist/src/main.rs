@@ -1,6 +1,4 @@
 use mnist::mnist::MnistError;
-use training::training;
-
 use std::path::Path;
 use training::{Trainer, TrainingConfig};
 

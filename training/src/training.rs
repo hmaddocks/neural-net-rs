@@ -6,108 +6,15 @@
 //! - Progress visualization using progress bars
 //! - Model persistence through save/load functionality
 
+use crate::training_config::TrainingConfig;
+use crate::training_history::TrainingHistory;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use mnist::mnist::{INPUT_NODES, MnistData, MnistError, OUTPUT_NODES};
 use neural_network::activations::SIGMOID;
 use neural_network::network::Network;
-// use rand::rng;
 use rand::seq::SliceRandom;
 use std::path::Path;
-
-/// Configuration parameters for neural network training.
-#[derive(Debug)]
-pub struct TrainingConfig {
-    /// Size of each training batch
-    pub batch_size: usize,
-    /// Number of training epochs
-    pub epochs: u32,
-    /// Learning rate for gradient descent
-    pub learning_rate: f64,
-    /// Number of nodes in each hidden layer
-    pub hidden_layers: Vec<usize>,
-    /// Number of epochs to wait for improvement before early stopping
-    pub early_stopping_patience: u32,
-    /// Minimum improvement in accuracy required to reset patience counter
-    pub early_stopping_min_delta: f64,
-}
-
-impl Default for TrainingConfig {
-    fn default() -> Self {
-        Self {
-            batch_size: 100,
-            epochs: 30,
-            learning_rate: 0.001,
-            hidden_layers: vec![128, 64],
-            early_stopping_patience: 5,
-            early_stopping_min_delta: 0.001,
-        }
-    }
-}
-
-/// Training history containing metrics recorded during training
-#[derive(Debug, Clone)]
-pub struct TrainingHistory {
-    /// Accuracy values for each epoch
-    pub accuracies: Vec<f64>,
-    /// Loss values for each epoch
-    pub losses: Vec<f64>,
-    /// Best accuracy achieved during training
-    pub best_accuracy: f64,
-    /// Epoch where best accuracy was achieved
-    pub best_epoch: u32,
-}
-
-impl TrainingHistory {
-    fn new() -> Self {
-        Self {
-            accuracies: Vec::new(),
-            losses: Vec::new(),
-            best_accuracy: 0.0,
-            best_epoch: 0,
-        }
-    }
-
-    fn record_epoch(&mut self, epoch: u32, accuracy: f64, loss: f64) {
-        self.accuracies.push(accuracy);
-        self.losses.push(loss);
-
-        if accuracy > self.best_accuracy {
-            self.best_accuracy = accuracy;
-            self.best_epoch = epoch;
-        }
-    }
-
-    /// Prints a summary of the training history
-    pub fn print_summary(&self) {
-        println!("\nTraining History Summary:");
-        println!("------------------------");
-        println!(
-            "Best accuracy: {:.2}% (epoch {})",
-            self.best_accuracy, self.best_epoch
-        );
-        println!(
-            "Final accuracy: {:.2}%",
-            self.accuracies.last().unwrap_or(&0.0)
-        );
-        println!("Final loss: {:.4}", self.losses.last().unwrap_or(&0.0));
-
-        // Print accuracy progression at 25% intervals
-        let len = self.accuracies.len();
-        if len >= 4 {
-            println!("\nAccuracy progression:");
-            for i in 0..=3 {
-                let idx = i * (len - 1) / 3;
-                println!(
-                    "Epoch {}: {:.2}% (loss: {:.4})",
-                    idx + 1,
-                    self.accuracies[idx],
-                    self.losses[idx]
-                );
-            }
-        }
-    }
-}
 
 /// Trainer manages the neural network training process.
 ///
