@@ -1,6 +1,7 @@
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
-use mnist::mnist;
+use mnist;
+use mnist::mnist::get_actual_digit;
 use neural_network::network::Network;
 use rayon::prelude::*;
 use std::path::Path;
@@ -206,7 +207,7 @@ fn main() -> Result<()> {
     // Load test data
     let data_start = Instant::now();
     println!("Loading MNIST test data...");
-    let test_data = mnist::load_mnist_test_data()?;
+    let test_data = mnist::mnist::load_test_data()?;
     println!(
         "Successfully loaded {} test examples in {:.2?}",
         test_data.images().len(),
@@ -244,7 +245,7 @@ fn main() -> Result<()> {
             for (image, label) in images.iter().zip(labels.iter()) {
                 let output = local_network.feed_forward(image).unwrap();
                 let predicted = trainer.get_prediction(&output);
-                let actual = mnist::get_actual_digit(label);
+                let actual = get_actual_digit(label);
 
                 let confidence = output
                     .data()

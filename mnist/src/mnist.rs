@@ -100,32 +100,19 @@ impl MnistData {
     }
 }
 
+/// Creates a progress bar with a consistent style
+pub(crate) fn create_progress_style(template: &str) -> ProgressStyle {
+    ProgressStyle::default_bar()
+        .template(template)
+        .unwrap()
+        .progress_chars("█▓▒░ ")
+}
+
 /// Reads a 32-bit unsigned integer in big-endian format from a file
 fn read_u32(file: &mut File) -> std::io::Result<u32> {
     let mut buffer = [0; 4];
     file.read_exact(&mut buffer)?;
     Ok(u32::from_be_bytes(buffer))
-}
-
-/// Creates a progress bar style with the specified template
-fn create_progress_style(template: &str) -> ProgressStyle {
-    ProgressStyle::with_template(template)
-        .unwrap()
-        .progress_chars("##-")
-}
-
-/// Creates a progress bar for test data loading
-pub(crate) fn create_test_progress_bar() -> ProgressBar {
-    let pb = ProgressBar::new(2);
-    pb.set_style(
-        indicatif::ProgressStyle::default_bar()
-            .template(
-                "{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
-            )
-            .unwrap()
-            .progress_chars("=>-"),
-    );
-    pb
 }
 
 /// Reads MNIST image data from an IDX file format.
@@ -241,19 +228,44 @@ pub fn read_mnist_labels(
     Ok(labels)
 }
 
-/// Loads both MNIST images and labels from the default location.
+/// Returns the path to the MNIST data directory
+pub fn get_mnist_dir() -> PathBuf {
+    PathBuf::from(std::env::var("HOME").expect("HOME environment variable not set"))
+        .join("Documents")
+        .join("NMIST")
+}
+
+/// Loads the standard MNIST training dataset
+pub fn load_training_data() -> Result<MnistData, MnistError> {
+    let mnist_dir = get_mnist_dir();
+    load_mnist_data(
+        mnist_dir.join("train-images-idx3-ubyte"),
+        mnist_dir.join("train-labels-idx1-ubyte"),
+    )
+}
+
+/// Loads the standard MNIST test dataset
+pub fn load_test_data() -> Result<MnistData, MnistError> {
+    let mnist_dir = get_mnist_dir();
+    load_mnist_data(
+        mnist_dir.join("t10k-images-idx3-ubyte"),
+        mnist_dir.join("t10k-labels-idx1-ubyte"),
+    )
+}
+
+/// Loads MNIST images and labels from the specified file paths.
 ///
-/// This function attempts to load MNIST data from the following default paths:
-/// * Images: ~/Documents/NMIST/train-images-idx3-ubyte
-/// * Labels: ~/Documents/NMIST/train-labels-idx1-ubyte
+/// # Arguments
+/// * `images_path` - Path to the images file
+/// * `labels_path` - Path to the labels file
 ///
 /// # Returns
 /// * `Ok(MnistData)` containing paired images and labels
 /// * `Err(MnistError)` if loading fails
-///
-/// # Environment Variables
-/// Requires the HOME environment variable to be set
-pub fn load_mnist_data() -> Result<MnistData, MnistError> {
+pub fn load_mnist_data(
+    images_path: PathBuf,
+    labels_path: PathBuf,
+) -> Result<MnistData, MnistError> {
     let multi_progress = indicatif::MultiProgress::new();
     let style = create_progress_style(
         "{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
@@ -264,45 +276,9 @@ pub fn load_mnist_data() -> Result<MnistData, MnistError> {
     images_progress.set_style(style.clone());
     labels_progress.set_style(style);
 
-    let home = std::env::var("HOME").expect("HOME environment variable not set");
-    let images_path = PathBuf::from(&home).join("Documents/NMIST/train-images-idx3-ubyte");
-    let labels_path = PathBuf::from(&home).join("Documents/NMIST/train-labels-idx1-ubyte");
-
     let images = read_mnist_images(images_path, &images_progress)?;
     let labels = read_mnist_labels(labels_path, &labels_progress)?;
 
-    MnistData::new(images, labels)
-}
-
-/// Loads MNIST test data from the default location.
-///
-/// This function attempts to load MNIST test data from the following default paths:
-/// * Images: ~/Documents/NMIST/t10k-images-idx3-ubyte
-/// * Labels: ~/Documents/NMIST/t10k-labels-idx1-ubyte
-///
-/// # Returns
-/// * `Ok(MnistData)` containing paired test images and labels
-/// * `Err(MnistError)` if loading fails
-///
-/// # Environment Variables
-/// Requires the HOME environment variable to be set
-pub fn load_mnist_test_data() -> Result<MnistData, MnistError> {
-    let home = std::env::var("HOME").unwrap();
-    let mnist_dir = Path::new(&home).join("Documents").join("NMIST");
-
-    let test_images_path = mnist_dir.join("t10k-images-idx3-ubyte");
-    let test_labels_path = mnist_dir.join("t10k-labels-idx1-ubyte");
-
-    let progress_bar = create_test_progress_bar();
-    progress_bar.set_message("Loading test images...");
-    let images = read_mnist_images(test_images_path, &progress_bar)?;
-    progress_bar.inc(1);
-
-    progress_bar.set_message("Loading test labels...");
-    let labels = read_mnist_labels(test_labels_path, &progress_bar)?;
-    progress_bar.inc(1);
-
-    progress_bar.finish_with_message("Test data loaded successfully!");
     MnistData::new(images, labels)
 }
 
@@ -389,7 +365,7 @@ mod tests {
             &image_data,
         )?;
 
-        let progress = create_test_progress_bar();
+        let progress = ProgressBar::new(2);
         let result = read_mnist_images(file_path.path(), &progress);
 
         assert!(result.is_ok());
@@ -414,7 +390,7 @@ mod tests {
             &vec![0u8; 784],
         )?;
 
-        let progress = create_test_progress_bar();
+        let progress = ProgressBar::new(2);
         let result = read_mnist_images(file_path.path(), &progress);
 
         assert!(result.is_err());
@@ -448,7 +424,7 @@ mod tests {
             &label_data,
         )?;
 
-        let progress = create_test_progress_bar();
+        let progress = ProgressBar::new(2);
         let result = read_mnist_labels(file_path.path(), &progress);
 
         assert!(result.is_ok());

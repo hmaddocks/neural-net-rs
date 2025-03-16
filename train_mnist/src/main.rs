@@ -6,7 +6,9 @@ use training::{Trainer, TrainingConfig};
 
 fn main() -> Result<(), MnistError> {
     println!("Loading MNIST dataset...");
-    let data = mnist::mnist::load_mnist_data()?;
+
+    // Load training data
+    let data = mnist::mnist::load_training_data()?;
     println!("\nSuccessfully loaded {} training examples", data.len());
 
     let config = TrainingConfig::default();
