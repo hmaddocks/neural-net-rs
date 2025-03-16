@@ -1,6 +1,5 @@
 use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
-use mnist;
 use mnist::mnist::get_actual_digit;
 use neural_network::Network;
 use rayon::prelude::*;
@@ -152,7 +151,7 @@ impl TestMetrics {
         println!("Overall accuracy: {:.2}%", total_accuracy);
 
         println!("\nPer-digit Performance:");
-        println!("Digit | Correct | Total | Accuracy | Precision | Recall | F1 Score");
+        println!("Digit | Correct | Total  | Accuracy | Precision | Recall | F1 Score");
         println!("------|---------|--------|----------|-----------|--------|----------");
 
         for (digit, &(accuracy, precision, recall, f1_score)) in metrics.iter().enumerate() {

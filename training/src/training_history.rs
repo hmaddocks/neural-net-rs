@@ -61,3 +61,9 @@ impl TrainingHistory {
         }
     }
 }
+
+impl Default for TrainingHistory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
