@@ -37,10 +37,74 @@ impl Default for TrainingConfig {
         Self {
             batch_size: 100,
             epochs: 30,
-            learning_rate: 0.1,
+            learning_rate: 0.001,
             hidden_layers: vec![128, 64],
             early_stopping_patience: 5,
             early_stopping_min_delta: 0.001,
+        }
+    }
+}
+
+/// Training history containing metrics recorded during training
+#[derive(Debug, Clone)]
+pub struct TrainingHistory {
+    /// Accuracy values for each epoch
+    pub accuracies: Vec<f64>,
+    /// Loss values for each epoch
+    pub losses: Vec<f64>,
+    /// Best accuracy achieved during training
+    pub best_accuracy: f64,
+    /// Epoch where best accuracy was achieved
+    pub best_epoch: u32,
+}
+
+impl TrainingHistory {
+    fn new() -> Self {
+        Self {
+            accuracies: Vec::new(),
+            losses: Vec::new(),
+            best_accuracy: 0.0,
+            best_epoch: 0,
+        }
+    }
+
+    fn record_epoch(&mut self, epoch: u32, accuracy: f64, loss: f64) {
+        self.accuracies.push(accuracy);
+        self.losses.push(loss);
+
+        if accuracy > self.best_accuracy {
+            self.best_accuracy = accuracy;
+            self.best_epoch = epoch;
+        }
+    }
+
+    /// Prints a summary of the training history
+    pub fn print_summary(&self) {
+        println!("\nTraining History Summary:");
+        println!("------------------------");
+        println!(
+            "Best accuracy: {:.2}% (epoch {})",
+            self.best_accuracy, self.best_epoch
+        );
+        println!(
+            "Final accuracy: {:.2}%",
+            self.accuracies.last().unwrap_or(&0.0)
+        );
+        println!("Final loss: {:.4}", self.losses.last().unwrap_or(&0.0));
+
+        // Print accuracy progression at 25% intervals
+        let len = self.accuracies.len();
+        if len >= 4 {
+            println!("\nAccuracy progression:");
+            for i in 0..=3 {
+                let idx = i * (len - 1) / 3;
+                println!(
+                    "Epoch {}: {:.2}% (loss: {:.4})",
+                    idx + 1,
+                    self.accuracies[idx],
+                    self.losses[idx]
+                );
+            }
         }
     }
 }
@@ -56,6 +120,7 @@ impl Default for TrainingConfig {
 pub struct Trainer {
     network: Network,
     config: TrainingConfig,
+    history: TrainingHistory,
 }
 
 impl Trainer {
@@ -69,8 +134,18 @@ impl Trainer {
         layer_sizes.push(OUTPUT_NODES);
 
         let network = Network::new(layer_sizes, SIGMOID, config.learning_rate);
+        let history = TrainingHistory::new();
 
-        Self { network, config }
+        Self {
+            network,
+            config,
+            history,
+        }
+    }
+
+    /// Returns the training history containing accuracy and loss metrics
+    pub fn history(&self) -> &TrainingHistory {
+        &self.history
     }
 
     /// Trains the neural network using the provided MNIST data.
@@ -114,6 +189,7 @@ impl Trainer {
         for epoch in 1..=self.config.epochs {
             indices.shuffle(&mut rng);
             let (mut correct, mut total) = (0, 0);
+            let mut epoch_loss = 0.0;
 
             batch_progress.set_length((indices.len() / self.config.batch_size) as u64);
             batch_progress.set_position(0);
@@ -125,6 +201,11 @@ impl Trainer {
                         .network
                         .feed_forward(&data.images()[idx])
                         .map_err(|e| MnistError::DataMismatch(e.to_string()))?;
+
+                    // Calculate loss before backpropagation
+                    let loss = calculate_loss(&output, &data.labels()[idx]);
+                    epoch_loss += loss;
+
                     self.network
                         .back_propogate(output.clone(), &data.labels()[idx]);
 
@@ -137,7 +218,14 @@ impl Trainer {
             }
 
             let accuracy = (correct as f64 / total as f64) * 100.0;
-            epoch_progress.set_message(format!("- Accuracy: {:.2}%", accuracy));
+            let avg_loss = epoch_loss / total as f64;
+
+            self.history.record_epoch(epoch, accuracy, avg_loss);
+
+            epoch_progress.set_message(format!(
+                "- Accuracy: {:.2}%, Loss: {:.4}",
+                accuracy, avg_loss
+            ));
             epoch_progress.inc(1);
 
             // Early stopping check
@@ -159,6 +247,10 @@ impl Trainer {
 
         epoch_progress.finish_with_message("Training completed!");
         batch_progress.finish_and_clear();
+
+        // Print training history summary
+        self.history.print_summary();
+
         Ok(())
     }
 
@@ -205,7 +297,11 @@ impl Trainer {
         config: TrainingConfig,
     ) -> Result<Self, MnistError> {
         let network = Network::load(path).map_err(|e| MnistError::DataMismatch(e.to_string()))?;
-        Ok(Self { network, config })
+        Ok(Self {
+            network,
+            config,
+            history: TrainingHistory::new(),
+        })
     }
 }
 
@@ -222,6 +318,15 @@ fn create_progress_style(template: &str) -> ProgressStyle {
         .progress_chars("##-")
 }
 
+/// Calculate mean squared error loss between predicted and target values
+fn calculate_loss(predicted: &Matrix, target: &Matrix) -> f64 {
+    let mut sum_squared_error = 0.0;
+    for (p, t) in predicted.data().iter().zip(target.data().iter()) {
+        sum_squared_error += (p - t).powi(2);
+    }
+    sum_squared_error / (2.0 * predicted.data().len() as f64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,7 +336,7 @@ mod tests {
         let config = TrainingConfig::default();
         assert_eq!(config.batch_size, 100);
         assert_eq!(config.epochs, 30);
-        assert_eq!(config.learning_rate, 0.1);
+        assert_eq!(config.learning_rate, 0.001);
         assert_eq!(config.hidden_layers, vec![128, 64]);
         assert_eq!(config.early_stopping_patience, 5);
         assert_eq!(config.early_stopping_min_delta, 0.001);
@@ -292,5 +397,51 @@ mod tests {
         trainer.train(&data)?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_training_history() {
+        // Create trainer with default config
+        let config = TrainingConfig::default();
+        let trainer = Trainer::new(config);
+
+        // Initial history should be empty
+        assert!(trainer.history().accuracies.is_empty());
+        assert!(trainer.history().losses.is_empty());
+        assert_eq!(trainer.history().best_accuracy, 0.0);
+        assert_eq!(trainer.history().best_epoch, 0);
+    }
+
+    #[test]
+    fn test_history_recording() {
+        // Create a test history
+        let mut history = TrainingHistory::new();
+
+        // Record some test epochs
+        history.record_epoch(1, 85.5, 0.25);
+        history.record_epoch(2, 90.0, 0.15);
+        history.record_epoch(3, 88.0, 0.18);
+
+        // Check accuracy recording
+        assert_eq!(history.accuracies, vec![85.5, 90.0, 88.0]);
+        assert_eq!(history.losses, vec![0.25, 0.15, 0.18]);
+
+        // Best accuracy should be 90.0 from epoch 2
+        assert_eq!(history.best_accuracy, 90.0);
+        assert_eq!(history.best_epoch, 2);
+    }
+
+    #[test]
+    fn test_loss_calculation() {
+        // Create test matrices
+        let predicted = Matrix::new(2, 1, vec![0.8, 0.2]);
+        let target = Matrix::new(2, 1, vec![1.0, 0.0]);
+
+        // Calculate loss
+        let loss = calculate_loss(&predicted, &target);
+
+        // Expected MSE: ((0.8 - 1.0)^2 + (0.2 - 0.0)^2) / (2 * 2)
+        let expected_loss = ((0.8_f64 - 1.0).powi(2) + (0.2_f64 - 0.0).powi(2)) / 4.0;
+        assert!((loss - expected_loss).abs() < 1e-10);
     }
 }
