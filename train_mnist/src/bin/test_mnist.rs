@@ -158,7 +158,7 @@ impl TestMetrics {
             let correct = self.per_digit[digit].correct.load(Ordering::Relaxed);
             let total = self.per_digit[digit].total.load(Ordering::Relaxed);
             println!(
-                "   {digit}  |   {correct:^5} |  {total:^4}  | {accuracy:>6.2}% |  {precision:>6.2}% | {recall:>5.2}% |  {f1:>6.2}%",
+                "   {digit}  |   {correct:^5} |  {total:^4}  | {accuracy:>6.2}%  |  {precision:>6.2}%  | {recall:>5.2}% |  {f1:>6.2}%",
                 digit = digit,
                 correct = correct,
                 total = total,
@@ -179,7 +179,7 @@ impl TestMetrics {
     fn display_confusion_matrix(&self) {
         println!("\nConfusion Matrix:");
         println!("Actual → | Predicted →");
-        println!("         | 0    1    2    3    4    5    6    7    8    9   ");
+        println!("         |    0    1    2    3    4    5    6    7    8    9");
         println!("---------|--------------------------------------------------");
 
         let matrix = self.confusion_matrix.lock().unwrap();

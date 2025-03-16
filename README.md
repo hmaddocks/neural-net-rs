@@ -1,6 +1,6 @@
 # neural-net-rs
 
-This code was originally based on [neural-net-rs](https://github.com/your-username/neural-net-rs). It has been changed and extended so much that it no longer bears any resemblance to the original code. I would like to thank the original author for their work and for inspiring me to extend this project.
+This code was originally forked from [neural-net-rs](https://github.com/codemoonsxyz/neural-net-rs). It has been changed and extended so much that it no longer bears any resemblance to the original code. I would like to thank the original author for their work and for inspiring me to extend this project.
 
 ## MNIST
 
