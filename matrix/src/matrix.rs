@@ -47,7 +47,7 @@ impl Matrix {
     pub fn random(rows: usize, cols: usize) -> Self {
         let data = (0..rows * cols)
             .into_par_iter()
-            .map_init(rand::thread_rng, |rng, _| rng.gen_range(-1.0..1.0))
+            .map_init(rand::rng, |rng, _| rng.random_range(-1.0..1.0))
             .collect();
 
         Self { rows, cols, data }

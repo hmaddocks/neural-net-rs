@@ -1,16 +1,16 @@
 [package]
 name = "train_mnist"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 matrix = { path = "../matrix" }
 neural-network = { path = "../neural-network" }
-rand = "0.8"
 mnist = { path = "../mnist" }
 training = { path = "../training" }
+rand = "0.9"
 indicatif = { version = "0.17", features = ["rayon"] }
 thiserror = "1.0"
 image = "0.24"
