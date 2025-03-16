@@ -42,9 +42,6 @@ pub enum MnistError {
         rows: usize,
         cols: usize,
     },
-    /// Error for missing HOME directory environment variable
-    #[error("HOME environment variable not set")]
-    HomeDirNotFound,
 }
 
 /// Container for MNIST dataset pairs (images and their corresponding labels)
@@ -290,7 +287,7 @@ pub fn load_mnist_data() -> Result<MnistData, MnistError> {
 /// # Environment Variables
 /// Requires the HOME environment variable to be set
 pub fn load_mnist_test_data() -> Result<MnistData, MnistError> {
-    let home = std::env::var("HOME").map_err(|_| MnistError::HomeDirNotFound)?;
+    let home = std::env::var("HOME").unwrap();
     let mnist_dir = Path::new(&home).join("Documents").join("NMIST");
 
     let test_images_path = mnist_dir.join("t10k-images-idx3-ubyte");
