@@ -1,18 +1,55 @@
+/// Neural network implementation using a feed-forward architecture with backpropagation.
+///
+/// This module provides a flexible neural network implementation that supports:
+/// - Configurable layer sizes
+/// - Custom activation functions with vector operations support
+/// - Momentum-based learning
+/// - Batch training capabilities
+///
+/// # Example
+/// ```
+/// use neural_network::{network::Network, activations::SIGMOID_VECTOR};
+///
+/// let layers = vec![2, 3, 1];  // 2 inputs, 3 hidden neurons, 1 output
+/// let mut network = Network::new(layers, SIGMOID_VECTOR, 0.1);
+///
+/// // Train the network
+/// let inputs = vec![vec![0.0, 1.0]];
+/// let targets = vec![vec![1.0]];
+/// network.train(inputs, targets, 1000);
+/// ```
 use crate::activations::Activation;
 use matrix::matrix::Matrix;
 
+/// A feed-forward neural network with configurable layers and activation functions.
 #[derive(Builder)]
 pub struct Network {
+    /// Sizes of each layer in the network, including input and output layers
     layers: Vec<usize>,
+    /// Weight matrices between layers, including bias weights
     weights: Vec<Matrix>,
+    /// Cached layer outputs for backpropagation
     data: Vec<Matrix>,
+    /// Activation function used throughout the network
     activation: Activation,
+    /// Learning rate for weight updates
     learning_rate: f64,
+    /// Momentum coefficient for weight updates
     momentum: f64,
+    /// Previous weight updates for momentum calculation
     prev_weight_updates: Vec<Matrix>,
 }
 
 impl Network {
+    /// Creates a new neural network with specified layer sizes and activation function.
+    ///
+    /// # Arguments
+    /// * `layers` - Vector of layer sizes, including input and output layers
+    /// * `activation` - Activation function to use throughout the network
+    /// * `learning_rate` - Learning rate for weight updates during training
+    ///
+    /// # Returns
+    /// A new `Network` instance with randomly initialized weights
     pub fn new(layers: Vec<usize>, activation: Activation, learning_rate: f64) -> Self {
         let layer_pairs: Vec<_> = layers.windows(2).collect();
 
@@ -43,6 +80,13 @@ impl Network {
         }
     }
 
+    /// Augments an input matrix with bias terms (adds a row of 1.0s).
+    ///
+    /// # Arguments
+    /// * `input` - Input matrix to augment
+    ///
+    /// # Returns
+    /// A new matrix with an additional row of 1.0s for bias terms
     fn augment_with_bias(input: Matrix) -> Matrix {
         let mut augmented = Vec::with_capacity(input.data.len() + input.cols);
         augmented.extend_from_slice(&input.data);
@@ -50,6 +94,15 @@ impl Network {
         Matrix::new(input.rows + 1, input.cols, augmented)
     }
 
+    /// Processes a single layer of the network.
+    ///
+    /// # Arguments
+    /// * `weight` - Weight matrix for the layer
+    /// * `input` - Input matrix including bias terms
+    /// * `activation` - Activation function to apply
+    ///
+    /// # Returns
+    /// The processed output matrix after applying weights and activation
     fn process_layer(weight: &Matrix, input: &Matrix, activation: &Activation) -> Matrix {
         let output = weight.dot_multiply(input);
         if let Some(vector_fn) = activation.vector_function {
@@ -59,6 +112,16 @@ impl Network {
         }
     }
 
+    /// Performs forward propagation through the network.
+    ///
+    /// # Arguments
+    /// * `inputs` - Input matrix to process
+    ///
+    /// # Returns
+    /// The network's output matrix
+    ///
+    /// # Panics
+    /// Panics if the number of inputs doesn't match the first layer size
     pub fn feed_forward(&mut self, inputs: Matrix) -> Matrix {
         assert!(
             self.layers[0] == inputs.data.len(),
@@ -81,7 +144,12 @@ impl Network {
         result
     }
 
-    pub fn back_propogate(&mut self, outputs: Matrix, targets: Matrix) {
+    /// Performs backpropagation to update network weights.
+    ///
+    /// # Arguments
+    /// * `outputs` - Current network outputs
+    /// * `targets` - Target outputs for training
+    pub fn back_propagate(&mut self, outputs: Matrix, targets: Matrix) {
         let mut errors = targets.subtract(&outputs);
         let mut gradients = if let Some(vector_derivative) = self.activation.vector_derivative {
             vector_derivative(&outputs)
@@ -121,6 +189,12 @@ impl Network {
         }
     }
 
+    /// Trains the network on a dataset for a specified number of epochs.
+    ///
+    /// # Arguments
+    /// * `inputs` - Vector of input vectors
+    /// * `targets` - Vector of target output vectors
+    /// * `epochs` - Number of training epochs
     pub fn train(&mut self, inputs: Vec<Vec<f64>>, targets: Vec<Vec<f64>>, epochs: u32) {
         for epoch in 1..=epochs {
             if epochs < 100 || epoch % (epochs / 100) == 0 {
@@ -129,7 +203,7 @@ impl Network {
 
             inputs.iter().zip(&targets).for_each(|(input, target)| {
                 let outputs = self.feed_forward(Matrix::from(input.clone()));
-                self.back_propogate(outputs, Matrix::from(target.clone()));
+                self.back_propagate(outputs, Matrix::from(target.clone()));
             });
         }
     }
