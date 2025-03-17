@@ -10,3 +10,4 @@ edition = "2024"
 [dependencies]
 derive_builder = "0.20.2"
 matrix = { path = "../matrix" }
+approx = "0.5.1"

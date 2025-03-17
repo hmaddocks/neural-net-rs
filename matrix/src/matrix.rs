@@ -104,11 +104,14 @@ impl Matrix {
         }
     }
 
-    pub fn get(&self, row: usize, col: usize) -> Option<f64> {
+    pub fn get(&self, row: usize, col: usize) -> f64 {
         if row < self.rows && col < self.cols {
-            Some(self.data[row * self.cols + col])
+            self.data[row * self.cols + col]
         } else {
-            None
+            panic!(
+                "Index out of bounds: ({}, {}) for matrix of size ({}, {})",
+                row, col, self.rows, self.cols
+            )
         }
     }
 
@@ -169,6 +172,18 @@ impl Sub for &Matrix {
 }
 
 impl From<Vec<f64>> for Matrix {
+    /// Converts a vector into a Matrix, treating it as a column vector.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use matrix::matrix::Matrix;
+    ///
+    /// let vec = vec![1.0, 2.0, 3.0];
+    /// let matrix: Matrix = vec.into();
+    /// assert_eq!(matrix.rows, 3);
+    /// assert_eq!(matrix.cols, 1);
+    /// ```
     fn from(vec: Vec<f64>) -> Self {
         let rows = vec.len();
         Matrix {
@@ -176,6 +191,34 @@ impl From<Vec<f64>> for Matrix {
             cols: 1,
             data: vec,
         }
+    }
+}
+
+/// A trait for converting a vector into a Matrix with specified dimensions
+pub trait IntoMatrix {
+    /// Converts self into a Matrix with specified dimensions
+    fn into_matrix(self, rows: usize, cols: usize) -> Matrix;
+}
+
+impl IntoMatrix for Vec<f64> {
+    /// Converts a vector into a Matrix with specified dimensions.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use matrix::matrix::{Matrix, IntoMatrix};
+    ///
+    /// let vec = vec![1.0, 2.0, 3.0, 4.0];
+    /// let matrix = vec.into_matrix(2, 2);
+    /// assert_eq!(matrix.rows, 2);
+    /// assert_eq!(matrix.cols, 2);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if rows * cols != vec.len()
+    fn into_matrix(self, rows: usize, cols: usize) -> Matrix {
+        Matrix::new(rows, cols, self)
     }
 }
 
@@ -462,5 +505,32 @@ mod tests {
                 7.0, 9.0
             ]
         );
+    }
+
+    #[test]
+    fn test_from_vec() {
+        let vec = vec![1.0, 2.0, 3.0];
+        let matrix: Matrix = vec.into();
+
+        assert_eq!(matrix.rows, 3);
+        assert_eq!(matrix.cols, 1);
+        assert_eq!(matrix.data, vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_into_matrix() {
+        let vec = vec![1.0, 2.0, 3.0, 4.0];
+        let matrix = vec.into_matrix(2, 2);
+
+        assert_eq!(matrix.rows, 2);
+        assert_eq!(matrix.cols, 2);
+        assert_eq!(matrix.data, vec![1.0, 2.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid matrix dimensions")]
+    fn test_into_matrix_invalid_dimensions() {
+        let vec = vec![1.0, 2.0, 3.0];
+        let _matrix = vec.into_matrix(2, 2); // Should panic
     }
 }
