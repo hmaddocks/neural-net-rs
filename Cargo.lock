@@ -575,7 +575,6 @@ dependencies = [
  "console",
  "number_prefix",
  "portable-atomic",
- "rayon",
  "unicode-width",
  "web-time",
 ]
@@ -679,7 +678,6 @@ name = "matrix"
 version = "0.1.0"
 dependencies = [
  "rand 0.9.0",
- "rayon",
  "serde",
  "serde_json",
 ]
@@ -724,7 +722,6 @@ dependencies = [
  "image",
  "indicatif",
  "matrix",
- "rayon",
  "thiserror 2.0.12",
 ]
 
@@ -737,7 +734,6 @@ dependencies = [
  "derive_builder",
  "matrix",
  "rand 0.9.0",
- "rayon",
  "serde",
  "serde_json",
  "tempfile",
@@ -1375,7 +1371,6 @@ dependencies = [
  "neural-network",
  "predicates",
  "rand 0.9.0",
- "rayon",
  "tempfile",
  "thiserror 2.0.12",
  "training",
@@ -1390,7 +1385,6 @@ dependencies = [
  "mnist",
  "neural-network",
  "rand 0.9.0",
- "rayon",
  "thiserror 2.0.12",
 ]
 

@@ -1,7 +1,6 @@
 use crate::activations::Activation;
 use anyhow::{Result, anyhow};
 use matrix::matrix::Matrix;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -253,8 +252,8 @@ impl Network {
         }
 
         // Pre-compute matrices for inputs and targets
-        let input_matrices: Vec<Matrix> = inputs.into_par_iter().map(Matrix::from).collect();
-        let target_matrices: Vec<Matrix> = targets.into_par_iter().map(Matrix::from).collect();
+        let input_matrices: Vec<Matrix> = inputs.into_iter().map(Matrix::from).collect();
+        let target_matrices: Vec<Matrix> = targets.into_iter().map(Matrix::from).collect();
 
         // Training loop
         for epoch in 1..=epochs {
@@ -529,20 +528,6 @@ mod tests {
             let output = network.feed_forward(&input)?;
             assert_eq!(output.data(), first_output.data());
         }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_parallel_processing() -> Result<()> {
-        let mut network = create_test_network();
-        let (inputs, targets) = create_xor_data();
-
-        // Train with a small number of epochs
-        network.train(inputs, targets, 10)?;
-
-        // This test mainly ensures that parallel processing doesn't panic
-        // A more thorough test would compare parallel vs sequential performance
 
         Ok(())
     }

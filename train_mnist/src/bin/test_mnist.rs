@@ -2,18 +2,15 @@ use anyhow::Result;
 use indicatif::{ProgressBar, ProgressStyle};
 use mnist::mnist::get_actual_digit;
 use neural_network::Network;
-use rayon::prelude::*;
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use training::{Trainer, TrainingConfig};
 
 /// Metrics for a single digit (0-9), tracking correct predictions and total occurrences.
 #[derive(Debug, Default)]
 struct DigitMetrics {
-    correct: AtomicU32,
-    total: AtomicU32,
+    correct: u32,
+    total: u32,
 }
 
 /// Collection of metrics for evaluating MNIST model performance.
@@ -49,11 +46,11 @@ struct TestMetrics {
     ///
     /// The diagonal (where row index equals column index) shows correct predictions.
     /// Everything off the diagonal represents mistakes.
-    confusion_matrix: Arc<Mutex<[[u32; 10]; 10]>>,
+    confusion_matrix: [[u32; 10]; 10],
     /// Sum of confidence scores for each predicted digit
-    confidence_sums: Arc<Mutex<[f64; 10]>>,
+    confidence_sums: [f64; 10],
     /// Count of predictions made for each digit
-    confidence_counts: Arc<Mutex<[u32; 10]>>,
+    confidence_counts: [u32; 10],
 }
 
 impl TestMetrics {
@@ -61,9 +58,9 @@ impl TestMetrics {
     fn new() -> Self {
         Self {
             per_digit: (0..10).map(|_| DigitMetrics::default()).collect(),
-            confusion_matrix: Arc::new(Mutex::new([[0; 10]; 10])),
-            confidence_sums: Arc::new(Mutex::new([0.0; 10])),
-            confidence_counts: Arc::new(Mutex::new([0; 10])),
+            confusion_matrix: [[0; 10]; 10],
+            confidence_sums: [0.0; 10],
+            confidence_counts: [0; 10],
         }
     }
 
@@ -73,21 +70,15 @@ impl TestMetrics {
     /// * `actual` - The true digit (0-9)
     /// * `predicted` - The model's predicted digit (0-9)
     /// * `confidence` - The model's confidence score for this prediction
-    fn update(&self, actual: usize, predicted: usize, confidence: f64) {
-        self.per_digit[actual].total.fetch_add(1, Ordering::Relaxed);
+    fn update(&mut self, actual: usize, predicted: usize, confidence: f64) {
+        self.per_digit[actual].total += 1;
         if predicted == actual {
-            self.per_digit[actual]
-                .correct
-                .fetch_add(1, Ordering::Relaxed);
+            self.per_digit[actual].correct += 1;
         }
 
-        let mut matrix = self.confusion_matrix.lock().unwrap();
-        matrix[actual][predicted] += 1;
-
-        let mut sums = self.confidence_sums.lock().unwrap();
-        let mut counts = self.confidence_counts.lock().unwrap();
-        sums[predicted] += confidence;
-        counts[predicted] += 1;
+        self.confusion_matrix[actual][predicted] += 1;
+        self.confidence_sums[predicted] += confidence;
+        self.confidence_counts[predicted] += 1;
     }
 
     /// Calculates performance metrics for each digit.
@@ -98,21 +89,20 @@ impl TestMetrics {
     /// - Recall: Out of all actual instances of this digit, how many were found?
     /// - F1 Score: Harmonic mean of precision and recall
     fn calculate_performance(&self) -> Vec<(f64, f64, f64, f64)> {
-        let matrix = self.confusion_matrix.lock().unwrap();
         (0..10)
             .map(|digit| {
-                let correct = self.per_digit[digit].correct.load(Ordering::Relaxed) as f64;
-                let total = self.per_digit[digit].total.load(Ordering::Relaxed) as f64;
+                let correct = self.per_digit[digit].correct as f64;
+                let total = self.per_digit[digit].total as f64;
                 let accuracy = (correct / total) * 100.0;
 
-                let true_positives = matrix[digit][digit] as f64;
+                let true_positives = self.confusion_matrix[digit][digit] as f64;
                 let false_positives = (0..10)
                     .filter(|&i| i != digit)
-                    .map(|i| matrix[i][digit] as f64)
+                    .map(|i| self.confusion_matrix[i][digit] as f64)
                     .sum::<f64>();
                 let false_negatives = (0..10)
                     .filter(|&j| j != digit)
-                    .map(|j| matrix[digit][j] as f64)
+                    .map(|j| self.confusion_matrix[digit][j] as f64)
                     .sum::<f64>();
 
                 let precision = true_positives / (true_positives + false_positives);
@@ -138,11 +128,7 @@ impl TestMetrics {
     /// - F1 Score: Harmonic mean of precision and recall (balances both metrics)
     fn display_results(&self, test_data_len: usize) {
         let metrics = self.calculate_performance();
-        let total_correct: u32 = self
-            .per_digit
-            .iter()
-            .map(|m| m.correct.load(Ordering::Relaxed))
-            .sum();
+        let total_correct: u32 = self.per_digit.iter().map(|m| m.correct).sum();
         let total_accuracy = (total_correct as f64) / (test_data_len as f64) * 100.0;
 
         println!("\nTest Results:");
@@ -155,8 +141,8 @@ impl TestMetrics {
         println!("------|---------|--------|----------|-----------|--------|----------");
 
         for (digit, &(accuracy, precision, recall, f1_score)) in metrics.iter().enumerate() {
-            let correct = self.per_digit[digit].correct.load(Ordering::Relaxed);
-            let total = self.per_digit[digit].total.load(Ordering::Relaxed);
+            let correct = self.per_digit[digit].correct;
+            let total = self.per_digit[digit].total;
             println!(
                 "   {digit}  |   {correct:^5} |  {total:^4}  | {accuracy:>6.2}%  |  {precision:>6.2}%  | {recall:>5.2}% |  {f1:>6.2}%",
                 digit = digit,
@@ -182,11 +168,10 @@ impl TestMetrics {
         println!("         |    0    1    2    3    4    5    6    7    8    9");
         println!("---------|--------------------------------------------------");
 
-        let matrix = self.confusion_matrix.lock().unwrap();
         for i in 0..10 {
             print!("    {i}    |");
             for j in 0..10 {
-                print!(" {:4}", matrix[i][j]);
+                print!(" {:4}", self.confusion_matrix[i][j]);
             }
             println!();
         }
@@ -198,7 +183,7 @@ fn main() -> Result<()> {
 
     // Load network and create trainer
     println!("Loading trained network...");
-    let network = Network::load(Path::new("trained_network.json"))?;
+    let mut network = Network::load(Path::new("trained_network.json"))?;
     let trainer = Trainer::new(TrainingConfig::default());
     let load_time = start_time.elapsed();
     println!("Network loaded in {:.2?}", load_time);
@@ -223,38 +208,25 @@ fn main() -> Result<()> {
             .progress_chars("=>-"),
     );
     progress_bar.set_message("Testing model...");
-    let progress_bar = Arc::new(progress_bar);
 
     // Initialize metrics tracking
-    let metrics = Arc::new(TestMetrics::new());
+    let mut metrics = TestMetrics::new();
     let test_start = Instant::now();
 
-    // Process data in parallel chunks
-    let chunk_size = test_data.images().len() / rayon::current_num_threads();
-    test_data
-        .images()
-        .chunks(chunk_size)
-        .zip(test_data.labels().chunks(chunk_size))
-        .par_bridge()
-        .for_each(|(images, labels)| {
-            let mut local_network = network.clone();
-            let pb = Arc::clone(&progress_bar);
-            let metrics = Arc::clone(&metrics);
+    // Process data sequentially
+    for (image, label) in test_data.images().iter().zip(test_data.labels().iter()) {
+        let output = network.feed_forward(image)?;
+        let predicted = trainer.get_prediction(&output);
+        let actual = get_actual_digit(label);
 
-            for (image, label) in images.iter().zip(labels.iter()) {
-                let output = local_network.feed_forward(image).unwrap();
-                let predicted = trainer.get_prediction(&output);
-                let actual = get_actual_digit(label);
+        let confidence = output
+            .data()
+            .iter()
+            .fold(f64::NEG_INFINITY, |max, &x| max.max(x));
 
-                let confidence = output
-                    .data()
-                    .iter()
-                    .fold(f64::NEG_INFINITY, |max, &x| max.max(x));
-
-                metrics.update(actual, predicted, confidence);
-                pb.inc(1);
-            }
-        });
+        metrics.update(actual, predicted, confidence);
+        progress_bar.inc(1);
+    }
 
     // Display results
     progress_bar.finish_with_message("Testing completed!");

@@ -5,8 +5,7 @@ edition = "2024"
 
 [dependencies]
 thiserror = "2.0.12"
-rayon = "1.10.0"
 image = "0.25.5"
 matrix = { path = "../matrix" }
-indicatif = { version = "0.17.11", features = ["rayon"] }
+indicatif = { version = "0.17.11" }
 assert_fs = "1.1.2"
