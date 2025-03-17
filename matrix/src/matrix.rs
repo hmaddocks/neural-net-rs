@@ -1,4 +1,3 @@
-use crate::macros::*;
 use rand::Rng;
 use std::fmt;
 
@@ -138,14 +137,17 @@ impl Matrix {
         }
     }
 
-    pub fn map(&mut self, func: fn(&f64) -> f64) -> Matrix {
+    pub fn map<F>(&mut self, func: F) -> Matrix
+    where
+        F: Fn(&f64) -> f64,
+    {
         let mut result = Matrix {
             rows: self.rows,
             cols: self.cols,
             data: Vec::with_capacity(self.data.len()),
         };
 
-        result.data.extend(self.data.iter().map(|&val| func(&val)));
+        result.data.extend(self.data.iter().map(|val| func(val)));
 
         result
     }
@@ -186,6 +188,7 @@ impl fmt::Display for Matrix {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::macros::*;
     use crate::matrix;
 
     #[test]
@@ -390,5 +393,79 @@ mod tests {
         };
 
         assert_eq!(transformed, expected);
+    }
+
+    #[test]
+    fn test_map_with_closure() {
+        let mut m = matrix![
+            1.0, 2.0;
+            3.0, 4.0
+        ];
+
+        // Test with simple closure
+        let result = m.map(|x| x * 2.0);
+        assert_eq!(
+            result,
+            matrix![
+                2.0, 4.0;
+                6.0, 8.0
+            ]
+        );
+    }
+
+    #[test]
+    fn test_map_with_capturing_closure() {
+        let mut m = matrix![
+            1.0, 2.0;
+            3.0, 4.0
+        ];
+
+        let multiplier = 3.0;
+        let result = m.map(|x| x * multiplier);
+        assert_eq!(
+            result,
+            matrix![
+                3.0, 6.0;
+                9.0, 12.0
+            ]
+        );
+    }
+
+    #[test]
+    fn test_map_with_function() {
+        let mut m = matrix![
+            -1.0, -2.0;
+            3.0, -4.0
+        ];
+
+        fn abs(x: &f64) -> f64 {
+            x.abs()
+        }
+
+        let result = m.map(abs);
+        assert_eq!(
+            result,
+            matrix![
+                1.0, 2.0;
+                3.0, 4.0
+            ]
+        );
+    }
+
+    #[test]
+    fn test_map_chaining() {
+        let mut m = matrix![
+            1.0, 2.0;
+            3.0, 4.0
+        ];
+
+        let result = m.map(|x| x * 2.0).map(|x| x + 1.0);
+        assert_eq!(
+            result,
+            matrix![
+                3.0, 5.0;
+                7.0, 9.0
+            ]
+        );
     }
 }

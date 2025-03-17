@@ -38,8 +38,6 @@ impl Network {
             self.layers[0] == inputs.data.len(),
             "Invalid Number of Inputs"
         );
-        //   println!("{:?} {:?}",self.weights[0],inputs);
-        //   println!("{:?}",self.weights[0].dot_multiply(&inputs).add(&self.biases[0]));
 
         let mut current = inputs;
 
@@ -63,7 +61,9 @@ impl Network {
         let mut gradients = inputs.clone().map(self.activation.derivative);
 
         for i in (0..self.layers.len() - 1).rev() {
-            gradients = gradients.elementwise_multiply(&errors).map(|x| x * 0.5); // learning rate
+            gradients = gradients
+                .elementwise_multiply(&errors)
+                .map(|x| x * self.learning_rate); // learning rate
 
             self.weights[i] =
                 self.weights[i].add(&gradients.dot_multiply(&self.data[i].transpose()));
@@ -85,5 +85,102 @@ impl Network {
                 self.back_propogate(outputs, Matrix::from(targets[j].clone()));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::activations::SIGMOID;
+
+    #[test]
+    fn test_network_creation() {
+        let layers = vec![3, 4, 2];
+        let network = Network::new(layers.clone(), SIGMOID, 0.5);
+
+        assert_eq!(network.layers, layers);
+        assert_eq!(network.weights.len(), 2);
+        assert_eq!(network.biases.len(), 2);
+        assert_eq!(network.weights[0].rows, 4);
+        assert_eq!(network.weights[0].cols, 3);
+        assert_eq!(network.weights[1].rows, 2);
+        assert_eq!(network.weights[1].cols, 4);
+        assert_eq!(network.learning_rate, 0.5);
+    }
+
+    #[test]
+    fn test_feed_forward() {
+        let layers = vec![2, 3, 1];
+        let mut network = Network::new(layers, SIGMOID, 0.5);
+
+        // Set deterministic weights and biases for testing
+        network.weights[0] = Matrix::new(
+            3,
+            2,
+            vec![
+                0.1, 0.2, // First row
+                0.3, 0.4, // Second row
+                0.5, 0.6, // Third row
+            ],
+        );
+        network.weights[1] = Matrix::new(1, 3, vec![0.7, 0.8, 0.9]);
+        network.biases[0] = Matrix::new(3, 1, vec![0.1, 0.2, 0.3]);
+        network.biases[1] = Matrix::new(1, 1, vec![0.4]);
+
+        let input = Matrix::new(2, 1, vec![0.5, 0.8]);
+        let output = network.feed_forward(input);
+
+        assert_eq!(output.rows, 1);
+        assert_eq!(output.cols, 1);
+        // Output should be deterministic given fixed weights and biases
+        assert!(output.data[0] > 0.0 && output.data[0] < 1.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid Number of Inputs")]
+    fn test_feed_forward_invalid_inputs() {
+        let layers = vec![2, 3, 1];
+        let mut network = Network::new(layers, SIGMOID, 0.5);
+
+        // Wrong number of inputs (3 instead of 2)
+        let input = Matrix::new(3, 1, vec![0.5, 0.8, 0.3]);
+        network.feed_forward(input);
+    }
+
+    #[test]
+    fn test_training() {
+        let layers = vec![2, 4, 1]; // Added more hidden neurons
+        let mut network = Network::new(layers, SIGMOID, 0.1); // Reduced learning rate
+
+        let inputs = vec![
+            vec![0.0, 0.0],
+            vec![0.0, 1.0],
+            vec![1.0, 0.0],
+            vec![1.0, 1.0],
+        ];
+
+        let targets = vec![vec![0.0], vec![1.0], vec![1.0], vec![0.0]];
+
+        // Train for more epochs
+        network.train(inputs.clone(), targets.clone(), 1000);
+
+        // Test that network can learn XOR pattern
+        let input1 = Matrix::new(2, 1, vec![0.0, 0.0]);
+        let input2 = Matrix::new(2, 1, vec![1.0, 1.0]);
+        let output1 = network.feed_forward(input1);
+        let output2 = network.feed_forward(input2);
+
+        // Allow for some variance in the outputs
+        assert!(output1.data[0] < 0.4); // Should be closer to 0
+        assert!(output2.data[0] < 0.4); // Should be closer to 0
+
+        // Test the other cases
+        let input3 = Matrix::new(2, 1, vec![0.0, 1.0]);
+        let input4 = Matrix::new(2, 1, vec![1.0, 0.0]);
+        let output3 = network.feed_forward(input3);
+        let output4 = network.feed_forward(input4);
+
+        assert!(output3.data[0] > 0.6); // Should be closer to 1
+        assert!(output4.data[0] > 0.6); // Should be closer to 1
     }
 }
