@@ -1,5 +1,13 @@
 use matrix::matrix::Matrix;
+use serde::{Deserialize, Serialize};
 use std::f64::consts::E;
+
+/// Type of activation function
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum ActivationType {
+    Sigmoid,
+    SigmoidVector,
+}
 
 /// Represents an activation function used in neural networks.
 ///
@@ -24,6 +32,30 @@ pub struct Activation {
     pub vector_function: Option<fn(&Matrix) -> Matrix>,
     /// Optional vectorized implementation of the derivative
     pub vector_derivative: Option<fn(&Matrix) -> Matrix>,
+    /// The type of activation function, used for serialization
+    pub activation_type: ActivationType,
+}
+
+impl Serialize for Activation {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.activation_type.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Activation {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let activation_type = ActivationType::deserialize(deserializer)?;
+        Ok(match activation_type {
+            ActivationType::Sigmoid => SIGMOID,
+            ActivationType::SigmoidVector => SIGMOID_VECTOR,
+        })
+    }
 }
 
 impl Activation {
@@ -65,6 +97,7 @@ pub const SIGMOID: Activation = Activation {
     derivative: |x| x * (1.0 - x),
     vector_function: None,
     vector_derivative: None,
+    activation_type: ActivationType::Sigmoid,
 };
 
 /// Vectorized version of the sigmoid activation function.
@@ -75,6 +108,7 @@ pub const SIGMOID_VECTOR: Activation = Activation {
     derivative: |x| x * (1.0 - x),
     vector_function: Some(|m| m.map(|x| 1.0 / (1.0 + E.powf(-x)))),
     vector_derivative: Some(|m| m.map(|x| x * (1.0 - x))),
+    activation_type: ActivationType::SigmoidVector,
 };
 
 #[cfg(test)]
@@ -82,6 +116,7 @@ mod tests {
     use super::*;
     use approx::assert_relative_eq;
     use matrix::matrix::IntoMatrix;
+    use serde_json;
 
     #[test]
     fn test_sigmoid_activation() {
@@ -136,5 +171,24 @@ mod tests {
     fn test_matrix_bounds_check() {
         let input = vec![0.0, 1.0].into_matrix(2, 1);
         let _ = input.get(0, 1); // Should panic - accessing column 1 in a 2x1 matrix
+    }
+
+    #[test]
+    fn test_activation_serialization() {
+        // Test serialization
+        let json = serde_json::to_string(&SIGMOID).unwrap();
+        assert_eq!(json, "\"Sigmoid\"");
+
+        let json = serde_json::to_string(&SIGMOID_VECTOR).unwrap();
+        assert_eq!(json, "\"SigmoidVector\"");
+
+        // Test deserialization
+        let activation: Activation = serde_json::from_str("\"Sigmoid\"").unwrap();
+        assert!(activation.vector_function.is_none());
+        assert_relative_eq!((activation.function)(0.0), 0.5, epsilon = 1e-10);
+
+        let activation: Activation = serde_json::from_str("\"SigmoidVector\"").unwrap();
+        assert!(activation.vector_function.is_some());
+        assert_relative_eq!((activation.function)(0.0), 0.5, epsilon = 1e-10);
     }
 }

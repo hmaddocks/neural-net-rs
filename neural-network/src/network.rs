@@ -5,6 +5,7 @@
 /// - Custom activation functions with vector operations support
 /// - Momentum-based learning
 /// - Batch training capabilities
+/// - Model saving and loading
 ///
 /// # Example
 /// ```
@@ -17,12 +18,17 @@
 /// let inputs = vec![vec![0.0, 1.0]];
 /// let targets = vec![vec![1.0]];
 /// network.train(inputs, targets, 1000);
+///
+/// // Save the trained network
+/// network.save("model.json").expect("Failed to save model");
 /// ```
 use crate::activations::Activation;
 use matrix::matrix::Matrix;
+use serde::{Deserialize, Serialize};
+use std::io;
 
 /// A feed-forward neural network with configurable layers and activation functions.
-#[derive(Builder)]
+#[derive(Builder, Serialize, Deserialize)]
 pub struct Network {
     /// Sizes of each layer in the network, including input and output layers
     layers: Vec<usize>,
@@ -207,12 +213,51 @@ impl Network {
             });
         }
     }
+
+    /// Saves the trained network to a JSON file.
+    ///
+    /// # Arguments
+    /// * `path` - Path to save the model file
+    ///
+    /// # Returns
+    /// Result indicating success or containing an IO error
+    ///
+    /// # Example
+    /// ```
+    /// # use neural_network::{network::Network, activations::SIGMOID_VECTOR};
+    /// # let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1);
+    /// network.save("model.json").expect("Failed to save model");
+    /// ```
+    pub fn save(&self, path: &str) -> io::Result<()> {
+        let json = serde_json::to_string_pretty(self)?;
+        std::fs::write(path, json)
+    }
+
+    /// Loads a trained network from a JSON file.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the model file
+    ///
+    /// # Returns
+    /// Result containing the loaded Network or an IO error
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use neural_network::{network::Network, activations::SIGMOID_VECTOR};
+    /// let network = Network::load("model.json").expect("Failed to load model");
+    /// ```
+    pub fn load(path: &str) -> io::Result<Self> {
+        let json = std::fs::read_to_string(path)?;
+        serde_json::from_str(&json).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::activations::SIGMOID_VECTOR;
+    use approx::assert_relative_eq;
+    use tempfile::tempdir;
 
     #[test]
     fn test_network_creation() {
@@ -306,5 +351,42 @@ mod tests {
 
         assert!(output3.data[0] > 0.6); // Should be closer to 1
         assert!(output4.data[0] > 0.6); // Should be closer to 1
+    }
+
+    #[test]
+    fn test_network_serialization() {
+        let dir = tempdir().unwrap();
+        let model_path = dir.path().join("test_model.json");
+
+        // Create and train a simple network
+        let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1);
+        let inputs = vec![vec![0.0, 1.0], vec![1.0, 0.0]];
+        let targets = vec![vec![1.0], vec![0.0]];
+        network.train(inputs, targets, 10);
+
+        // Save the network
+        network.save(model_path.to_str().unwrap()).unwrap();
+
+        // Load the network
+        let mut loaded_network = Network::load(model_path.to_str().unwrap()).unwrap();
+
+        // Verify the loaded network has the same structure
+        assert_eq!(network.layers, loaded_network.layers);
+        assert_eq!(network.weights.len(), loaded_network.weights.len());
+        assert_eq!(network.learning_rate, loaded_network.learning_rate);
+        assert_eq!(network.momentum, loaded_network.momentum);
+
+        // Test that both networks produce the same output
+        let test_input = vec![0.5, 0.5];
+        let original_output = network.feed_forward(Matrix::from(test_input.clone()));
+        let loaded_output = loaded_network.feed_forward(Matrix::from(test_input));
+
+        for i in 0..original_output.data.len() {
+            assert_relative_eq!(
+                original_output.data[i],
+                loaded_output.data[i],
+                epsilon = 1e-10
+            );
+        }
     }
 }
