@@ -12,7 +12,6 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use mnist::mnist::{INPUT_NODES, MnistData, MnistError, OUTPUT_NODES};
 use neural_network::Network;
-use neural_network::SIGMOID;
 use rand::seq::SliceRandom;
 use std::path::Path;
 
@@ -40,7 +39,11 @@ impl Trainer {
         layer_sizes.extend(&config.hidden_layers);
         layer_sizes.push(OUTPUT_NODES);
 
-        let network = Network::new(layer_sizes, SIGMOID, config.learning_rate);
+        let network = Network::new(
+            layer_sizes,
+            config.activation_functions.clone(),
+            config.learning_rate,
+        );
         let history = TrainingHistory::new();
 
         Self {
@@ -237,6 +240,7 @@ fn calculate_loss(predicted: &Matrix, target: &Matrix) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use neural_network::{SIGMOID, SOFTMAX};
 
     #[test]
     fn test_training_config_default() {
@@ -251,7 +255,15 @@ mod tests {
 
     #[test]
     fn test_trainer_initialization() {
-        let config = TrainingConfig::default();
+        let config = TrainingConfig {
+            batch_size: 32,
+            epochs: 10,
+            learning_rate: 0.1,
+            hidden_layers: vec![64, 32],
+            activation_functions: vec![SIGMOID, SIGMOID, SOFTMAX], // Two hidden layers and output
+            early_stopping_patience: 5,
+            early_stopping_min_delta: 0.001,
+        };
         let mut trainer = Trainer::new(config);
 
         // Test the trainer by feeding forward a sample input
@@ -284,6 +296,7 @@ mod tests {
             epochs: 1,
             learning_rate: 0.1,
             hidden_layers: vec![4], // Smaller network for testing
+            activation_functions: vec![SIGMOID, SOFTMAX], // Hidden layer and output layer
             early_stopping_patience: 5,
             early_stopping_min_delta: 0.001,
         };

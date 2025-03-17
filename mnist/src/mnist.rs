@@ -105,7 +105,7 @@ pub(crate) fn create_progress_style(template: &str) -> ProgressStyle {
     ProgressStyle::default_bar()
         .template(template)
         .unwrap()
-        .progress_chars("█▓▒░ ")
+        .progress_chars("##-")
 }
 
 /// Reads a 32-bit unsigned integer in big-endian format from a file

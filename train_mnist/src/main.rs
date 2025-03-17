@@ -1,15 +1,24 @@
-use mnist::mnist::MnistError;
+use mnist::mnist::load_training_data;
+use neural_network::{SIGMOID, SOFTMAX};
 use std::path::Path;
-use training::{Trainer, TrainingConfig};
+use training::prelude::*;
 
-fn main() -> Result<(), MnistError> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Loading MNIST dataset...");
 
     // Load training data
-    let data = mnist::mnist::load_training_data()?;
+    let data = load_training_data()?;
     println!("\nSuccessfully loaded {} training examples", data.len());
 
-    let config = TrainingConfig::default();
+    let config = TrainingConfig {
+        batch_size: 100,
+        epochs: 30,
+        learning_rate: 0.001,
+        hidden_layers: vec![128, 64],
+        activation_functions: vec![SIGMOID, SIGMOID, SOFTMAX], // Two hidden layers and output
+        early_stopping_patience: 5,
+        early_stopping_min_delta: 0.001,
+    };
     let mut trainer = Trainer::new(config);
 
     println!("\nInitializing neural network...");
@@ -28,7 +37,7 @@ fn main() -> Result<(), MnistError> {
 mod tests {
     use super::*;
     use matrix::matrix::Matrix;
-    use mnist::mnist::{INPUT_NODES, MnistData, OUTPUT_NODES};
+    use mnist::mnist::{INPUT_NODES, MnistData, MnistError, OUTPUT_NODES};
 
     #[test]
     fn test_end_to_end() -> Result<(), MnistError> {
@@ -46,6 +55,7 @@ mod tests {
             epochs: 1,
             learning_rate: 0.1,
             hidden_layers: vec![4],
+            activation_functions: vec![SIGMOID, SOFTMAX], // One hidden layer and output
             early_stopping_patience: 5,
             early_stopping_min_delta: 0.001,
         };

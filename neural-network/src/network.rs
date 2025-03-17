@@ -18,7 +18,7 @@ use std::path::Path;
 /// use matrix::matrix::Matrix;
 ///
 /// // Create a network with 2 inputs, 3 hidden neurons, and 1 output
-/// let mut network = Network::new(vec![2, 3, 1], SIGMOID, 0.1);
+/// let mut network = Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1);
 ///
 /// // Train the network
 /// let inputs = vec![vec![0.0, 0.0], vec![0.0, 1.0], vec![1.0, 0.0], vec![1.0, 1.0]];
@@ -40,32 +40,39 @@ pub struct Network {
     /// Cached activations for each layer during forward propagation
     #[serde(skip)]
     data: Vec<Matrix>,
-    /// The activation function used by the network
-    activation: Activation,
+    /// The activation functions used by each layer (except input layer)
+    activations: Vec<Activation>,
     /// The learning rate used during training
     learning_rate: f64,
 }
 
 impl Network {
-    /// Creates a new neural network with the specified layer sizes, activation function, and learning rate.
+    /// Creates a new neural network with the specified layer sizes, activation functions, and learning rate.
     ///
     /// # Parameters
     ///
     /// * `layers` - A vector of layer sizes, where the first element is the number of inputs,
     ///              the last element is the number of outputs, and any elements in between
     ///              represent hidden layers.
-    /// * `activation` - The activation function to use for all neurons in the network.
+    /// * `activations` - A vector of activation functions to use for each layer (except input layer).
+    ///                   Must have length equal to layers.len() - 1.
     /// * `learning_rate` - The learning rate to use during training (typically a small value like 0.1).
     ///
     /// # Examples
     ///
     /// ```
-    /// use neural_network::{Network, SIGMOID};
+    /// use neural_network::{Network, SIGMOID, SOFTMAX};
     ///
-    /// // Create a network for XOR problem: 2 inputs, 2 hidden neurons, 1 output
-    /// let network = Network::new(vec![2, 2, 1], SIGMOID, 0.1);
+    /// // Create a network with sigmoid for hidden layer and softmax for output
+    /// let network = Network::new(vec![2, 2, 1], vec![SIGMOID, SOFTMAX], 0.1);
     /// ```
-    pub fn new(layers: Vec<usize>, activation: Activation, learning_rate: f64) -> Self {
+    pub fn new(layers: Vec<usize>, activations: Vec<Activation>, learning_rate: f64) -> Self {
+        assert_eq!(
+            activations.len(),
+            layers.len() - 1,
+            "Number of activation functions must match number of layers minus 1"
+        );
+
         let (weights, biases): (Vec<Matrix>, Vec<Matrix>) = layers
             .windows(2)
             .map(|window| {
@@ -85,7 +92,7 @@ impl Network {
             weights,
             biases,
             data,
-            activation,
+            activations,
             learning_rate,
         }
     }
@@ -111,10 +118,10 @@ impl Network {
     /// # Examples
     ///
     /// ```
-    /// use neural_network::{Network, SIGMOID};
+    /// use neural_network::{Network, SIGMOID, SOFTMAX};
     /// use matrix::matrix::Matrix;
     ///
-    /// let mut network = Network::new(vec![2, 3, 1], SIGMOID, 0.1);
+    /// let mut network = Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1);
     /// let input = Matrix::from(vec![0.5, 0.8]);
     /// let output = network.feed_forward(&input).unwrap();
     /// ```
@@ -136,7 +143,7 @@ impl Network {
             current = {
                 let weighted = self.weights[i].dot_multiply(&current);
                 let biased = weighted.add(&self.biases[i]);
-                let activated = biased.map(self.activation.function);
+                let activated = Matrix::from(self.activations[i].apply_vector(biased.data()));
                 self.data[i + 1] = activated.clone();
                 activated
             };
@@ -164,10 +171,10 @@ impl Network {
     /// # Examples
     ///
     /// ```
-    /// use neural_network::{Network, SIGMOID};
+    /// use neural_network::{Network, SIGMOID, SOFTMAX};
     /// use matrix::matrix::Matrix;
     ///
-    /// let mut network = Network::new(vec![2, 3, 1], SIGMOID, 0.1);
+    /// let mut network = Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1);
     /// let input = Matrix::from(vec![0.5, 0.8]);
     /// let target = Matrix::from(vec![1.0]);
     ///
@@ -176,13 +183,23 @@ impl Network {
     /// ```
     pub fn back_propogate(&mut self, outputs: Matrix, targets: &Matrix) {
         let mut errors = targets.subtract(&outputs);
-        let mut gradients = outputs.map(self.activation.derivative);
 
+        // For each layer, starting from the output layer
         for i in (0..self.layers.len() - 1).rev() {
-            // Calculate gradients
-            gradients = gradients
-                .elementwise_multiply(&errors)
-                .map(|x| x * self.learning_rate);
+            // Calculate gradients for each node in the current layer
+            let mut all_gradients = vec![0.0; self.layers[i + 1]];
+
+            // For each node in the current layer
+            for j in 0..self.layers[i + 1] {
+                // Get the derivative vector for this node
+                let node_derivatives =
+                    self.activations[i].derivative_vector(self.data[i + 1].data(), j);
+
+                // Update the gradient for this node using the error
+                all_gradients[j] = node_derivatives[j] * errors.data()[j] * self.learning_rate;
+            }
+
+            let gradients = Matrix::from(all_gradients);
 
             // Update weights and biases
             let weight_deltas = gradients.dot_multiply(&self.data[i].transpose());
@@ -190,8 +207,9 @@ impl Network {
             self.biases[i] = self.biases[i].add(&gradients);
 
             // Prepare for next layer
-            errors = self.weights[i].transpose().dot_multiply(&errors);
-            gradients = self.data[i].map(self.activation.derivative);
+            if i > 0 {
+                errors = self.weights[i].transpose().dot_multiply(&errors);
+            }
         }
     }
 
@@ -222,7 +240,7 @@ impl Network {
     /// use neural_network::{Network, SIGMOID};
     ///
     /// // Create a network for XOR problem
-    /// let mut network = Network::new(vec![2, 2, 1], SIGMOID, 0.1);
+    /// let mut network = Network::new(vec![2, 2, 1], vec![SIGMOID, SIGMOID], 0.1);
     ///
     /// // XOR training data
     /// let inputs = vec![
@@ -293,7 +311,7 @@ impl Network {
     /// ```no_run
     /// use neural_network::{Network, SIGMOID};
     ///
-    /// let network = Network::new(vec![2, 3, 1], SIGMOID, 0.1);
+    /// let network = Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1);
     /// network.save("my_network.json").unwrap();
     /// ```
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
@@ -344,7 +362,7 @@ mod tests {
 
     /// Helper function to create a simple network for testing
     fn create_test_network() -> Network {
-        Network::new(vec![2, 3, 1], SIGMOID, 0.1)
+        Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1)
     }
 
     /// Helper function to create XOR training data
@@ -440,7 +458,7 @@ mod tests {
 
     #[test]
     fn test_train_xor() -> Result<()> {
-        let mut network = Network::new(vec![2, 4, 1], SIGMOID, 0.5);
+        let mut network = Network::new(vec![2, 4, 1], vec![SIGMOID, SIGMOID], 0.5);
         let (inputs, targets) = create_xor_data();
 
         // Train for a small number of epochs for testing
@@ -527,6 +545,78 @@ mod tests {
         for _ in 0..5 {
             let output = network.feed_forward(&input)?;
             assert_eq!(output.data(), first_output.data());
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_softmax_output() -> Result<()> {
+        // Create a network with softmax output
+        let mut network = Network::new(vec![2, 3], vec![crate::activations::SOFTMAX], 0.1);
+
+        // Test input
+        let input = Matrix::from(vec![0.5, -0.2]);
+        let output = network.feed_forward(&input)?;
+
+        // Verify output sums to 1.0 (softmax property)
+        let sum: f64 = output.data().iter().sum();
+        assert!((sum - 1.0).abs() < 1e-6, "Softmax output should sum to 1.0");
+
+        // Verify all outputs are between 0 and 1
+        for &val in output.data() {
+            assert!(
+                val >= 0.0 && val <= 1.0,
+                "Softmax outputs should be probabilities"
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_multi_class_training() -> Result<()> {
+        // Create a network for 3-class classification
+        let mut network = Network::new(
+            vec![2, 4, 3], // 2 inputs, 4 hidden, 3 outputs
+            vec![SIGMOID, crate::activations::SOFTMAX],
+            0.1,
+        );
+
+        // Simple training data: three points in 2D space
+        let test_inputs = vec![
+            vec![0.0, 0.0], // Class 0
+            vec![1.0, 0.0], // Class 1
+            vec![0.0, 1.0], // Class 2
+        ];
+
+        let targets = vec![
+            vec![1.0, 0.0, 0.0], // One-hot encoding for class 0
+            vec![0.0, 1.0, 0.0], // One-hot encoding for class 1
+            vec![0.0, 0.0, 1.0], // One-hot encoding for class 2
+        ];
+
+        // Train for a few epochs
+        network.train(test_inputs.clone(), targets, 1000)?;
+
+        // Test predictions
+        for (i, input) in test_inputs.iter().enumerate() {
+            let output = network.feed_forward(&Matrix::from(input.clone()))?;
+
+            // Verify output is valid probability distribution
+            let sum: f64 = output.data().iter().sum();
+            assert!((sum - 1.0).abs() < 1e-6, "Output should sum to 1.0");
+
+            // Verify highest probability matches target class
+            let pred_class = output
+                .data()
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                .map(|(idx, _)| idx)
+                .unwrap();
+
+            assert_eq!(pred_class, i, "Should predict correct class after training");
         }
 
         Ok(())
