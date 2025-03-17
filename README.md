@@ -2,8 +2,8 @@
 
 neural-net-rs is a Rust-based neural network framework designed for educational purposes. This project aims to provide a simple yet informative implementation of neural networks in the Rust programming language.
 
-
 [![Neural Net Rust](https://img.youtube.com/vi/DKbz9pNXVdE/0.jpg)](https://www.youtube.com/watch?v=DKbz9pNXVdE)
+
 ## Features
 
 - **Educational Focus:** neural-net-rs is created with the primary goal of helping users understand the fundamentals of neural networks in Rust.
@@ -13,6 +13,7 @@ neural-net-rs is a Rust-based neural network framework designed for educational 
 ## Getting Started
 
 ### Prerequisites
+
 [Install Rust](https://www.rust-lang.org/learn/get-started)
 
 ### Installation
