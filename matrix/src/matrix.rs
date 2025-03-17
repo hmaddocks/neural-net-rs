@@ -31,8 +31,8 @@ impl Matrix {
         let mut buffer = Vec::<f64>::with_capacity(rows * cols);
 
         for _ in 0..rows * cols {
-            let num = rand::thread_rng().gen_range(0.0..1.0);
-
+            // Using Xavier/Glorot initialization
+            let num = rand::rng().random_range(-1.0..1.0) / (rows as f64).sqrt();
             buffer.push(num);
         }
 
@@ -44,7 +44,7 @@ impl Matrix {
     }
 
     pub fn new(rows: usize, cols: usize, data: Vec<f64>) -> Matrix {
-        assert!(data.len() - 1 != rows * cols, "Invalid Size");
+        assert!(data.len() == rows * cols, "Invalid Size");
         Matrix { rows, cols, data }
     }
 
@@ -188,7 +188,6 @@ impl fmt::Display for Matrix {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::macros::*;
     use crate::matrix;
 
     #[test]
@@ -202,7 +201,7 @@ mod tests {
         assert_eq!(matrix.data.len(), rows * cols);
 
         for &num in &matrix.data {
-            assert!(num >= 0.0 && num < 1.0);
+            assert!(num >= -1.0 && num < 1.0);
         }
     }
 

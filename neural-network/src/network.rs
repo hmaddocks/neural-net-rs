@@ -10,17 +10,23 @@ pub struct Network {
     data: Vec<Matrix>,
     activation: Activation,
     learning_rate: f64,
+    momentum: f64,
+    prev_weight_updates: Vec<Matrix>,
+    prev_bias_updates: Vec<Matrix>,
 }
 
 impl Network {
     pub fn new(layers: Vec<usize>, activation: Activation, learning_rate: f64) -> Self {
         let mut weights = vec![];
-
         let mut biases = vec![];
+        let mut prev_weight_updates = vec![];
+        let mut prev_bias_updates = vec![];
 
         for i in 0..layers.len() - 1 {
             weights.push(Matrix::random(layers[i + 1], layers[i]));
             biases.push(Matrix::random(layers[i + 1], 1));
+            prev_weight_updates.push(Matrix::zeros(layers[i + 1], layers[i]));
+            prev_bias_updates.push(Matrix::zeros(layers[i + 1], 1));
         }
 
         Network {
@@ -30,6 +36,9 @@ impl Network {
             data: vec![],
             activation,
             learning_rate,
+            momentum: 0.9,
+            prev_weight_updates,
+            prev_bias_updates,
         }
     }
 
@@ -55,20 +64,26 @@ impl Network {
         current
     }
 
-    pub fn back_propogate(&mut self, inputs: Matrix, targets: Matrix) {
-        let mut errors = targets.subtract(&inputs);
+    pub fn back_propogate(&mut self, outputs: Matrix, targets: Matrix) {
+        let mut errors = targets.subtract(&outputs);
 
-        let mut gradients = inputs.clone().map(self.activation.derivative);
+        let mut gradients = outputs.clone().map(self.activation.derivative);
 
         for i in (0..self.layers.len() - 1).rev() {
             gradients = gradients
                 .elementwise_multiply(&errors)
-                .map(|x| x * self.learning_rate); // learning rate
+                .map(|x| x * self.learning_rate);
 
-            self.weights[i] =
-                self.weights[i].add(&gradients.dot_multiply(&self.data[i].transpose()));
+            let weight_updates = gradients.dot_multiply(&self.data[i].transpose());
+            let bias_updates = gradients.clone();
 
-            self.biases[i] = self.biases[i].add(&gradients);
+            // Apply momentum
+            self.weights[i] = self.weights[i].add(&weight_updates.add(&self.prev_weight_updates[i].map(|x| x * self.momentum)));
+            self.biases[i] = self.biases[i].add(&bias_updates.add(&self.prev_bias_updates[i].map(|x| x * self.momentum)));
+
+            // Store updates for next iteration
+            self.prev_weight_updates[i] = weight_updates;
+            self.prev_bias_updates[i] = bias_updates;
 
             errors = self.weights[i].transpose().dot_multiply(&errors);
             gradients = self.data[i].map(self.activation.derivative);
@@ -149,8 +164,8 @@ mod tests {
 
     #[test]
     fn test_training() {
-        let layers = vec![2, 4, 1]; // Added more hidden neurons
-        let mut network = Network::new(layers, SIGMOID, 0.1); // Reduced learning rate
+        let layers = vec![2, 8, 8, 1]; // Two hidden layers with 8 neurons each
+        let mut network = Network::new(layers, SIGMOID, 0.5); // Increased learning rate
 
         let inputs = vec![
             vec![0.0, 0.0],
@@ -162,7 +177,7 @@ mod tests {
         let targets = vec![vec![0.0], vec![1.0], vec![1.0], vec![0.0]];
 
         // Train for more epochs
-        network.train(inputs.clone(), targets.clone(), 1000);
+        network.train(inputs.clone(), targets.clone(), 5000);
 
         // Test that network can learn XOR pattern
         let input1 = Matrix::new(2, 1, vec![0.0, 0.0]);
