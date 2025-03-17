@@ -34,6 +34,7 @@ name = "consumer_binary"
 version = "0.1.0"
 dependencies = [
  "neural-network",
+ "serde_json",
 ]
 
 [[package]]
