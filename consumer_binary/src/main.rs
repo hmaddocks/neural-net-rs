@@ -1,9 +1,8 @@
 use neural_network::activations::SIGMOID;
 use neural_network::matrix::Matrix;
 use neural_network::network::Network;
-use std::env;
+
 fn main() {
-    env::set_var("RUST_BACKTRACE", "1");
     let inputs = vec![
         vec![0.0, 0.0],
         vec![0.0, 1.0],
