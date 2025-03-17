@@ -1,54 +1,53 @@
 use rand::Rng;
 use std::fmt;
+use std::ops::{Add, Sub};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Matrix {
     pub rows: usize,
     pub cols: usize,
     pub data: Vec<f64>,
 }
 
-// access through  i* numofcols + j
 impl Matrix {
     pub fn elementwise_multiply(&self, other: &Matrix) -> Matrix {
-        if self.rows != other.rows || self.cols != other.cols {
-            panic!("Attempted to multiply by matrix of incorrect dimensions");
-        }
-
-        let mut result_data = vec![0.0; self.cols * self.rows];
-        for i in 0..self.data.len() {
-            // double check this
-            result_data[i] = self.data[i] * other.data[i]
-        }
+        assert_eq!(
+            (self.rows, self.cols),
+            (other.rows, other.cols),
+            "Matrix dimensions must match for elementwise multiplication"
+        );
 
         Matrix {
             rows: self.rows,
             cols: self.cols,
-            data: result_data,
+            data: self
+                .data
+                .iter()
+                .zip(other.data.iter())
+                .map(|(&a, &b)| a * b)
+                .collect(),
         }
     }
-    pub fn random(rows: usize, cols: usize) -> Matrix {
-        let mut buffer = Vec::<f64>::with_capacity(rows * cols);
 
-        for _ in 0..rows * cols {
-            // Using Xavier/Glorot initialization
-            let num = rand::rng().random_range(-1.0..1.0) / (rows as f64).sqrt();
-            buffer.push(num);
-        }
+    pub fn random(rows: usize, cols: usize) -> Self {
+        let mut rng = rand::rng();
+        let scale = 1.0 / (rows as f64).sqrt(); // Xavier/Glorot initialization
 
         Matrix {
             rows,
             cols,
-            data: buffer,
+            data: (0..rows * cols)
+                .map(|_| rng.random_range(-scale..scale))
+                .collect(),
         }
     }
 
-    pub fn new(rows: usize, cols: usize, data: Vec<f64>) -> Matrix {
-        assert!(data.len() == rows * cols, "Invalid Size");
+    pub fn new(rows: usize, cols: usize, data: Vec<f64>) -> Self {
+        assert_eq!(data.len(), rows * cols, "Invalid matrix dimensions");
         Matrix { rows, cols, data }
     }
 
-    pub fn zeros(rows: usize, cols: usize) -> Matrix {
+    pub fn zeros(rows: usize, cols: usize) -> Self {
         Matrix {
             rows,
             cols,
@@ -56,130 +55,143 @@ impl Matrix {
         }
     }
 
-    pub fn add(&self, other: &Matrix) -> Matrix {
-        if self.rows != other.rows || self.cols != other.cols {
-            panic!("Attempted to add matrix of incorrect dimensions");
-        }
-
-        let mut buffer = Vec::<f64>::with_capacity(self.rows * self.cols);
-
-        for i in 0..self.data.len() {
-            let result = self.data[i] + other.data[i];
-
-            buffer.push(result);
-        }
-
-        Matrix {
-            rows: self.rows,
-            cols: self.cols,
-            data: buffer,
-        }
-    }
-
-    pub fn subtract(&self, other: &Matrix) -> Matrix {
-        assert!(
-            self.rows == other.rows && self.cols == other.cols,
-            "Cannot subtract matrices with different dimensions"
+    pub fn dot_multiply(&self, other: &Matrix) -> Matrix {
+        assert_eq!(
+            self.cols, other.rows,
+            "Invalid dimensions for matrix multiplication"
         );
 
-        let mut buffer = Vec::<f64>::with_capacity(self.rows * self.cols);
-
-        for i in 0..self.data.len() {
-            let result = self.data[i] - other.data[i];
-
-            buffer.push(result);
-        }
-
-        Matrix {
-            rows: self.rows,
-            cols: self.cols,
-            data: buffer,
-        }
-    }
-
-    pub fn dot_multiply(&self, other: &Matrix) -> Matrix {
-        if self.cols != other.rows {
-            panic!("Attempted to multiply by matrix of incorrect dimensions");
-        }
-
-        let mut result_data = vec![0.0; self.rows * other.cols];
+        let mut result = vec![0.0; self.rows * other.cols];
 
         for i in 0..self.rows {
             for j in 0..other.cols {
-                let mut sum = 0.0;
-                for k in 0..self.cols {
-                    sum += self.data[i * self.cols + k] * other.data[k * other.cols + j];
-                }
-                result_data[i * other.cols + j] = sum;
+                result[i * other.cols + j] = (0..self.cols)
+                    .map(|k| self.data[i * self.cols + k] * other.data[k * other.cols + j])
+                    .sum();
             }
         }
 
         Matrix {
             rows: self.rows,
             cols: other.cols,
-            data: result_data,
+            data: result,
         }
     }
 
-    pub fn transpose(&self) -> Matrix {
-        let mut buffer = vec![0.0; self.cols * self.rows];
-
+    pub fn transpose(&self) -> Self {
+        let mut result = vec![0.0; self.cols * self.rows];
         for i in 0..self.rows {
             for j in 0..self.cols {
-                buffer[j * self.rows + i] = self.data[i * self.cols + j];
+                result[j * self.rows + i] = self.data[i * self.cols + j];
             }
         }
 
         Matrix {
             rows: self.cols,
             cols: self.rows,
-            data: buffer,
+            data: result,
         }
     }
 
-    pub fn map<F>(&mut self, func: F) -> Matrix
+    pub fn map<F>(&self, func: F) -> Self
     where
-        F: Fn(&f64) -> f64,
+        F: Fn(f64) -> f64,
     {
-        let mut result = Matrix {
+        Matrix {
             rows: self.rows,
             cols: self.cols,
-            data: Vec::with_capacity(self.data.len()),
-        };
+            data: self.data.iter().map(|&x| func(x)).collect(),
+        }
+    }
 
-        result.data.extend(self.data.iter().map(|val| func(val)));
+    pub fn get(&self, row: usize, col: usize) -> Option<f64> {
+        if row < self.rows && col < self.cols {
+            Some(self.data[row * self.cols + col])
+        } else {
+            None
+        }
+    }
 
-        result
+    // For backward compatibility with tests
+    pub fn subtract(&self, other: &Matrix) -> Matrix {
+        self - other
+    }
+
+    pub fn add(&self, other: &Matrix) -> Matrix {
+        self + other
     }
 }
+
+impl Add for &Matrix {
+    type Output = Matrix;
+
+    fn add(self, other: &Matrix) -> Matrix {
+        assert_eq!(
+            (self.rows, self.cols),
+            (other.rows, other.cols),
+            "Matrix dimensions must match for addition"
+        );
+
+        Matrix {
+            rows: self.rows,
+            cols: self.cols,
+            data: self
+                .data
+                .iter()
+                .zip(other.data.iter())
+                .map(|(&a, &b)| a + b)
+                .collect(),
+        }
+    }
+}
+
+impl Sub for &Matrix {
+    type Output = Matrix;
+
+    fn sub(self, other: &Matrix) -> Matrix {
+        assert_eq!(
+            (self.rows, self.cols),
+            (other.rows, other.cols),
+            "Cannot subtract matrices with different dimensions"
+        );
+
+        Matrix {
+            rows: self.rows,
+            cols: self.cols,
+            data: self
+                .data
+                .iter()
+                .zip(other.data.iter())
+                .map(|(&a, &b)| a - b)
+                .collect(),
+        }
+    }
+}
+
 impl From<Vec<f64>> for Matrix {
     fn from(vec: Vec<f64>) -> Self {
         let rows = vec.len();
-        let cols = 1;
         Matrix {
             rows,
-            cols,
+            cols: 1,
             data: vec,
         }
-    }
-}
-
-impl PartialEq for Matrix {
-    fn eq(&self, other: &Self) -> bool {
-        self.rows == other.rows && self.cols == other.cols && self.data == other.data
     }
 }
 
 impl fmt::Display for Matrix {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for row in 0..self.rows {
-            for col in 0..self.cols {
-                write!(f, "{}", self.data[row * self.cols + col])?;
-                if col < self.cols - 1 {
-                    write!(f, "\t")?; // Separate columns with a tab
-                }
-            }
-            writeln!(f)?; // Move to the next line after each row
+            let row_slice = &self.data[row * self.cols..(row + 1) * self.cols];
+            writeln!(
+                f,
+                "{}",
+                row_slice
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\t")
+            )?;
         }
         Ok(())
     }
@@ -358,45 +370,29 @@ mod tests {
 
     #[test]
     fn test_map_add_one() {
-        let mut matrix = Matrix {
-            rows: 2,
-            cols: 2,
-            data: vec![1.0, 2.0, 3.0, 4.0],
-        };
+        let matrix = Matrix::new(2, 2, vec![1.0, 2.0, 3.0, 4.0]);
 
         let transformed = matrix.map(|x| x + 1.0);
 
-        let expected = Matrix {
-            rows: 2,
-            cols: 2,
-            data: vec![2.0, 3.0, 4.0, 5.0],
-        };
+        let expected = Matrix::new(2, 2, vec![2.0, 3.0, 4.0, 5.0]);
 
         assert_eq!(transformed, expected);
     }
 
     #[test]
     fn test_map_square() {
-        let mut matrix = Matrix {
-            rows: 2,
-            cols: 2,
-            data: vec![1.0, 2.0, 3.0, 4.0],
-        };
+        let matrix = Matrix::new(2, 2, vec![1.0, 2.0, 3.0, 4.0]);
 
         let transformed = matrix.map(|x| x * x);
 
-        let expected = Matrix {
-            rows: 2,
-            cols: 2,
-            data: vec![1.0, 4.0, 9.0, 16.0],
-        };
+        let expected = Matrix::new(2, 2, vec![1.0, 4.0, 9.0, 16.0]);
 
         assert_eq!(transformed, expected);
     }
 
     #[test]
     fn test_map_with_closure() {
-        let mut m = matrix![
+        let m = matrix![
             1.0, 2.0;
             3.0, 4.0
         ];
@@ -414,7 +410,7 @@ mod tests {
 
     #[test]
     fn test_map_with_capturing_closure() {
-        let mut m = matrix![
+        let m = matrix![
             1.0, 2.0;
             3.0, 4.0
         ];
@@ -432,12 +428,12 @@ mod tests {
 
     #[test]
     fn test_map_with_function() {
-        let mut m = matrix![
+        let m = matrix![
             -1.0, -2.0;
             3.0, -4.0
         ];
 
-        fn abs(x: &f64) -> f64 {
+        fn abs(x: f64) -> f64 {
             x.abs()
         }
 
@@ -453,7 +449,7 @@ mod tests {
 
     #[test]
     fn test_map_chaining() {
-        let mut m = matrix![
+        let m = matrix![
             1.0, 2.0;
             3.0, 4.0
         ];

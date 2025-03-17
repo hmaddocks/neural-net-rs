@@ -1,6 +1,5 @@
-use matrix::matrix::Matrix;
-
 use crate::activations::Activation;
+use matrix::matrix::Matrix;
 
 #[derive(Builder)]
 pub struct Network {
@@ -67,7 +66,7 @@ impl Network {
     pub fn back_propogate(&mut self, outputs: Matrix, targets: Matrix) {
         let mut errors = targets.subtract(&outputs);
 
-        let mut gradients = outputs.clone().map(self.activation.derivative);
+        let mut gradients = outputs.map(self.activation.derivative);
 
         for i in (0..self.layers.len() - 1).rev() {
             gradients = gradients
@@ -78,8 +77,10 @@ impl Network {
             let bias_updates = gradients.clone();
 
             // Apply momentum
-            self.weights[i] = self.weights[i].add(&weight_updates.add(&self.prev_weight_updates[i].map(|x| x * self.momentum)));
-            self.biases[i] = self.biases[i].add(&bias_updates.add(&self.prev_bias_updates[i].map(|x| x * self.momentum)));
+            self.weights[i] = self.weights[i]
+                .add(&weight_updates.add(&self.prev_weight_updates[i].map(|x| x * self.momentum)));
+            self.biases[i] = self.biases[i]
+                .add(&bias_updates.add(&self.prev_bias_updates[i].map(|x| x * self.momentum)));
 
             // Store updates for next iteration
             self.prev_weight_updates[i] = weight_updates;
