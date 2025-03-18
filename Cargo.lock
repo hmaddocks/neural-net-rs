@@ -219,6 +219,8 @@ dependencies = [
 name = "consumer_binary"
 version = "0.1.0"
 dependencies = [
+ "image",
+ "indicatif",
  "matrix",
  "mnist",
  "neural-network",
