@@ -9,7 +9,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mnist_data: MnistData = load_training_data()?;
 
     println!("Creating network...");
-    let mut network = Network::new(vec![784, 128, 10], SIGMOID, 0.1);
+    // Initialize network with lower learning rate and momentum
+    let mut network = Network::new(vec![784, 128, 10], SIGMOID, 0.01, Some(0.5));
 
     println!("Training network...");
     let inputs: Vec<Vec<f64>> = mnist_data.images().iter().map(|m| m.data.clone()).collect();

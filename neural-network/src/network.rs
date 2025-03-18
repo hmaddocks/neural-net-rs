@@ -14,7 +14,7 @@
 ///
 /// let dir = tempdir().unwrap();
 /// let model_path = dir.path().join("model.json");
-/// let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1);
+/// let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1, Some(0.8));
 /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
 /// ```
 use crate::activations::Activation;
@@ -48,10 +48,16 @@ impl Network {
     /// * `layers` - Vector of layer sizes, including input and output layers
     /// * `activation` - Activation function to use throughout the network
     /// * `learning_rate` - Learning rate for weight updates during training
+    /// * `momentum` - Momentum coefficient for weight updates (default: 0.9)
     ///
     /// # Returns
     /// A new `Network` instance with randomly initialized weights
-    pub fn new(layers: Vec<usize>, activation: Activation, learning_rate: f64) -> Self {
+    pub fn new(
+        layers: Vec<usize>,
+        activation: Activation,
+        learning_rate: f64,
+        momentum: Option<f64>,
+    ) -> Self {
         let layer_pairs: Vec<_> = layers.windows(2).collect();
 
         let weights = layer_pairs
@@ -76,7 +82,7 @@ impl Network {
             data: Vec::new(),
             activation,
             learning_rate,
-            momentum: 0.9,
+            momentum: momentum.unwrap_or(0.9),
             prev_weight_updates,
         }
     }
@@ -145,6 +151,32 @@ impl Network {
         result
     }
 
+    /// Performs prediction without storing intermediate outputs.
+    /// This is more efficient for inference-only use cases.
+    ///
+    /// # Arguments
+    /// * `inputs` - Input matrix to process
+    ///
+    /// # Returns
+    /// The network's output matrix
+    ///
+    /// # Panics
+    /// Panics if the number of inputs doesn't match the first layer size
+    pub fn predict(&self, inputs: Matrix) -> Matrix {
+        assert!(
+            self.layers[0] == inputs.data.len(),
+            "Invalid number of inputs. Expected {}, got {}",
+            self.layers[0],
+            inputs.data.len()
+        );
+
+        // Process through layers functionally without storing intermediates
+        self.weights.iter().fold(inputs, |current, weight| {
+            let with_bias = Self::augment_with_bias(current);
+            Self::process_layer(weight, &with_bias, &self.activation)
+        })
+    }
+
     /// Performs backpropagation to update network weights.
     ///
     /// # Arguments
@@ -159,17 +191,21 @@ impl Network {
         };
 
         for i in (0..self.layers.len() - 1).rev() {
-            gradients = gradients
-                .elementwise_multiply(&errors)
-                .map(|x| x * self.learning_rate);
+            gradients = gradients.elementwise_multiply(&errors).map(|x| {
+                let gradient = x * self.learning_rate;
+                // Clip gradients to prevent explosion
+                gradient.max(-5.0).min(5.0)
+            });
 
             let layer_input = Self::augment_with_bias(self.data[i].clone());
             let weight_updates = gradients.dot_multiply(&layer_input.transpose());
 
-            // Apply momentum using functional update
-            self.weights[i] = self.weights[i]
-                .add(&weight_updates.add(&self.prev_weight_updates[i].map(|x| x * self.momentum)));
+            // Apply momentum using functional update with gradient clipping
+            let momentum_term = self.prev_weight_updates[i].map(|x| x * self.momentum);
+            let updates = weight_updates.add(&momentum_term);
 
+            // Update weights with clipping
+            self.weights[i] = self.weights[i].add(&updates.map(|x| x.max(-5.0).min(5.0)));
             self.prev_weight_updates[i] = weight_updates;
 
             if i > 0 {
@@ -198,14 +234,70 @@ impl Network {
     /// * `epochs` - Number of training epochs
     pub fn train(&mut self, inputs: Vec<Vec<f64>>, targets: Vec<Vec<f64>>, epochs: u32) {
         for epoch in 1..=epochs {
-            if epochs < 100 || epoch % (epochs / 100) == 0 {
-                println!("Epoch {} of {}", epoch, epochs);
-            }
+            let mut total_error = 0.0;
+            let mut correct_predictions = 0;
+            let total_samples = inputs.len();
 
             inputs.iter().zip(&targets).for_each(|(input, target)| {
                 let outputs = self.feed_forward(Matrix::from(input.clone()));
+                let error = Matrix::from(target.clone()).subtract(&outputs);
+                total_error += error.data.iter().map(|x| x * x).sum::<f64>();
+
+                // Calculate accuracy - handle single output case differently
+                if outputs.data.len() == 1 {
+                    // Binary classification - compare with threshold
+                    let predicted = outputs.data[0] >= 0.5;
+                    let actual = target[0] >= 0.5;
+                    if predicted == actual {
+                        correct_predictions += 1;
+                    }
+                } else {
+                    // Multi-class classification
+                    let predicted = outputs
+                        .data
+                        .iter()
+                        .enumerate()
+                        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                        .map(|(idx, _)| idx)
+                        .unwrap();
+                    let actual = target
+                        .iter()
+                        .enumerate()
+                        .position(|(_, &val)| val >= 0.5)
+                        .unwrap_or(0);
+                    if predicted == actual {
+                        correct_predictions += 1;
+                    }
+                }
+
                 self.back_propagate(outputs, Matrix::from(target.clone()));
             });
+
+            let avg_error = total_error / total_samples as f64;
+            let accuracy = (correct_predictions as f64 / total_samples as f64) * 100.0;
+            println!(
+                "Epoch {}: Average Error = {:.6}, Accuracy = {:.2}%",
+                epoch, avg_error, accuracy
+            );
+
+            // Early stopping if error is very small
+            if avg_error < 1e-6 {
+                println!("Reached target error. Stopping training.");
+                break;
+            }
+
+            // Check for NaN or inf values in weights
+            if self
+                .weights
+                .iter()
+                .any(|w| w.data.iter().any(|&x| x.is_nan() || x.is_infinite()))
+            {
+                println!(
+                    "Warning: Detected NaN or infinite values in weights at epoch {}!",
+                    epoch
+                );
+                break;
+            }
         }
     }
 
@@ -224,7 +316,7 @@ impl Network {
     ///
     /// let dir = tempdir().unwrap();
     /// let model_path = dir.path().join("model.json");
-    /// let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1);
+    /// let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1, Some(0.8));
     /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
     /// ```
     pub fn save(&self, path: &str) -> io::Result<()> {
@@ -264,7 +356,7 @@ mod tests {
     #[test]
     fn test_network_creation() {
         let layers = vec![3, 4, 2];
-        let network = Network::new(layers.clone(), SIGMOID_VECTOR, 0.5);
+        let network = Network::new(layers.clone(), SIGMOID_VECTOR, 0.5, Some(0.7));
 
         assert_eq!(network.layers, layers);
         assert_eq!(network.weights.len(), 2);
@@ -273,12 +365,13 @@ mod tests {
         assert_eq!(network.weights[1].rows, 2);
         assert_eq!(network.weights[1].cols, 5); // 4 inputs + 1 bias
         assert_eq!(network.learning_rate, 0.5);
+        assert_eq!(network.momentum, 0.7);
     }
 
     #[test]
     fn test_feed_forward() {
         let layers = vec![2, 3, 1];
-        let mut network = Network::new(layers, SIGMOID_VECTOR, 0.5);
+        let mut network = Network::new(layers, SIGMOID_VECTOR, 0.5, Some(0.8));
 
         // First layer: 3 outputs, 3 inputs (2 inputs + 1 bias)
         network.weights[0] = Matrix::new(
@@ -311,7 +404,7 @@ mod tests {
     #[should_panic(expected = "Invalid number of inputs")]
     fn test_feed_forward_invalid_inputs() {
         let layers = vec![2, 3, 1];
-        let mut network = Network::new(layers, SIGMOID_VECTOR, 0.5);
+        let mut network = Network::new(layers, SIGMOID_VECTOR, 0.5, Some(0.8));
 
         // Wrong number of inputs (3 instead of 2)
         let input = Matrix::new(3, 1, vec![0.5, 0.8, 0.3]);
@@ -319,9 +412,42 @@ mod tests {
     }
 
     #[test]
+    fn test_predict() {
+        let layers = vec![2, 3, 1];
+        let mut network = Network::new(layers, SIGMOID_VECTOR, 0.5, Some(0.8));
+
+        // First layer: 3 outputs, 3 inputs (2 inputs + 1 bias)
+        network.weights[0] = Matrix::new(3, 3, vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]);
+
+        // Second layer: 1 output, 4 inputs (3 inputs + 1 bias)
+        network.weights[1] = Matrix::new(1, 4, vec![0.1, 0.2, 0.3, 0.4]);
+
+        let input = Matrix::new(2, 1, vec![0.5, 0.8]);
+
+        // Compare feed_forward and predict outputs
+        let output_ff = network.feed_forward(input.clone());
+        let output_predict = network.predict(input);
+
+        assert_eq!(output_ff.data, output_predict.data);
+        assert_eq!(output_ff.rows, output_predict.rows);
+        assert_eq!(output_ff.cols, output_predict.cols);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid number of inputs")]
+    fn test_predict_invalid_inputs() {
+        let layers = vec![2, 3, 1];
+        let network = Network::new(layers, SIGMOID_VECTOR, 0.5, Some(0.8));
+
+        // Wrong number of inputs (3 instead of 2)
+        let input = Matrix::new(3, 1, vec![0.5, 0.8, 0.3]);
+        network.predict(input);
+    }
+
+    #[test]
     fn test_training() {
         let layers = vec![2, 4, 1]; // Reduced size for faster testing
-        let mut network = Network::new(layers, SIGMOID_VECTOR, 0.5);
+        let mut network = Network::new(layers, SIGMOID_VECTOR, 0.5, Some(0.8));
 
         let inputs = vec![
             vec![0.0, 0.0],
@@ -361,7 +487,7 @@ mod tests {
         let model_path = dir.path().join("test_model.json");
 
         // Create and train a simple network
-        let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1);
+        let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1, Some(0.8));
         let inputs = vec![vec![0.0, 1.0], vec![1.0, 0.0]];
         let targets = vec![vec![1.0], vec![0.0]];
         network.train(inputs, targets, 10);
