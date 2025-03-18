@@ -50,7 +50,11 @@ impl<'de> Deserialize<'de> for Activation {
     where
         D: serde::Deserializer<'de>,
     {
-        let activation_type = ActivationType::deserialize(deserializer)?;
+        let activation_type = match ActivationType::deserialize(deserializer) {
+            Ok(t) => t,
+            Err(e) => return Err(e),
+        };
+
         Ok(match activation_type {
             ActivationType::Sigmoid => SIGMOID,
             ActivationType::Softmax => SOFTMAX,

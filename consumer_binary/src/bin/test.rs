@@ -93,13 +93,44 @@ fn print_confusion_matrix(confusion_matrix: [[usize; 10]; 10]) {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Loading test data...");
-    let test_data = load_test_data()?;
+    let test_data = match load_test_data() {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!("Failed to load test data: {}", e);
+            return Err(e.into());
+        }
+    };
 
     println!("Loading trained network...");
-    let mut file = File::open("trained_network.json")?;
+    let model_path = match std::env::current_dir() {
+        Ok(path) => path.join("models").join("trained_network.json"),
+        Err(e) => {
+            eprintln!("Failed to get current directory: {}", e);
+            return Err(e.into());
+        }
+    };
+    let mut file = match File::open(&model_path) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("Failed to open model file: {}", e);
+            return Err(e.into());
+        }
+    };
     let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    let mut network: Network = serde_json::from_str(&contents)?;
+    match file.read_to_string(&mut contents) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("Failed to read model file: {}", e);
+            return Err(e.into());
+        }
+    };
+    let mut network: Network = match serde_json::from_str(&contents) {
+        Ok(net) => net,
+        Err(e) => {
+            eprintln!("Failed to parse model file: {}", e);
+            return Err(e.into());
+        }
+    };
 
     println!("\nTesting network predictions...");
     let mut confusion_matrix = [[0usize; 10]; 10];

@@ -103,8 +103,10 @@ impl MnistData {
 /// Reads a 32-bit unsigned integer in big-endian format from a file
 fn read_u32(file: &mut File) -> std::io::Result<u32> {
     let mut buffer = [0; 4];
-    file.read_exact(&mut buffer)?;
-    Ok(u32::from_be_bytes(buffer))
+    match file.read_exact(&mut buffer) {
+        Ok(_) => Ok(u32::from_be_bytes(buffer)),
+        Err(e) => Err(e),
+    }
 }
 
 /// Reads MNIST image data from an IDX file format.
@@ -128,7 +130,10 @@ pub fn read_mnist_images(
     path: impl AsRef<Path>,
     progress: &ProgressBar,
 ) -> Result<Vec<Matrix>, MnistError> {
-    let mut file = File::open(path)?;
+    let mut file = match File::open(path) {
+        Ok(file) => file,
+        Err(e) => return Err(e.into()),
+    };
 
     let magic_number = read_u32(&mut file)?;
     if magic_number != IMAGE_MAGIC_NUMBER {
@@ -189,7 +194,10 @@ pub fn read_mnist_labels(
     path: impl AsRef<Path>,
     progress: &ProgressBar,
 ) -> Result<Vec<Matrix>, MnistError> {
-    let mut file = File::open(path)?;
+    let mut file = match File::open(path) {
+        Ok(file) => file,
+        Err(e) => return Err(e.into()),
+    };
 
     let magic_number = read_u32(&mut file)?;
     if magic_number != LABEL_MAGIC_NUMBER {
@@ -271,8 +279,14 @@ pub fn load_mnist_data(
     images_progress.set_style(style.clone());
     labels_progress.set_style(style);
 
-    let images = read_mnist_images(images_path, &images_progress)?;
-    let labels = read_mnist_labels(labels_path, &labels_progress)?;
+    let images = match read_mnist_images(images_path, &images_progress) {
+        Ok(images) => images,
+        Err(e) => return Err(e),
+    };
+    let labels = match read_mnist_labels(labels_path, &labels_progress) {
+        Ok(labels) => labels,
+        Err(e) => return Err(e),
+    };
 
     MnistData::new(images, labels)
 }

@@ -321,7 +321,10 @@ impl Network {
     /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
     /// ```
     pub fn save(&self, path: &str) -> io::Result<()> {
-        let json = serde_json::to_string_pretty(self)?;
+        let json = match serde_json::to_string_pretty(self) {
+            Ok(json) => json,
+            Err(e) => return Err(e.into()),
+        };
         std::fs::write(path, json)
     }
 
@@ -342,8 +345,14 @@ impl Network {
     /// let network = Network::load(model_path.to_str().unwrap()).expect("Failed to load model");
     /// ```
     pub fn load(path: &str) -> io::Result<Self> {
-        let contents = std::fs::read_to_string(path)?;
-        let mut network: Network = serde_json::from_str(&contents)?;
+        let contents = match std::fs::read_to_string(path) {
+            Ok(contents) => contents,
+            Err(e) => return Err(e),
+        };
+        let mut network: Network = match serde_json::from_str(&contents) {
+            Ok(network) => network,
+            Err(e) => return Err(e.into()),
+        };
 
         // Initialize skipped fields
         let layer_pairs: Vec<_> = network.layers.windows(2).collect();
