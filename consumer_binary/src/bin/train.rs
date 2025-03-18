@@ -17,7 +17,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let targets: Vec<Vec<f64>> = mnist_data.labels().iter().map(|m| m.data.clone()).collect();
 
-    network.train(inputs, targets, 10000);
+    // network.train(inputs, targets, 10000);
+    network.train(inputs, targets, 30);
 
     println!("Saving trained network...");
     let network_json = serde_json::to_string(&network)?;
