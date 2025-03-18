@@ -10,17 +10,12 @@
 /// # Example
 /// ```
 /// use neural_network::{network::Network, activations::SIGMOID_VECTOR};
+/// use tempfile::tempdir;
 ///
-/// let layers = vec![2, 3, 1];  // 2 inputs, 3 hidden neurons, 1 output
-/// let mut network = Network::new(layers, SIGMOID_VECTOR, 0.1);
-///
-/// // Train the network
-/// let inputs = vec![vec![0.0, 1.0]];
-/// let targets = vec![vec![1.0]];
-/// network.train(inputs, targets, 1000);
-///
-/// // Save the trained network
-/// network.save("model.json").expect("Failed to save model");
+/// let dir = tempdir().unwrap();
+/// let model_path = dir.path().join("model.json");
+/// let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1);
+/// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
 /// ```
 use crate::activations::Activation;
 use matrix::matrix::Matrix;
@@ -225,8 +220,12 @@ impl Network {
     /// # Example
     /// ```
     /// use neural_network::{network::Network, activations::SIGMOID_VECTOR};
+    /// use tempfile::tempdir;
+    ///
+    /// let dir = tempdir().unwrap();
+    /// let model_path = dir.path().join("model.json");
     /// let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1);
-    /// network.save("model.json").expect("Failed to save model");
+    /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
     /// ```
     pub fn save(&self, path: &str) -> io::Result<()> {
         let json = serde_json::to_string_pretty(self)?;
@@ -244,7 +243,10 @@ impl Network {
     /// # Example
     /// ```no_run
     /// # use neural_network::{network::Network, activations::SIGMOID_VECTOR};
-    /// let network = Network::load("model.json").expect("Failed to load model");
+    /// # use tempfile::tempdir;
+    /// # let dir = tempdir().unwrap();
+    /// # let model_path = dir.path().join("model.json");
+    /// let network = Network::load(model_path.to_str().unwrap()).expect("Failed to load model");
     /// ```
     pub fn load(path: &str) -> io::Result<Self> {
         let json = std::fs::read_to_string(path)?;
