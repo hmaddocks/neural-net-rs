@@ -262,9 +262,8 @@ impl Network {
                         .unwrap();
                     let actual = target
                         .iter()
-                        .enumerate()
-                        .position(|(_, &val)| val >= 0.5)
-                        .unwrap_or(0);
+                        .position(|&val| (val - 1.0).abs() < f64::EPSILON)
+                        .expect("Target vector should contain exactly one 1.0 value (one-hot encoding)");
                     if predicted == actual {
                         correct_predictions += 1;
                     }
@@ -343,7 +342,7 @@ impl Network {
     pub fn load(path: &str) -> io::Result<Self> {
         let contents = std::fs::read_to_string(path)?;
         let mut network: Network = serde_json::from_str(&contents)?;
-        
+
         // Initialize skipped fields
         let layer_pairs: Vec<_> = network.layers.windows(2).collect();
         network.prev_weight_updates = layer_pairs
@@ -353,7 +352,7 @@ impl Network {
                 Matrix::zeros(output_size, input_size + 1)
             })
             .collect();
-        
+
         Ok(network)
     }
 }

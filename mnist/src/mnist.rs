@@ -260,7 +260,9 @@ pub fn load_mnist_data(
 ) -> Result<MnistData, MnistError> {
     let multi_progress = indicatif::MultiProgress::new();
     let style = ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+        .template(
+            "{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos:>7}/{len:7} {msg}",
+        )
         .unwrap()
         .progress_chars("##-");
 

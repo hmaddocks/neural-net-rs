@@ -82,10 +82,10 @@ fn print_confusion_matrix(confusion_matrix: [[usize; 10]; 10]) {
     println!("           Predicted");
     println!("Actual     0    1    2    3    4    5    6    7    8    9");
     println!("      +--------------------------------------------------");
-    for i in 0..10 {
+    for (i, row) in confusion_matrix.iter().enumerate() {
         print!("  {}   |", i);
-        for j in 0..10 {
-            print!(" {:4}", confusion_matrix[i][j]);
+        for &count in row.iter() {
+            print!(" {:4}", count);
         }
         println!();
     }
@@ -108,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let progress_bar = ProgressBar::new(total as u64);
     progress_bar.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({percent}%)")
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos}/{len} ({percent}%)")
             .unwrap()
             .progress_chars("#>-")
     );
