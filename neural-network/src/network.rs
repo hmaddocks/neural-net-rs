@@ -263,7 +263,9 @@ impl Network {
                     let actual = target
                         .iter()
                         .position(|&val| (val - 1.0).abs() < f64::EPSILON)
-                        .expect("Target vector should contain exactly one 1.0 value (one-hot encoding)");
+                        .expect(
+                            "Target vector should contain exactly one 1.0 value (one-hot encoding)",
+                        );
                     if predicted == actual {
                         correct_predictions += 1;
                     }
@@ -360,14 +362,14 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::activations::SIGMOID_VECTOR;
+    use crate::activations::SIGMOID;
     use approx::assert_relative_eq;
     use tempfile::tempdir;
 
     #[test]
     fn test_network_creation() {
         let layers = vec![3, 4, 2];
-        let network = Network::new(layers.clone(), SIGMOID_VECTOR, 0.5, Some(0.7));
+        let network = Network::new(layers.clone(), SIGMOID, 0.5, Some(0.7));
 
         assert_eq!(network.layers, layers);
         assert_eq!(network.weights.len(), 2);
@@ -382,7 +384,7 @@ mod tests {
     #[test]
     fn test_feed_forward() {
         let layers = vec![2, 3, 1];
-        let mut network = Network::new(layers, SIGMOID_VECTOR, 0.5, Some(0.8));
+        let mut network = Network::new(layers, SIGMOID, 0.5, Some(0.8));
 
         // First layer: 3 outputs, 3 inputs (2 inputs + 1 bias)
         network.weights[0] = Matrix::new(
@@ -415,7 +417,7 @@ mod tests {
     #[should_panic(expected = "Invalid number of inputs")]
     fn test_feed_forward_invalid_inputs() {
         let layers = vec![2, 3, 1];
-        let mut network = Network::new(layers, SIGMOID_VECTOR, 0.5, Some(0.8));
+        let mut network = Network::new(layers, SIGMOID, 0.5, Some(0.8));
 
         // Wrong number of inputs (3 instead of 2)
         let input = Matrix::new(3, 1, vec![0.5, 0.8, 0.3]);
@@ -425,7 +427,7 @@ mod tests {
     #[test]
     fn test_predict() {
         let layers = vec![2, 3, 1];
-        let mut network = Network::new(layers, SIGMOID_VECTOR, 0.5, Some(0.8));
+        let mut network = Network::new(layers, SIGMOID, 0.5, Some(0.8));
 
         // First layer: 3 outputs, 3 inputs (2 inputs + 1 bias)
         network.weights[0] = Matrix::new(3, 3, vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]);
@@ -448,7 +450,7 @@ mod tests {
     #[should_panic(expected = "Invalid number of inputs")]
     fn test_predict_invalid_inputs() {
         let layers = vec![2, 3, 1];
-        let network = Network::new(layers, SIGMOID_VECTOR, 0.5, Some(0.8));
+        let network = Network::new(layers, SIGMOID, 0.5, Some(0.8));
 
         // Wrong number of inputs (3 instead of 2)
         let input = Matrix::new(3, 1, vec![0.5, 0.8, 0.3]);
@@ -458,7 +460,7 @@ mod tests {
     #[test]
     fn test_training() {
         let layers = vec![2, 4, 1]; // Reduced size for faster testing
-        let mut network = Network::new(layers, SIGMOID_VECTOR, 0.5, Some(0.8));
+        let mut network = Network::new(layers, SIGMOID, 0.5, Some(0.8));
 
         let inputs = vec![
             vec![0.0, 0.0],
@@ -498,7 +500,7 @@ mod tests {
         let model_path = dir.path().join("test_model.json");
 
         // Create and train a simple network
-        let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1, Some(0.8));
+        let mut network = Network::new(vec![2, 3, 1], SIGMOID, 0.1, Some(0.8));
         let inputs = vec![vec![0.0, 1.0], vec![1.0, 0.0]];
         let targets = vec![vec![1.0], vec![0.0]];
         network.train(inputs, targets, 10);
