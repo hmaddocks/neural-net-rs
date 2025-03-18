@@ -30,6 +30,7 @@ pub struct Network {
     /// Weight matrices between layers, including bias weights
     weights: Vec<Matrix>,
     /// Cached layer outputs for backpropagation
+    #[serde(skip)]
     data: Vec<Matrix>,
     /// Activation function used throughout the network
     activation: Activation,
@@ -38,6 +39,7 @@ pub struct Network {
     /// Momentum coefficient for weight updates
     momentum: f64,
     /// Previous weight updates for momentum calculation
+    #[serde(skip)]
     prev_weight_updates: Vec<Matrix>,
 }
 
@@ -341,8 +343,20 @@ impl Network {
     /// let network = Network::load(model_path.to_str().unwrap()).expect("Failed to load model");
     /// ```
     pub fn load(path: &str) -> io::Result<Self> {
-        let json = std::fs::read_to_string(path)?;
-        serde_json::from_str(&json).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        let contents = std::fs::read_to_string(path)?;
+        let mut network: Network = serde_json::from_str(&contents)?;
+        
+        // Initialize skipped fields
+        let layer_pairs: Vec<_> = network.layers.windows(2).collect();
+        network.prev_weight_updates = layer_pairs
+            .iter()
+            .map(|pair| {
+                let (input_size, output_size) = (pair[0], pair[1]);
+                Matrix::zeros(output_size, input_size + 1)
+            })
+            .collect();
+        
+        Ok(network)
     }
 }
 
