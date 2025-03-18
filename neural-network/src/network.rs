@@ -193,21 +193,19 @@ impl Network {
         };
 
         for i in (0..self.layers.len() - 1).rev() {
-            gradients = gradients.elementwise_multiply(&errors).map(|x| {
-                let gradient = x * self.learning_rate;
-                // Clip gradients to prevent explosion
-                gradient.max(-5.0).min(5.0)
-            });
+            gradients = gradients
+                .elementwise_multiply(&errors)
+                .map(|x| x * self.learning_rate);
 
             let layer_input = Self::augment_with_bias(self.data[i].clone());
             let weight_updates = gradients.dot_multiply(&layer_input.transpose());
 
-            // Apply momentum using functional update with gradient clipping
+            // Apply momentum using functional update
             let momentum_term = self.prev_weight_updates[i].map(|x| x * self.momentum);
             let updates = weight_updates.add(&momentum_term);
 
-            // Update weights with clipping
-            self.weights[i] = self.weights[i].add(&updates.map(|x| x.max(-5.0).min(5.0)));
+            // Update weights
+            self.weights[i] = self.weights[i].add(&updates);
             self.prev_weight_updates[i] = weight_updates;
 
             if i > 0 {
