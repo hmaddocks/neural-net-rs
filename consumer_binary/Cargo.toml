@@ -17,4 +17,6 @@ path = "src/bin/test.rs"
 
 [dependencies]
 neural-network = { path = "../neural-network" }
+mnist = { path = "../mnist" }
+matrix = { path = "../matrix" }
 serde_json = "1.0"

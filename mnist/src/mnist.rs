@@ -100,14 +100,6 @@ impl MnistData {
     }
 }
 
-/// Creates a progress bar with a consistent style
-pub(crate) fn create_progress_style(template: &str) -> ProgressStyle {
-    ProgressStyle::default_bar()
-        .template(template)
-        .unwrap()
-        .progress_chars("##-")
-}
-
 /// Reads a 32-bit unsigned integer in big-endian format from a file
 fn read_u32(file: &mut File) -> std::io::Result<u32> {
     let mut buffer = [0; 4];
@@ -267,9 +259,10 @@ pub fn load_mnist_data(
     labels_path: PathBuf,
 ) -> Result<MnistData, MnistError> {
     let multi_progress = indicatif::MultiProgress::new();
-    let style = create_progress_style(
-        "{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
-    );
+    let style = ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+        .unwrap()
+        .progress_chars("##-");
 
     let images_progress = multi_progress.add(ProgressBar::new(0));
     let labels_progress = multi_progress.add(ProgressBar::new(0));
@@ -285,11 +278,11 @@ pub fn load_mnist_data(
 /// Gets the actual digit from a one-hot encoded label matrix
 pub fn get_actual_digit(label: &Matrix) -> usize {
     label
-        .data()
+        .data
         .iter()
         .enumerate()
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-        .map(|(idx, _)| idx)
+        .map(|(i, _)| i)
         .unwrap()
 }
 
@@ -371,8 +364,8 @@ mod tests {
         assert!(result.is_ok());
         let images = result.unwrap();
         assert_eq!(images.len(), 2);
-        assert_eq!(images[0].rows(), 784);
-        assert_eq!(images[0].cols(), 1);
+        assert_eq!(images[0].rows, 784);
+        assert_eq!(images[0].cols, 1);
 
         Ok(())
     }
@@ -432,8 +425,8 @@ mod tests {
         assert_eq!(labels.len(), 2);
 
         // Check one-hot encoding
-        assert_eq!(labels[0].data()[0], 1.0); // First label should be 0
-        assert_eq!(labels[1].data()[1], 1.0); // Second label should be 1
+        assert_eq!(labels[0].data[0], 1.0); // First label should be 0
+        assert_eq!(labels[1].data[1], 1.0); // Second label should be 1
 
         Ok(())
     }

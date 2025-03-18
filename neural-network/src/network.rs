@@ -224,8 +224,8 @@ impl Network {
     ///
     /// # Example
     /// ```
-    /// # use neural_network::{network::Network, activations::SIGMOID_VECTOR};
-    /// # let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1);
+    /// use neural_network::{network::Network, activations::SIGMOID_VECTOR};
+    /// let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1);
     /// network.save("model.json").expect("Failed to save model");
     /// ```
     pub fn save(&self, path: &str) -> io::Result<()> {
