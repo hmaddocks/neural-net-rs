@@ -19,15 +19,15 @@ pub enum ActivationType {
 /// ```
 /// use neural_network::activations::{Activation, SIGMOID};
 ///
-/// let result = (SIGMOID.function)(0.5);
-/// let derivative = (SIGMOID.derivative)(result);
+/// let result = (SIGMOID.function.unwrap())(0.5);
+/// let derivative = (SIGMOID.derivative.unwrap())(result);
 /// ```
 #[derive(Clone, Copy, Debug)]
 pub struct Activation {
     /// The scalar activation function
-    pub function: fn(f64) -> f64,
+    pub function: Option<fn(f64) -> f64>,
     /// The derivative of the scalar activation function
-    pub derivative: fn(f64) -> f64,
+    pub derivative: Option<fn(f64) -> f64>,
     /// Optional vectorized implementation of the activation function
     pub vector_function: Option<fn(&Matrix) -> Matrix>,
     /// Optional vectorized implementation of the derivative
@@ -70,10 +70,13 @@ impl Activation {
     /// # Arguments
     ///
     /// * `input` - The input matrix to apply the activation function to
-    pub fn apply_vector(&self, input: &Matrix) -> Matrix {
+    pub fn apply_vector<'a>(&self, input: &'a Matrix) -> Matrix {
         match self.vector_function {
             Some(f) => f(input),
-            None => input.map(self.function),
+            None => match self.function {
+                Some(f) => input.map(f),
+                None => panic!("No vector or scalar function implementation available"),
+            },
         }
     }
 
@@ -87,7 +90,10 @@ impl Activation {
     pub fn derivative_vector(&self, input: &Matrix) -> Matrix {
         match self.vector_derivative {
             Some(f) => f(input),
-            None => input.map(self.derivative),
+            None => match self.derivative {
+                Some(f) => input.map(f),
+                None => panic!("No vector or scalar derivative implementation available"),
+            },
         }
     }
 }
@@ -97,8 +103,8 @@ impl Activation {
 /// Implements the logistic function: f(x) = 1 / (1 + e^(-x))
 /// with derivative: f'(x) = f(x) * (1 - f(x))
 pub const SIGMOID: Activation = Activation {
-    function: |x| 1.0 / (1.0 + E.powf(-x)),
-    derivative: |x| x * (1.0 - x),
+    function: Some(|x| 1.0 / (1.0 + E.powf(-x))),
+    derivative: Some(|x| x * (1.0 - x)),
     vector_function: Some(|m| m.map(|x| 1.0 / (1.0 + E.powf(-x)))),
     vector_derivative: Some(|m| m.map(|x| x * (1.0 - x))),
     activation_type: ActivationType::Sigmoid,
@@ -109,10 +115,77 @@ pub const SIGMOID: Activation = Activation {
 /// Implements the softmax function: f(x) = e^x / sum(e^x)
 /// with derivative: f'(x) = f(x) * (1 - f(x))
 pub const SOFTMAX: Activation = Activation {
-    function: |x| (E.powf(x)) / (1.0 + E.powf(-x)),
-    derivative: |x| x * (1.0 - x),
-    vector_function: Some(|m| m.map(|x| (E.powf(x)) / (1.0 + E.powf(-x)))),
-    vector_derivative: Some(|m| m.map(|x| x * (1.0 - x))),
+    function: None,
+    derivative: None,
+    vector_function: Some(|m| {
+        let mut exp_values = Vec::with_capacity(m.rows * m.cols);
+        exp_values.extend(m.data.iter().map(|x| E.powf(*x)));
+        let mut exp_matrix = Matrix::new(m.rows, m.cols, exp_values);
+
+        // For column vectors, treat the entire vector as one group
+        if m.cols == 1 {
+            let sum: f64 = exp_matrix.data.iter().sum();
+            for i in 0..m.rows {
+                exp_matrix.data[i] = exp_matrix.data[i] / sum;
+            }
+            return exp_matrix;
+        }
+
+        // For matrices, apply softmax to each row independently
+        for i in 0..m.rows {
+            let row_start = i * m.cols;
+            let row_end = (i + 1) * m.cols;
+            let row_sum: f64 = exp_matrix.data[row_start..row_end].iter().sum();
+
+            for j in 0..m.cols {
+                exp_matrix.data[row_start + j] = exp_matrix.data[row_start + j] / row_sum;
+            }
+        }
+        exp_matrix
+    }),
+    vector_derivative: Some(|m| {
+        // For softmax derivative, we need the Jacobian matrix
+        // ∂softmax(x[i])/∂x[j] = softmax(x[i]) * (δ[i,j] - softmax(x[j]))
+        let softmax_output = SOFTMAX.apply_vector(m);
+
+        // For column vectors, create a square Jacobian matrix
+        if m.cols == 1 {
+            let mut result = Matrix::new(m.rows, m.rows, vec![0.0; m.rows * m.rows]);
+            for i in 0..m.rows {
+                let si = softmax_output.data[i];
+                for j in 0..m.rows {
+                    let sj = softmax_output.data[j];
+                    if i == j {
+                        result.data[i * m.rows + j] = si * (1.0 - sj);
+                    } else {
+                        result.data[i * m.rows + j] = si * (-sj);
+                    }
+                }
+            }
+            return result;
+        }
+
+        // For matrices, compute derivatives for each row independently
+        let mut result = Matrix::new(m.rows * m.cols, m.cols, vec![0.0; m.rows * m.cols * m.cols]);
+        for i in 0..m.rows {
+            let row_start = i * m.cols;
+
+            for j in 0..m.cols {
+                let si = softmax_output.data[row_start + j];
+                let result_row = (i * m.cols + j) * m.cols;
+
+                for k in 0..m.cols {
+                    let sk = softmax_output.data[row_start + k];
+                    if k == j {
+                        result.data[result_row + k] = si * (1.0 - sk);
+                    } else {
+                        result.data[result_row + k] = si * (-sk);
+                    }
+                }
+            }
+        }
+        result
+    }),
     activation_type: ActivationType::Softmax,
 };
 
@@ -126,14 +199,14 @@ mod tests {
     #[test]
     fn test_sigmoid_activation() {
         let x = 0.0;
-        let result = (SIGMOID.function)(x);
+        let result = (SIGMOID.function.unwrap())(x);
         assert_relative_eq!(result, 0.5, epsilon = 1e-10);
     }
 
     #[test]
     fn test_sigmoid_derivative() {
         let x = 0.5;
-        let result = (SIGMOID.derivative)(x);
+        let result = (SIGMOID.derivative.unwrap())(x);
         assert_relative_eq!(result, 0.25, epsilon = 1e-10);
     }
 
@@ -179,37 +252,91 @@ mod tests {
     }
 
     #[test]
+    fn test_softmax_scalar_functions_not_used() {
+        // Verify that scalar functions are None
+        assert!(SOFTMAX.function.is_none());
+        assert!(SOFTMAX.derivative.is_none());
+    }
+
+    #[test]
     fn test_softmax_activation() {
-        let x = 0.0;
-        let result = (SOFTMAX.function)(x);
-        assert_relative_eq!(result, 0.5, epsilon = 1e-10);
+        // Test with simple input [0.0, 1.0]
+        let input = vec![0.0, 1.0].into_matrix(2, 1);
+        let result = SOFTMAX.apply_vector(&input);
+
+        // For input [0.0, 1.0]:
+        // e^0 = 1.0
+        // e^1 ≈ 2.718
+        // sum ≈ 3.718
+        // Therefore:
+        // softmax(0) ≈ 1.0/3.718 ≈ 0.269
+        // softmax(1) ≈ 2.718/3.718 ≈ 0.731
+        assert_relative_eq!(result.get(0, 0), 0.269, epsilon = 1e-3);
+        assert_relative_eq!(result.get(1, 0), 0.731, epsilon = 1e-3);
+
+        // Verify probabilities sum to 1
+        let sum: f64 = result.data.iter().sum();
+        assert_relative_eq!(sum, 1.0, epsilon = 1e-10);
     }
 
     #[test]
     fn test_softmax_derivative() {
-        let x = 0.5;
-        let result = (SOFTMAX.derivative)(x);
-        assert_relative_eq!(result, 0.25, epsilon = 1e-10);
+        // Test with input [0.0, 1.0]
+        let input = vec![0.0, 1.0].into_matrix(2, 1);
+        let derivative = SOFTMAX.derivative_vector(&input);
+
+        // For input [0.0, 1.0]:
+        // softmax(0) ≈ 0.269
+        // softmax(1) ≈ 0.731
+        // Therefore:
+        // ∂softmax(0)/∂x[0] = 0.269 * (1 - 0.269) ≈ 0.197
+        // ∂softmax(0)/∂x[1] = 0.269 * (-0.731) ≈ -0.197
+        // ∂softmax(1)/∂x[0] = 0.731 * (-0.269) ≈ -0.197
+        // ∂softmax(1)/∂x[1] = 0.731 * (1 - 0.731) ≈ 0.197
+        assert_relative_eq!(derivative.get(0, 0), 0.197, epsilon = 1e-3);
+        assert_relative_eq!(derivative.get(0, 1), -0.197, epsilon = 1e-3);
+        assert_relative_eq!(derivative.get(1, 0), -0.197, epsilon = 1e-3);
+        assert_relative_eq!(derivative.get(1, 1), 0.197, epsilon = 1e-3);
     }
 
     #[test]
-    fn test_softmax_vector_operations() {
+    fn test_softmax_2d_matrix() {
+        // Test with 2x2 matrix
         let input = vec![0.0, 1.0, -1.0, 2.0].into_matrix(2, 2);
-
-        // Test vector function
         let result = SOFTMAX.apply_vector(&input);
-        assert_relative_eq!(result.get(0, 0), 0.5, epsilon = 1e-10);
-        assert_relative_eq!(
-            result.get(0, 1),
-            1.0 / (1.0 + E.powf(-1.0)),
-            epsilon = 1e-10
-        );
 
-        // Test vector derivative
-        let output = vec![0.5, 0.7, 0.3, 0.8].into_matrix(2, 2);
-        let derivative = SOFTMAX.derivative_vector(&output);
-        assert_relative_eq!(derivative.get(0, 0), 0.25, epsilon = 1e-10);
-        assert_relative_eq!(derivative.get(0, 1), 0.7 * (1.0 - 0.7), epsilon = 1e-10);
+        // For each row:
+        // Row 1: [0.0, 1.0] -> [0.269, 0.731]
+        // Row 2: [-1.0, 2.0] -> [0.047, 0.953]
+        assert_relative_eq!(result.get(0, 0), 0.269, epsilon = 1e-3);
+        assert_relative_eq!(result.get(0, 1), 0.731, epsilon = 1e-3);
+        assert_relative_eq!(result.get(1, 0), 0.047, epsilon = 1e-3);
+        assert_relative_eq!(result.get(1, 1), 0.953, epsilon = 1e-3);
+
+        // Verify each row sums to 1
+        let row1_sum = result.get(0, 0) + result.get(0, 1);
+        let row2_sum = result.get(1, 0) + result.get(1, 1);
+        assert_relative_eq!(row1_sum, 1.0, epsilon = 1e-10);
+        assert_relative_eq!(row2_sum, 1.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_softmax_2d_matrix_derivative() {
+        // Test with 2x2 matrix
+        let input = vec![0.0, 1.0, -1.0, 2.0].into_matrix(2, 2);
+        let derivative = SOFTMAX.derivative_vector(&input);
+
+        // For each row, the derivative matrix should be:
+        // Row 1: [0.197, -0.197; -0.197, 0.197]
+        // Row 2: [0.045, -0.045; -0.045, 0.045]
+        assert_relative_eq!(derivative.get(0, 0), 0.197, epsilon = 1e-3);
+        assert_relative_eq!(derivative.get(0, 1), -0.197, epsilon = 1e-3);
+        assert_relative_eq!(derivative.get(1, 0), -0.197, epsilon = 1e-3);
+        assert_relative_eq!(derivative.get(1, 1), 0.197, epsilon = 1e-3);
+        assert_relative_eq!(derivative.get(2, 0), 0.045, epsilon = 1e-3);
+        assert_relative_eq!(derivative.get(2, 1), -0.045, epsilon = 1e-3);
+        assert_relative_eq!(derivative.get(3, 0), -0.045, epsilon = 1e-3);
+        assert_relative_eq!(derivative.get(3, 1), 0.045, epsilon = 1e-3);
     }
 
     #[test]

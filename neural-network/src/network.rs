@@ -9,12 +9,12 @@
 ///
 /// # Example
 /// ```
-/// use neural_network::{network::Network, activations::SIGMOID_VECTOR};
+/// use neural_network::{network::Network, activations::SIGMOID};
 /// use tempfile::tempdir;
 ///
 /// let dir = tempdir().unwrap();
 /// let model_path = dir.path().join("model.json");
-/// let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1, Some(0.8));
+/// let mut network = Network::new(vec![2, 3, 1], SIGMOID, 0.1, Some(0.8));
 /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
 /// ```
 use crate::activations::Activation;
@@ -116,8 +116,10 @@ impl Network {
         let output = weight.dot_multiply(input);
         if let Some(vector_fn) = activation.vector_function {
             vector_fn(&output)
+        } else if let Some(scalar_fn) = activation.function {
+            output.map(scalar_fn)
         } else {
-            output.map(activation.function)
+            panic!("No activation function implementation available")
         }
     }
 
@@ -188,8 +190,10 @@ impl Network {
         let mut errors = targets.subtract(&outputs);
         let mut gradients = if let Some(vector_derivative) = self.activation.vector_derivative {
             vector_derivative(&outputs)
+        } else if let Some(scalar_derivative) = self.activation.derivative {
+            outputs.map(scalar_derivative)
         } else {
-            outputs.map(self.activation.derivative)
+            panic!("No derivative implementation available")
         };
 
         for i in (0..self.layers.len() - 1).rev() {
@@ -219,8 +223,10 @@ impl Network {
                 errors = weight_no_bias.transpose().dot_multiply(&errors);
                 gradients = if let Some(vector_derivative) = self.activation.vector_derivative {
                     vector_derivative(&self.data[i])
+                } else if let Some(scalar_derivative) = self.activation.derivative {
+                    self.data[i].map(scalar_derivative)
                 } else {
-                    self.data[i].map(self.activation.derivative)
+                    panic!("No derivative implementation available")
                 };
             }
         }
@@ -312,12 +318,12 @@ impl Network {
     ///
     /// # Example
     /// ```
-    /// use neural_network::{network::Network, activations::SIGMOID_VECTOR};
+    /// use neural_network::{network::Network, activations::SIGMOID};
     /// use tempfile::tempdir;
     ///
     /// let dir = tempdir().unwrap();
     /// let model_path = dir.path().join("model.json");
-    /// let mut network = Network::new(vec![2, 3, 1], SIGMOID_VECTOR, 0.1, Some(0.8));
+    /// let mut network = Network::new(vec![2, 3, 1], SIGMOID, 0.1, Some(0.8));
     /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
     /// ```
     pub fn save(&self, path: &str) -> io::Result<()> {
@@ -338,7 +344,7 @@ impl Network {
     ///
     /// # Example
     /// ```no_run
-    /// # use neural_network::{network::Network, activations::SIGMOID_VECTOR};
+    /// # use neural_network::{network::Network, activations::SIGMOID};
     /// # use tempfile::tempdir;
     /// # let dir = tempdir().unwrap();
     /// # let model_path = dir.path().join("model.json");
