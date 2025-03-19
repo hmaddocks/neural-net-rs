@@ -229,15 +229,26 @@ pub fn read_mnist_labels(
 }
 
 /// Returns the path to the MNIST data directory
-pub fn get_mnist_dir() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").expect("HOME environment variable not set"))
-        .join("Documents")
-        .join("NMIST")
+pub fn get_mnist_dir() -> Result<PathBuf, MnistError> {
+    // PathBuf::from(std::env::var("HOME").expect("HOME environment variable not set"))
+    //     .join("Documents")
+    //     .join("NMIST")
+    let current_dir = match std::env::current_dir() {
+        Ok(dir) => dir,
+        Err(e) => {
+            eprintln!("Failed to get current directory: {}", e);
+            return Err(e.into());
+        }
+    };
+    Ok(current_dir.join("mnist").join("data"))
 }
 
 /// Loads the standard MNIST training dataset
 pub fn load_training_data() -> Result<MnistData, MnistError> {
-    let mnist_dir = get_mnist_dir();
+    let mnist_dir = match get_mnist_dir() {
+        Ok(dir) => dir,
+        Err(e) => return Err(e),
+    };
     load_mnist_data(
         mnist_dir.join("train-images-idx3-ubyte"),
         mnist_dir.join("train-labels-idx1-ubyte"),
@@ -246,7 +257,10 @@ pub fn load_training_data() -> Result<MnistData, MnistError> {
 
 /// Loads the standard MNIST test dataset
 pub fn load_test_data() -> Result<MnistData, MnistError> {
-    let mnist_dir = get_mnist_dir();
+    let mnist_dir = match get_mnist_dir() {
+        Ok(dir) => dir,
+        Err(e) => return Err(e),
+    };
     load_mnist_data(
         mnist_dir.join("t10k-images-idx3-ubyte"),
         mnist_dir.join("t10k-labels-idx1-ubyte"),
