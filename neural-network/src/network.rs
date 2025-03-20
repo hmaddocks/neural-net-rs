@@ -9,12 +9,21 @@
 ///
 /// # Example
 /// ```
-/// use neural_network::{network::Network, activations::SIGMOID};
+/// use neural_network::{network::Network, activations::SIGMOID, network_config::NetworkConfig};
 /// use tempfile::tempdir;
 ///
 /// let dir = tempdir().unwrap();
 /// let model_path = dir.path().join("model.json");
-/// let mut network = Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1, Some(0.8));
+///
+/// // Create network configuration
+/// let mut config = NetworkConfig::default();
+/// config.layers = vec![2, 3, 1];
+/// config.activations = vec![SIGMOID, SIGMOID];
+/// config.learning_rate = 0.1;
+/// config.momentum = Some(0.8);
+///
+/// // Create and save network
+/// let mut network = Network::new(&config);
 /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
 /// ```
 use crate::activations::Activation;
@@ -46,13 +55,14 @@ pub struct Network {
 }
 
 impl Network {
-    /// Creates a new neural network with specified layer sizes and activation functions.
+    /// Creates a new neural network with specified configuration.
     ///
     /// # Arguments
-    /// * `layers` - Vector of layer sizes, including input and output layers
-    /// * `activations` - Vector of activation functions for each layer (must be one less than number of layers)
-    /// * `learning_rate` - Learning rate for weight updates during training
-    /// * `momentum` - Momentum coefficient for weight updates (default: 0.9)
+    /// * `network_config` - Configuration struct containing:
+    ///   - `layers`: Vector of layer sizes, including input and output layers
+    ///   - `activations`: Vector of activation functions for each layer (must be one less than number of layers)
+    ///   - `learning_rate`: Learning rate for weight updates during training
+    ///   - `momentum`: Optional momentum coefficient for weight updates (defaults to 0.9)
     ///
     /// # Returns
     /// A new `Network` instance with randomly initialized weights
@@ -351,12 +361,21 @@ impl Network {
     ///
     /// # Example
     /// ```
-    /// use neural_network::{network::Network, activations::SIGMOID};
+    /// use neural_network::{network::Network, activations::SIGMOID, network_config::NetworkConfig};
     /// use tempfile::tempdir;
     ///
     /// let dir = tempdir().unwrap();
     /// let model_path = dir.path().join("model.json");
-    /// let mut network = Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1, Some(0.8));
+    ///
+    /// // Create network configuration
+    /// let mut config = NetworkConfig::default();
+    /// config.layers = vec![2, 3, 1];
+    /// config.activations = vec![SIGMOID, SIGMOID];
+    /// config.learning_rate = 0.1;
+    /// config.momentum = Some(0.8);
+    ///
+    /// // Create and save network
+    /// let mut network = Network::new(&config);
     /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
     /// ```
     pub fn save(&self, path: &str) -> io::Result<()> {
