@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::f64::consts::E;
 
 /// Type of activation function
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum ActivationType {
     Sigmoid,
     Softmax,
@@ -22,7 +22,7 @@ pub enum ActivationType {
 /// let result = (SIGMOID.function.unwrap())(0.5);
 /// let derivative = (SIGMOID.derivative.unwrap())(result);
 /// ```
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Activation {
     /// The scalar activation function
     pub function: Option<fn(f64) -> f64>,
@@ -50,10 +50,7 @@ impl<'de> Deserialize<'de> for Activation {
     where
         D: serde::Deserializer<'de>,
     {
-        let activation_type = match ActivationType::deserialize(deserializer) {
-            Ok(t) => t,
-            Err(e) => return Err(e),
-        };
+        let activation_type = ActivationType::deserialize(deserializer)?;
 
         Ok(match activation_type {
             ActivationType::Sigmoid => SIGMOID,
@@ -70,7 +67,7 @@ impl Activation {
     /// # Arguments
     ///
     /// * `input` - The input matrix to apply the activation function to
-    pub fn apply_vector<'a>(&self, input: &'a Matrix) -> Matrix {
+    pub fn apply_vector(&self, input: &Matrix) -> Matrix {
         match self.vector_function {
             Some(f) => f(input),
             None => match self.function {
@@ -126,7 +123,7 @@ pub const SOFTMAX: Activation = Activation {
         if m.cols == 1 {
             let sum: f64 = exp_matrix.data.iter().sum();
             for i in 0..m.rows {
-                exp_matrix.data[i] = exp_matrix.data[i] / sum;
+                exp_matrix.data[i] /= sum;
             }
             return exp_matrix;
         }
@@ -138,7 +135,7 @@ pub const SOFTMAX: Activation = Activation {
             let row_sum: f64 = exp_matrix.data[row_start..row_end].iter().sum();
 
             for j in 0..m.cols {
-                exp_matrix.data[row_start + j] = exp_matrix.data[row_start + j] / row_sum;
+                exp_matrix.data[row_start + j] /= row_sum;
             }
         }
         exp_matrix
@@ -148,17 +145,15 @@ pub const SOFTMAX: Activation = Activation {
         // ∂softmax(x[i])/∂x[j] = softmax(x[i]) * (δ[i,j] - softmax(x[j]))
         let softmax_output = SOFTMAX.apply_vector(m);
 
-        // For column vectors, create a square Jacobian matrix
+        // For column vectors, create a diagonal matrix with derivatives
         if m.cols == 1 {
-            let mut result = Matrix::new(m.rows, m.rows, vec![0.0; m.rows * m.rows]);
+            let mut result = Matrix::zeros(m.rows, m.rows);
             for i in 0..m.rows {
                 let si = softmax_output.data[i];
+                result.data[i * m.rows + i] = si * (1.0 - si);
                 for j in 0..m.rows {
-                    let sj = softmax_output.data[j];
-                    if i == j {
-                        result.data[i * m.rows + j] = si * (1.0 - sj);
-                    } else {
-                        result.data[i * m.rows + j] = si * (-sj);
+                    if i != j {
+                        result.data[i * m.rows + j] = -si * softmax_output.data[j];
                     }
                 }
             }
@@ -166,20 +161,18 @@ pub const SOFTMAX: Activation = Activation {
         }
 
         // For matrices, compute derivatives for each row independently
-        let mut result = Matrix::new(m.rows * m.cols, m.cols, vec![0.0; m.rows * m.cols * m.cols]);
+        let mut result = Matrix::zeros(m.rows * m.cols, m.cols);
         for i in 0..m.rows {
             let row_start = i * m.cols;
-
             for j in 0..m.cols {
                 let si = softmax_output.data[row_start + j];
                 let result_row = (i * m.cols + j) * m.cols;
-
                 for k in 0..m.cols {
                     let sk = softmax_output.data[row_start + k];
                     if k == j {
                         result.data[result_row + k] = si * (1.0 - sk);
                     } else {
-                        result.data[result_row + k] = si * (-sk);
+                        result.data[result_row + k] = -si * sk;
                     }
                 }
             }

@@ -1,0 +1,6 @@
+{
+  "layers": [784, 200, 10],
+  "activations": ["Sigmoid", "Sigmoid"],
+  "learning_rate": 0.01,
+  "epochs": 50
+}

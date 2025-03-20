@@ -245,10 +245,7 @@ pub fn get_mnist_dir() -> Result<PathBuf, MnistError> {
 
 /// Loads the standard MNIST training dataset
 pub fn load_training_data() -> Result<MnistData, MnistError> {
-    let mnist_dir = match get_mnist_dir() {
-        Ok(dir) => dir,
-        Err(e) => return Err(e),
-    };
+    let mnist_dir = get_mnist_dir()?;
     load_mnist_data(
         mnist_dir.join("train-images-idx3-ubyte"),
         mnist_dir.join("train-labels-idx1-ubyte"),
@@ -257,10 +254,7 @@ pub fn load_training_data() -> Result<MnistData, MnistError> {
 
 /// Loads the standard MNIST test dataset
 pub fn load_test_data() -> Result<MnistData, MnistError> {
-    let mnist_dir = match get_mnist_dir() {
-        Ok(dir) => dir,
-        Err(e) => return Err(e),
-    };
+    let mnist_dir = get_mnist_dir()?;
     load_mnist_data(
         mnist_dir.join("t10k-images-idx3-ubyte"),
         mnist_dir.join("t10k-labels-idx1-ubyte"),
@@ -293,14 +287,8 @@ pub fn load_mnist_data(
     images_progress.set_style(style.clone());
     labels_progress.set_style(style);
 
-    let images = match read_mnist_images(images_path, &images_progress) {
-        Ok(images) => images,
-        Err(e) => return Err(e),
-    };
-    let labels = match read_mnist_labels(labels_path, &labels_progress) {
-        Ok(labels) => labels,
-        Err(e) => return Err(e),
-    };
+    let images = read_mnist_images(images_path, &images_progress)?;
+    let labels = read_mnist_labels(labels_path, &labels_progress)?;
 
     MnistData::new(images, labels)
 }

@@ -14,10 +14,12 @@
 ///
 /// let dir = tempdir().unwrap();
 /// let model_path = dir.path().join("model.json");
-/// let mut network = Network::new(vec![2, 3, 1], SIGMOID, 0.1, Some(0.8));
+/// let mut network = Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1, Some(0.8));
 /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
 /// ```
 use crate::activations::Activation;
+use crate::activations::ActivationType;
+use crate::network_config::NetworkConfig;
 use matrix::matrix::Matrix;
 use serde::{Deserialize, Serialize};
 use std::io;
@@ -32,8 +34,8 @@ pub struct Network {
     /// Cached layer outputs for backpropagation
     #[serde(skip)]
     data: Vec<Matrix>,
-    /// Activation function used throughout the network
-    activation: Activation,
+    /// Activation functions for each layer
+    activations: Vec<Activation>,
     /// Learning rate for weight updates
     learning_rate: f64,
     /// Momentum coefficient for weight updates
@@ -44,23 +46,28 @@ pub struct Network {
 }
 
 impl Network {
-    /// Creates a new neural network with specified layer sizes and activation function.
+    /// Creates a new neural network with specified layer sizes and activation functions.
     ///
     /// # Arguments
     /// * `layers` - Vector of layer sizes, including input and output layers
-    /// * `activation` - Activation function to use throughout the network
+    /// * `activations` - Vector of activation functions for each layer (must be one less than number of layers)
     /// * `learning_rate` - Learning rate for weight updates during training
     /// * `momentum` - Momentum coefficient for weight updates (default: 0.9)
     ///
     /// # Returns
     /// A new `Network` instance with randomly initialized weights
-    pub fn new(
-        layers: Vec<usize>,
-        activation: Activation,
-        learning_rate: f64,
-        momentum: Option<f64>,
-    ) -> Self {
-        let layer_pairs: Vec<_> = layers.windows(2).collect();
+    ///
+    /// # Panics
+    /// Panics if the number of activation functions doesn't match the number of layers minus one
+    pub fn new(network_config: &NetworkConfig) -> Self {
+        assert!(
+            network_config.activations.len() == network_config.layers.len() - 1,
+            "Number of activation functions ({}) must be one less than number of layers ({})",
+            network_config.activations.len(),
+            network_config.layers.len()
+        );
+
+        let layer_pairs: Vec<_> = network_config.layers.windows(2).collect();
 
         let weights = layer_pairs
             .iter()
@@ -79,12 +86,12 @@ impl Network {
             .collect();
 
         Network {
-            layers,
+            layers: network_config.layers.clone(),
             weights,
             data: Vec::new(),
-            activation,
-            learning_rate,
-            momentum: momentum.unwrap_or(0.9),
+            activations: network_config.activations.clone(),
+            learning_rate: network_config.learning_rate,
+            momentum: network_config.momentum.unwrap_or(0.9),
             prev_weight_updates,
         }
     }
@@ -145,12 +152,16 @@ impl Network {
         self.data = vec![inputs.clone()];
 
         // Process through layers functionally
-        let result = self.weights.iter().fold(inputs, |current, weight| {
-            let with_bias = Self::augment_with_bias(current);
-            let output = Self::process_layer(weight, &with_bias, &self.activation);
-            self.data.push(output.clone());
-            output
-        });
+        let result = self
+            .weights
+            .iter()
+            .enumerate()
+            .fold(inputs, |current, (i, weight)| {
+                let with_bias = Self::augment_with_bias(current);
+                let output = Self::process_layer(weight, &with_bias, &self.activations[i]);
+                self.data.push(output.clone());
+                output
+            });
 
         result
     }
@@ -175,10 +186,13 @@ impl Network {
         );
 
         // Process through layers functionally without storing intermediates
-        self.weights.iter().fold(inputs, |current, weight| {
-            let with_bias = Self::augment_with_bias(current);
-            Self::process_layer(weight, &with_bias, &self.activation)
-        })
+        self.weights
+            .iter()
+            .enumerate()
+            .fold(inputs, |current, (i, weight)| {
+                let with_bias = Self::augment_with_bias(current);
+                Self::process_layer(weight, &with_bias, &self.activations[i])
+            })
     }
 
     /// Performs backpropagation to update network weights.
@@ -188,18 +202,24 @@ impl Network {
     /// * `targets` - Target outputs for training
     pub fn back_propagate(&mut self, outputs: Matrix, targets: Matrix) {
         let mut errors = targets.subtract(&outputs);
-        let mut gradients = if let Some(vector_derivative) = self.activation.vector_derivative {
-            vector_derivative(&outputs)
-        } else if let Some(scalar_derivative) = self.activation.derivative {
-            outputs.map(scalar_derivative)
+        let mut gradients = if matches!(
+            self.activations.last().unwrap().activation_type,
+            ActivationType::Softmax
+        ) {
+            // For softmax with cross-entropy loss, the gradient simplifies to (output - target)
+            errors.clone()
+        } else if let Some(vector_derivative) = self.activations.last().unwrap().vector_derivative {
+            // For other activation functions, use their derivatives
+            let derivative = vector_derivative(&outputs);
+            derivative.elementwise_multiply(&errors)
+        } else if let Some(scalar_derivative) = self.activations.last().unwrap().derivative {
+            outputs.map(scalar_derivative).elementwise_multiply(&errors)
         } else {
             panic!("No derivative implementation available")
         };
 
         for i in (0..self.layers.len() - 1).rev() {
-            gradients = gradients
-                .elementwise_multiply(&errors)
-                .map(|x| x * self.learning_rate);
+            gradients = gradients.map(|x| x * self.learning_rate);
 
             let layer_input = Self::augment_with_bias(self.data[i].clone());
             let weight_updates = gradients.dot_multiply(&layer_input.transpose());
@@ -221,13 +241,24 @@ impl Network {
                         .to_vec(),
                 );
                 errors = weight_no_bias.transpose().dot_multiply(&errors);
-                gradients = if let Some(vector_derivative) = self.activation.vector_derivative {
-                    vector_derivative(&self.data[i])
-                } else if let Some(scalar_derivative) = self.activation.derivative {
-                    self.data[i].map(scalar_derivative)
-                } else {
-                    panic!("No derivative implementation available")
-                };
+                gradients =
+                    if let Some(vector_derivative) = self.activations[i - 1].vector_derivative {
+                        let jacobian = vector_derivative(&self.data[i]);
+                        // For softmax, we need to handle the gradient differently
+                        if jacobian.rows == self.data[i].rows * self.data[i].rows {
+                            // For softmax, the gradient is simply the error
+                            errors.clone()
+                        } else {
+                            // This is a regular derivative
+                            jacobian.elementwise_multiply(&errors)
+                        }
+                    } else if let Some(scalar_derivative) = self.activations[i - 1].derivative {
+                        self.data[i]
+                            .map(scalar_derivative)
+                            .elementwise_multiply(&errors)
+                    } else {
+                        panic!("No derivative implementation available")
+                    };
             }
         }
     }
@@ -240,6 +271,7 @@ impl Network {
     /// * `epochs` - Number of training epochs
     pub fn train(&mut self, inputs: Vec<Vec<f64>>, targets: Vec<Vec<f64>>, epochs: u32) {
         for epoch in 1..=epochs {
+            let epoch_start = std::time::Instant::now();
             let mut total_error = 0.0;
             let mut correct_predictions = 0;
             let total_samples = inputs.len();
@@ -282,9 +314,10 @@ impl Network {
 
             let avg_error = total_error / total_samples as f64;
             let accuracy = (correct_predictions as f64 / total_samples as f64) * 100.0;
+            let epoch_duration = epoch_start.elapsed();
             println!(
-                "Epoch {}: Average Error = {:.6}, Accuracy = {:.2}%",
-                epoch, avg_error, accuracy
+                "Epoch {} ({:.2?}): Average Error = {:.6}, Accuracy = {:.2}%",
+                epoch, epoch_duration, avg_error, accuracy
             );
 
             // Early stopping if error is very small
@@ -323,7 +356,7 @@ impl Network {
     ///
     /// let dir = tempdir().unwrap();
     /// let model_path = dir.path().join("model.json");
-    /// let mut network = Network::new(vec![2, 3, 1], SIGMOID, 0.1, Some(0.8));
+    /// let mut network = Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1, Some(0.8));
     /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
     /// ```
     pub fn save(&self, path: &str) -> io::Result<()> {
@@ -351,10 +384,7 @@ impl Network {
     /// let network = Network::load(model_path.to_str().unwrap()).expect("Failed to load model");
     /// ```
     pub fn load(path: &str) -> io::Result<Self> {
-        let contents = match std::fs::read_to_string(path) {
-            Ok(contents) => contents,
-            Err(e) => return Err(e),
-        };
+        let contents = std::fs::read_to_string(path)?;
         let mut network: Network = match serde_json::from_str(&contents) {
             Ok(network) => network,
             Err(e) => return Err(e.into()),
@@ -377,16 +407,22 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::activations::SIGMOID;
+    use crate::activations::{SIGMOID, SOFTMAX};
+    use crate::network_config::NetworkConfig;
     use approx::assert_relative_eq;
+    use matrix::matrix::IntoMatrix;
     use tempfile::tempdir;
 
     #[test]
     fn test_network_creation() {
-        let layers = vec![3, 4, 2];
-        let network = Network::new(layers.clone(), SIGMOID, 0.5, Some(0.7));
+        let mut config = NetworkConfig::default();
+        config.layers = vec![3, 4, 2];
+        config.activations = vec![SIGMOID, SIGMOID];
+        config.learning_rate = 0.5;
+        config.momentum = Some(0.7);
+        let network = Network::new(&config);
 
-        assert_eq!(network.layers, layers);
+        assert_eq!(network.layers, config.layers);
         assert_eq!(network.weights.len(), 2);
         assert_eq!(network.weights[0].rows, 4);
         assert_eq!(network.weights[0].cols, 4); // 3 inputs + 1 bias
@@ -398,8 +434,12 @@ mod tests {
 
     #[test]
     fn test_feed_forward() {
-        let layers = vec![2, 3, 1];
-        let mut network = Network::new(layers, SIGMOID, 0.5, Some(0.8));
+        let mut config = NetworkConfig::default();
+        config.layers = vec![2, 3, 1];
+        config.activations = vec![SIGMOID, SIGMOID];
+        config.learning_rate = 0.5;
+        config.momentum = Some(0.8);
+        let mut network = Network::new(&config);
 
         // First layer: 3 outputs, 3 inputs (2 inputs + 1 bias)
         network.weights[0] = Matrix::new(
@@ -431,8 +471,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "Invalid number of inputs")]
     fn test_feed_forward_invalid_inputs() {
-        let layers = vec![2, 3, 1];
-        let mut network = Network::new(layers, SIGMOID, 0.5, Some(0.8));
+        let mut config = NetworkConfig::default();
+        config.layers = vec![2, 3, 1];
+        config.activations = vec![SIGMOID, SIGMOID];
+        config.learning_rate = 0.5;
+        config.momentum = Some(0.8);
+        let mut network = Network::new(&config);
 
         // Wrong number of inputs (3 instead of 2)
         let input = Matrix::new(3, 1, vec![0.5, 0.8, 0.3]);
@@ -441,8 +485,12 @@ mod tests {
 
     #[test]
     fn test_predict() {
-        let layers = vec![2, 3, 1];
-        let mut network = Network::new(layers, SIGMOID, 0.5, Some(0.8));
+        let mut config = NetworkConfig::default();
+        config.layers = vec![2, 3, 1];
+        config.activations = vec![SIGMOID, SIGMOID];
+        config.learning_rate = 0.5;
+        config.momentum = Some(0.8);
+        let mut network = Network::new(&config);
 
         // First layer: 3 outputs, 3 inputs (2 inputs + 1 bias)
         network.weights[0] = Matrix::new(3, 3, vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]);
@@ -464,8 +512,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "Invalid number of inputs")]
     fn test_predict_invalid_inputs() {
-        let layers = vec![2, 3, 1];
-        let network = Network::new(layers, SIGMOID, 0.5, Some(0.8));
+        let mut config = NetworkConfig::default();
+        config.layers = vec![2, 3, 1];
+        config.activations = vec![SIGMOID, SIGMOID];
+        config.learning_rate = 0.5;
+        config.momentum = Some(0.8);
+        let network = Network::new(&config);
 
         // Wrong number of inputs (3 instead of 2)
         let input = Matrix::new(3, 1, vec![0.5, 0.8, 0.3]);
@@ -474,8 +526,12 @@ mod tests {
 
     #[test]
     fn test_training() {
-        let layers = vec![2, 4, 1]; // Reduced size for faster testing
-        let mut network = Network::new(layers, SIGMOID, 0.5, Some(0.8));
+        let mut config = NetworkConfig::default();
+        config.layers = vec![2, 4, 1]; // Reduced size for faster testing
+        config.activations = vec![SIGMOID, SIGMOID];
+        config.learning_rate = 0.5;
+        config.momentum = Some(0.8);
+        let mut network = Network::new(&config);
 
         let inputs = vec![
             vec![0.0, 0.0],
@@ -515,7 +571,12 @@ mod tests {
         let model_path = dir.path().join("test_model.json");
 
         // Create and train a simple network
-        let mut network = Network::new(vec![2, 3, 1], SIGMOID, 0.1, Some(0.8));
+        let mut config = NetworkConfig::default();
+        config.layers = vec![2, 3, 1];
+        config.activations = vec![SIGMOID, SIGMOID];
+        config.learning_rate = 0.1;
+        config.momentum = Some(0.8);
+        let mut network = Network::new(&config);
         let inputs = vec![vec![0.0, 1.0], vec![1.0, 0.0]];
         let targets = vec![vec![1.0], vec![0.0]];
         network.train(inputs, targets, 10);
@@ -544,5 +605,35 @@ mod tests {
                 epsilon = 1e-10
             );
         }
+    }
+
+    #[test]
+    fn test_different_activations_per_layer() {
+        let mut config = NetworkConfig::default();
+        config.layers = vec![2, 3, 2];
+        config.activations = vec![SIGMOID, SOFTMAX];
+        config.learning_rate = 0.5;
+        config.momentum = Some(0.8);
+        let mut network = Network::new(&config);
+
+        // Test forward propagation
+        let input = vec![0.5, 0.3].into_matrix(2, 1);
+        let output = network.feed_forward(input);
+
+        // Verify output dimensions
+        assert_eq!(output.rows, 2);
+        assert_eq!(output.cols, 1);
+
+        // Verify output is valid (sums to 1 due to softmax)
+        let sum: f64 = output.data.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-10);
+
+        // Test backpropagation with matching dimensions
+        let target = vec![1.0, 0.0].into_matrix(2, 1);
+        network.back_propagate(output, target);
+
+        // Verify weights were updated
+        assert!(!network.weights[0].data.iter().all(|&x| x == 0.0));
+        assert!(!network.weights[1].data.iter().all(|&x| x == 0.0));
     }
 }
