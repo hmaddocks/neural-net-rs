@@ -204,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sigmoid_vector_operations() {
+    fn test_sigmoid_vector_function() {
         let input = vec![0.0, 1.0, -1.0, 2.0].into_matrix(2, 2);
 
         // Test vector function
@@ -215,8 +215,10 @@ mod tests {
             1.0 / (1.0 + E.powf(-1.0)),
             epsilon = 1e-10
         );
+    }
 
-        // Test vector derivative
+    #[test]
+    fn test_sigmoid_vector_derivative() {
         let output = vec![0.5, 0.7, 0.3, 0.8].into_matrix(2, 2);
         let derivative = SIGMOID.derivative_vector(&output);
         assert_relative_eq!(derivative.get(0, 0), 0.25, epsilon = 1e-10);

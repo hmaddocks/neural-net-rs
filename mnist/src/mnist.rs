@@ -363,8 +363,8 @@ mod tests {
     }
 
     #[test]
-    fn test_read_mnist_images_valid() -> Result<(), Box<dyn std::error::Error>> {
-        let temp = assert_fs::TempDir::new()?;
+    fn test_read_mnist_images_valid() {
+        let temp = assert_fs::TempDir::new().unwrap();
         let file_path = temp.child("test-images");
 
         // Create test image data: 2 images of 28x28 pixels
@@ -374,7 +374,8 @@ mod tests {
             IMAGE_MAGIC_NUMBER,
             2, // 2 images
             &image_data,
-        )?;
+        )
+        .unwrap();
 
         let progress = ProgressBar::new(2);
         let result = read_mnist_images(file_path.path(), &progress);
@@ -384,13 +385,11 @@ mod tests {
         assert_eq!(images.len(), 2);
         assert_eq!(images[0].rows, 784);
         assert_eq!(images[0].cols, 1);
-
-        Ok(())
     }
 
     #[test]
-    fn test_read_mnist_images_invalid_magic() -> Result<(), Box<dyn std::error::Error>> {
-        let temp = assert_fs::TempDir::new()?;
+    fn test_read_mnist_images_invalid_magic() {
+        let temp = assert_fs::TempDir::new().unwrap();
         let file_path = temp.child("test-images");
 
         // Create test file with wrong magic number
@@ -399,7 +398,8 @@ mod tests {
             0x12345678, // Wrong magic number
             1,
             &vec![0u8; 784],
-        )?;
+        )
+        .unwrap();
 
         let progress = ProgressBar::new(2);
         let result = read_mnist_images(file_path.path(), &progress);
@@ -417,13 +417,11 @@ mod tests {
             }
             _ => panic!("Expected InvalidMagicNumber error"),
         }
-
-        Ok(())
     }
 
     #[test]
-    fn test_read_mnist_labels_valid() -> Result<(), Box<dyn std::error::Error>> {
-        let temp = assert_fs::TempDir::new()?;
+    fn test_read_mnist_labels_valid() {
+        let temp = assert_fs::TempDir::new().unwrap();
         let file_path = temp.child("test-labels");
 
         // Create test label data: 2 labels (0 and 1)
@@ -433,7 +431,8 @@ mod tests {
             LABEL_MAGIC_NUMBER,
             2, // 2 labels
             &label_data,
-        )?;
+        )
+        .unwrap();
 
         let progress = ProgressBar::new(2);
         let result = read_mnist_labels(file_path.path(), &progress);
@@ -445,7 +444,5 @@ mod tests {
         // Check one-hot encoding
         assert_eq!(labels[0].data[0], 1.0); // First label should be 0
         assert_eq!(labels[1].data[1], 1.0); // Second label should be 1
-
-        Ok(())
     }
 }
