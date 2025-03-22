@@ -106,173 +106,6 @@ impl Network {
         }
     }
 
-    /// Augments an input matrix with bias terms (adds a row of 1.0s).
-    ///
-    /// # Arguments
-    /// * `input` - Input matrix to augment
-    ///
-    /// # Returns
-    /// A new matrix with an additional row of 1.0s for bias terms
-    fn augment_with_bias(input: Matrix) -> Matrix {
-        let mut augmented = Vec::with_capacity(input.data.len() + input.cols);
-        augmented.extend_from_slice(&input.data);
-        augmented.extend(std::iter::repeat(1.0).take(input.cols));
-        Matrix::new(input.rows + 1, input.cols, augmented)
-    }
-
-    /// Processes a single layer of the network.
-    ///
-    /// # Arguments
-    /// * `weight` - Weight matrix for the layer
-    /// * `input` - Input matrix including bias terms
-    /// * `activation` - Activation function to apply
-    ///
-    /// # Returns
-    /// The processed output matrix after applying weights and activation
-    fn process_layer(weight: &Matrix, input: &Matrix, activation: &Activation) -> Matrix {
-        let output = weight.dot_multiply(input);
-        if let Some(vector_fn) = activation.vector_function {
-            vector_fn(&output)
-        } else if let Some(scalar_fn) = activation.function {
-            output.map(scalar_fn)
-        } else {
-            panic!("No activation function implementation available")
-        }
-    }
-
-    /// Performs forward propagation through the network.
-    ///
-    /// # Arguments
-    /// * `inputs` - Input matrix to process
-    ///
-    /// # Returns
-    /// The network's output matrix
-    ///
-    /// # Panics
-    /// Panics if the number of inputs doesn't match the first layer size
-    pub fn feed_forward(&mut self, inputs: Matrix) -> Matrix {
-        assert!(
-            self.layers[0] == inputs.data.len(),
-            "Invalid number of inputs. Expected {}, got {}",
-            self.layers[0],
-            inputs.data.len()
-        );
-
-        // Store original input
-        self.data = vec![inputs.clone()];
-
-        // Process through layers functionally
-        let result = self
-            .weights
-            .iter()
-            .enumerate()
-            .fold(inputs, |current, (i, weight)| {
-                let with_bias = Self::augment_with_bias(current);
-                let output = Self::process_layer(weight, &with_bias, &self.activations[i]);
-                self.data.push(output.clone());
-                output
-            });
-
-        result
-    }
-
-    /// Performs prediction without storing intermediate outputs.
-    /// This is more efficient for inference-only use cases.
-    ///
-    /// # Arguments
-    /// * `inputs` - Input matrix to process
-    ///
-    /// # Returns
-    /// The network's output matrix
-    ///
-    /// # Panics
-    /// Panics if the number of inputs doesn't match the first layer size
-    pub fn predict(&self, inputs: Matrix) -> Matrix {
-        assert!(
-            self.layers[0] == inputs.data.len(),
-            "Invalid number of inputs. Expected {}, got {}",
-            self.layers[0],
-            inputs.data.len()
-        );
-
-        // Process through layers functionally without storing intermediates
-        self.weights
-            .iter()
-            .enumerate()
-            .fold(inputs, |current, (i, weight)| {
-                let with_bias = Self::augment_with_bias(current);
-                Self::process_layer(weight, &with_bias, &self.activations[i])
-            })
-    }
-
-    /// Performs backpropagation to update network weights.
-    ///
-    /// # Arguments
-    /// * `outputs` - Current network outputs
-    /// * `targets` - Target outputs for training
-    pub fn back_propagate(&mut self, outputs: Matrix, targets: Matrix) {
-        let mut errors = targets.subtract(&outputs);
-        let mut gradients = if matches!(
-            self.activations.last().unwrap().activation_type,
-            ActivationType::Softmax
-        ) {
-            // For softmax with cross-entropy loss, the gradient simplifies to (output - target)
-            errors.clone()
-        } else if let Some(vector_derivative) = self.activations.last().unwrap().vector_derivative {
-            // For other activation functions, use their derivatives
-            let derivative = vector_derivative(&outputs);
-            derivative.elementwise_multiply(&errors)
-        } else if let Some(scalar_derivative) = self.activations.last().unwrap().derivative {
-            outputs.map(scalar_derivative).elementwise_multiply(&errors)
-        } else {
-            panic!("No derivative implementation available")
-        };
-
-        for i in (0..self.layers.len() - 1).rev() {
-            gradients = gradients.map(|x| x * self.learning_rate);
-
-            let layer_input = Self::augment_with_bias(self.data[i].clone());
-            let weight_updates = gradients.dot_multiply(&layer_input.transpose());
-
-            // Apply momentum using functional update
-            let momentum_term = self.prev_weight_updates[i].map(|x| x * self.momentum);
-            let updates = weight_updates.add(&momentum_term);
-
-            // Update weights
-            self.weights[i] = self.weights[i].add(&updates);
-            self.prev_weight_updates[i] = weight_updates;
-
-            if i > 0 {
-                // Propagate error through weights (excluding bias weights)
-                let weight_no_bias = Matrix::new(
-                    self.weights[i].rows,
-                    self.weights[i].cols - 1,
-                    self.weights[i].data[..self.weights[i].rows * (self.weights[i].cols - 1)]
-                        .to_vec(),
-                );
-                errors = weight_no_bias.transpose().dot_multiply(&errors);
-                gradients =
-                    if let Some(vector_derivative) = self.activations[i - 1].vector_derivative {
-                        let jacobian = vector_derivative(&self.data[i]);
-                        // For softmax, we need to handle the gradient differently
-                        if jacobian.rows == self.data[i].rows * self.data[i].rows {
-                            // For softmax, the gradient is simply the error
-                            errors.clone()
-                        } else {
-                            // This is a regular derivative
-                            jacobian.elementwise_multiply(&errors)
-                        }
-                    } else if let Some(scalar_derivative) = self.activations[i - 1].derivative {
-                        self.data[i]
-                            .map(scalar_derivative)
-                            .elementwise_multiply(&errors)
-                    } else {
-                        panic!("No derivative implementation available")
-                    };
-            }
-        }
-    }
-
     /// Trains the network on a dataset for a specified number of epochs.
     ///
     /// # Arguments
@@ -288,7 +121,7 @@ impl Network {
 
             inputs.iter().zip(&targets).for_each(|(input, target)| {
                 let outputs = self.feed_forward(Matrix::from(input.clone()));
-                let error = Matrix::from(target.clone()).subtract(&outputs);
+                let error = &Matrix::from(target.clone()) - &outputs;
                 total_error += error.data.iter().map(|x| x * x).sum::<f64>();
 
                 // Calculate accuracy - handle single output case differently
@@ -347,6 +180,139 @@ impl Network {
                     epoch
                 );
                 break;
+            }
+        }
+    }
+
+    /// Performs forward propagation through the network.
+    ///
+    /// # Arguments
+    /// * `inputs` - Input matrix to process
+    ///
+    /// # Returns
+    /// The network's output matrix
+    ///
+    /// # Panics
+    /// Panics if the number of inputs doesn't match the first layer size
+    pub fn feed_forward(&mut self, inputs: Matrix) -> Matrix {
+        assert!(
+            self.layers[0] == inputs.data.len(),
+            "Invalid number of inputs. Expected {}, got {}",
+            self.layers[0],
+            inputs.data.len()
+        );
+
+        // Store original input
+        self.data = vec![inputs.clone()];
+
+        // Process through layers functionally
+        let result = self
+            .weights
+            .iter()
+            .enumerate()
+            .fold(inputs, |current, (i, weight)| {
+                let with_bias = current.augment_with_bias();
+                let output = process_layer(weight, &with_bias, &self.activations[i]);
+                self.data.push(output.clone());
+                output
+            });
+
+        result
+    }
+
+    /// Performs prediction without storing intermediate outputs.
+    /// This is more efficient for inference-only use cases.
+    ///
+    /// # Arguments
+    /// * `inputs` - Input matrix to process
+    ///
+    /// # Returns
+    /// The network's output matrix
+    ///
+    /// # Panics
+    /// Panics if the number of inputs doesn't match the first layer size
+    pub fn predict(&self, inputs: Matrix) -> Matrix {
+        assert!(
+            self.layers[0] == inputs.data.len(),
+            "Invalid number of inputs. Expected {}, got {}",
+            self.layers[0],
+            inputs.data.len()
+        );
+
+        // Process through layers functionally without storing intermediates
+        self.weights
+            .iter()
+            .enumerate()
+            .fold(inputs, |current, (i, weight)| {
+                let with_bias = current.augment_with_bias();
+                process_layer(weight, &with_bias, &self.activations[i])
+            })
+    }
+
+    /// Performs backpropagation to update network weights.
+    ///
+    /// # Arguments
+    /// * `outputs` - Current network outputs
+    /// * `targets` - Target outputs for training
+    pub fn back_propagate(&mut self, outputs: Matrix, targets: Matrix) {
+        let mut errors = &targets - &outputs;
+        let mut gradients = if matches!(
+            self.activations.last().unwrap().activation_type,
+            ActivationType::Softmax
+        ) {
+            // For softmax with cross-entropy loss, the gradient simplifies to (output - target)
+            errors.clone()
+        } else if let Some(vector_derivative) = self.activations.last().unwrap().vector_derivative {
+            // For other activation functions, use their derivatives
+            let derivative = vector_derivative(&outputs);
+            derivative.elementwise_multiply(&errors)
+        } else if let Some(scalar_derivative) = self.activations.last().unwrap().derivative {
+            outputs.map(scalar_derivative).elementwise_multiply(&errors)
+        } else {
+            panic!("No derivative implementation available")
+        };
+
+        for i in (0..self.layers.len() - 1).rev() {
+            gradients = gradients.map(|x| x * self.learning_rate);
+
+            let layer_input = self.data[i].clone().augment_with_bias();
+            let weight_updates = gradients.dot_multiply(&layer_input.transpose());
+
+            // Apply momentum
+            let momentum_term = self.prev_weight_updates[i].map(|x| x * self.momentum);
+            let updates = &weight_updates + &momentum_term;
+
+            // Update weights
+            self.weights[i] = &self.weights[i] + &updates;
+            self.prev_weight_updates[i] = weight_updates;
+
+            if i > 0 {
+                // Propagate error through weights (excluding bias weights)
+                let weight_no_bias = Matrix::new(
+                    self.weights[i].rows,
+                    self.weights[i].cols - 1,
+                    self.weights[i].data[..self.weights[i].rows * (self.weights[i].cols - 1)]
+                        .to_vec(),
+                );
+                errors = weight_no_bias.transpose().dot_multiply(&errors);
+                gradients =
+                    if let Some(vector_derivative) = self.activations[i - 1].vector_derivative {
+                        let jacobian = vector_derivative(&self.data[i]);
+                        // For softmax, we need to handle the gradient differently
+                        if jacobian.rows == self.data[i].rows * self.data[i].rows {
+                            // For softmax, the gradient is simply the error
+                            errors.clone()
+                        } else {
+                            // This is a regular derivative
+                            jacobian.elementwise_multiply(&errors)
+                        }
+                    } else if let Some(scalar_derivative) = self.activations[i - 1].derivative {
+                        self.data[i]
+                            .map(scalar_derivative)
+                            .elementwise_multiply(&errors)
+                    } else {
+                        panic!("No derivative implementation available")
+                    };
             }
         }
     }
@@ -420,6 +386,26 @@ impl Network {
             .collect();
 
         Ok(network)
+    }
+}
+
+/// Processes a single layer of the network.
+///
+/// # Arguments
+/// * `weight` - Weight matrix for the layer
+/// * `input` - Input matrix including bias terms
+/// * `activation` - Activation function to apply
+///
+/// # Returns
+/// The processed output matrix after applying weights and activation
+fn process_layer(weight: &Matrix, input: &Matrix, activation: &Activation) -> Matrix {
+    let output = weight.dot_multiply(input);
+    if let Some(vector_fn) = activation.vector_function {
+        vector_fn(&output)
+    } else if let Some(scalar_fn) = activation.function {
+        output.map(scalar_fn)
+    } else {
+        panic!("No activation function implementation available")
     }
 }
 

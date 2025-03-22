@@ -11,6 +11,20 @@ pub struct Matrix {
 }
 
 impl Matrix {
+    /// Augments an input matrix with bias terms (adds a row of 1.0s).
+    ///
+    /// # Arguments
+    /// * `input` - Input matrix to augment
+    ///
+    /// # Returns
+    /// A new matrix with an additional row of 1.0s for bias terms
+    pub fn augment_with_bias(&self) -> Matrix {
+        let mut augmented = Vec::with_capacity(self.data.len() + self.cols);
+        augmented.extend_from_slice(&self.data);
+        augmented.extend(std::iter::repeat(1.0).take(self.cols));
+        Matrix::new(self.rows + 1, self.cols, augmented)
+    }
+
     pub fn elementwise_multiply(&self, other: &Matrix) -> Matrix {
         assert_eq!(
             (self.rows, self.cols),
@@ -114,15 +128,6 @@ impl Matrix {
                 row, col, self.rows, self.cols
             )
         }
-    }
-
-    // For backward compatibility with tests
-    pub fn subtract(&self, other: &Matrix) -> Matrix {
-        self - other
-    }
-
-    pub fn add(&self, other: &Matrix) -> Matrix {
-        self + other
     }
 }
 
@@ -289,7 +294,7 @@ mod tests {
             7.0, 8.0
         ];
 
-        let result = matrix1.subtract(&matrix2);
+        let result = &matrix1 - &matrix2;
 
         let expected = matrix![
             -4.0, -4.0;
@@ -334,7 +339,7 @@ mod tests {
             8.0, 9.0, 10.0
         ];
 
-        let _ = matrix1.subtract(&matrix2);
+        let _ = &matrix1 - &matrix2;
     }
 
     #[test]
@@ -533,5 +538,32 @@ mod tests {
     fn test_into_matrix_invalid_dimensions() {
         let vec = vec![1.0, 2.0, 3.0];
         let _matrix = vec.into_matrix(2, 2); // Should panic
+    }
+
+    #[test]
+    fn test_augment_with_bias() {
+        let input = matrix![
+            1.0, 2.0;
+            3.0, 4.0
+        ];
+
+        let augmented = input.augment_with_bias();
+
+        assert_eq!(augmented.rows, 3); // Original rows + 1
+        assert_eq!(augmented.cols, 2); // Same number of columns
+        assert_eq!(
+            augmented.data,
+            vec![1.0, 2.0, 3.0, 4.0, 1.0, 1.0] // Original data + bias terms
+        );
+    }
+
+    #[test]
+    fn test_augment_with_bias_empty() {
+        let input = Matrix::zeros(0, 3);
+        let augmented = input.augment_with_bias();
+
+        assert_eq!(augmented.rows, 1); // Just the bias row
+        assert_eq!(augmented.cols, 3);
+        assert_eq!(augmented.data, vec![1.0, 1.0, 1.0]);
     }
 }

@@ -100,11 +100,11 @@ impl Activation {
 /// Implements the logistic function: f(x) = 1 / (1 + e^(-x))
 /// with derivative: f'(x) = f(x) * (1 - f(x))
 pub const SIGMOID: Activation = Activation {
+    activation_type: ActivationType::Sigmoid,
     function: Some(|x| 1.0 / (1.0 + E.powf(-x))),
     derivative: Some(|x| x * (1.0 - x)),
     vector_function: Some(|m| m.map(|x| 1.0 / (1.0 + E.powf(-x)))),
     vector_derivative: Some(|m| m.map(|x| x * (1.0 - x))),
-    activation_type: ActivationType::Sigmoid,
 };
 
 /// Standard softmax activation function.
@@ -112,6 +112,7 @@ pub const SIGMOID: Activation = Activation {
 /// Implements the softmax function: f(x) = e^x / sum(e^x)
 /// with derivative: f'(x) = f(x) * (1 - f(x))
 pub const SOFTMAX: Activation = Activation {
+    activation_type: ActivationType::Softmax,
     function: None,
     derivative: None,
     vector_function: Some(|m| {
@@ -150,7 +151,6 @@ pub const SOFTMAX: Activation = Activation {
             panic!("Softmax derivative not implemented for matrices");
         }
     }),
-    activation_type: ActivationType::Softmax,
 };
 
 #[cfg(test)]
