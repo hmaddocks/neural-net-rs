@@ -2,8 +2,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use mnist::mnist::{get_actual_digit, load_test_data};
 use neural_network::network::Network;
-use std::fs::File;
-use std::io::Read;
 
 /// Calculates metrics for a digit from the confusion matrix
 fn calculate_metrics(confusion_matrix: &[[usize; 10]; 10], digit: usize) -> (f64, f64, f64, f64) {
@@ -120,28 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(e.into());
         }
     };
-    let mut file = match File::open(&model_path) {
-        Ok(file) => file,
-        Err(e) => {
-            eprintln!("Failed to open model file: {}", e);
-            return Err(e.into());
-        }
-    };
-    let mut contents = String::new();
-    match file.read_to_string(&mut contents) {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!("Failed to read model file: {}", e);
-            return Err(e.into());
-        }
-    };
-    let mut network: Network = match serde_json::from_str(&contents) {
-        Ok(net) => net,
-        Err(e) => {
-            eprintln!("Failed to parse model file: {}", e);
-            return Err(e.into());
-        }
-    };
+    let network = Network::load(model_path.to_str().unwrap())?;
 
     println!("\nTesting network predictions...");
     let mut confusion_matrix = [[0usize; 10]; 10];
@@ -160,7 +137,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .zip(test_data.labels().iter())
         .for_each(|(image, label)| {
-            let output = network.feed_forward(Matrix::new(784, 1, image.data.clone()));
+            let output = network.predict(Matrix::new(784, 1, image.data.clone()));
             let predicted = get_actual_digit(&output);
             let actual = get_actual_digit(label);
 

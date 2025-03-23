@@ -255,6 +255,31 @@ impl Network {
             })
     }
 
+    /// Calculates gradients for a layer based on its activation function.
+    ///
+    /// # Arguments
+    /// * `activation` - The activation function for the layer
+    /// * `outputs` - The layer's outputs
+    /// * `errors` - The error values
+    ///
+    /// # Returns
+    /// The calculated gradients
+    fn calculate_gradients(
+        activation: &Box<dyn ActivationFunction + Send + Sync>,
+        outputs: &Matrix,
+        errors: &Matrix,
+    ) -> Matrix {
+        if matches!(activation.activation_type(), ActivationType::Softmax) {
+            // For softmax with cross-entropy loss, the gradient simplifies to (output - target)
+            errors.clone()
+        } else {
+            // For other activation functions, use their derivatives
+            activation
+                .derivative_vector(outputs)
+                .elementwise_multiply(errors)
+        }
+    }
+
     /// Performs backpropagation to update network weights.
     ///
     /// # Arguments
@@ -262,16 +287,13 @@ impl Network {
     /// * `targets` - Target outputs for training
     pub fn back_propagate(&mut self, outputs: Matrix, targets: Matrix) {
         let mut errors = &targets - &outputs;
-        let mut gradients = if matches!(
-            self.activations.last().unwrap().activation_type(),
-            ActivationType::Softmax
-        ) {
-            // For softmax with cross-entropy loss, the gradient simplifies to (output - target)
+        let mut gradients = if self.activations.is_empty() {
+            // If no activation functions, just use the error directly
             errors.clone()
         } else {
-            // For other activation functions, use their derivatives
-            let derivative = self.activations.last().unwrap().derivative_vector(&outputs);
-            derivative.elementwise_multiply(&errors)
+            // For each layer, use the appropriate gradient calculation
+            let last_layer_idx = self.activations.len() - 1;
+            Self::calculate_gradients(&self.activations[last_layer_idx], &outputs, &errors)
         };
 
         for i in (0..self.layers.len() - 1).rev() {
@@ -297,9 +319,8 @@ impl Network {
                         .to_vec(),
                 );
                 errors = weight_no_bias.transpose().dot_multiply(&errors);
-                gradients = self.activations[i - 1]
-                    .derivative_vector(&self.data[i])
-                    .elementwise_multiply(&errors);
+                gradients =
+                    Self::calculate_gradients(&self.activations[i - 1], &self.data[i], &errors);
             }
         }
     }
@@ -367,11 +388,25 @@ impl Network {
             .iter()
             .map(|w| Matrix::zeros(w.rows, w.cols))
             .collect();
+
+        // Create activation functions from types
         network.activations = network
             .activation_types
             .iter()
             .map(|t| t.create_activation())
             .collect();
+
+        // Verify that we have the correct number of activation functions
+        if network.activations.len() != network.layers.len() - 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Invalid number of activation functions. Expected {}, got {}",
+                    network.layers.len() - 1,
+                    network.activations.len()
+                ),
+            ));
+        }
 
         Ok(network)
     }
@@ -398,7 +433,7 @@ fn process_layer(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::activations::ActivationType;
+    use crate::activations::{ActivationFunction, ActivationType, Sigmoid, Softmax};
     use crate::network_config::NetworkConfig;
     use approx::assert_relative_eq;
     use matrix::matrix::IntoMatrix;
@@ -626,5 +661,132 @@ mod tests {
         // Verify weights were updated
         assert!(!network.weights[0].data.iter().all(|&x| x == 0.0));
         assert!(!network.weights[1].data.iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
+    fn test_multiple_hidden_layers_with_softmax() {
+        let mut config = NetworkConfig::default();
+        // Create a network with 4 layers: input -> hidden1 -> hidden2 -> output
+        config.layers = vec![2, 4, 3, 2];
+        // Use different activation functions for each layer transition
+        config.activations = vec![
+            ActivationType::Sigmoid, // input -> hidden1
+            ActivationType::Softmax, // hidden1 -> hidden2
+            ActivationType::Sigmoid, // hidden2 -> output
+        ];
+        config.learning_rate = 0.1;
+        config.momentum = Some(0.9);
+        let mut network = Network::new(&config);
+
+        // Test forward propagation
+        let input = vec![0.5, 0.3].into_matrix(2, 1);
+        let output = network.feed_forward(input);
+
+        // Verify output dimensions
+        assert_eq!(output.rows, 2);
+        assert_eq!(output.cols, 1);
+
+        // Verify output is valid (between 0 and 1 due to sigmoid)
+        for &x in output.data.iter() {
+            assert!(x >= 0.0 && x <= 1.0);
+        }
+
+        // Test backpropagation with matching dimensions
+        let target = vec![1.0, 0.0].into_matrix(2, 1);
+        network.back_propagate(output, target);
+
+        // Verify all weight matrices were updated
+        for (i, weights) in network.weights.iter().enumerate() {
+            assert!(
+                !weights.data.iter().all(|&x| x == 0.0),
+                "Weights for layer {} were not updated",
+                i
+            );
+        }
+
+        // Verify intermediate layer outputs
+        assert_eq!(network.data.len(), 4); // input + 3 layer outputs
+        assert_eq!(network.data[1].rows, 4); // hidden1 layer size
+        assert_eq!(network.data[2].rows, 3); // hidden2 layer size
+        assert_eq!(network.data[3].rows, 2); // output layer size
+
+        // Verify hidden2 layer outputs sum to 1 (softmax property)
+        let hidden2_sum: f64 = network.data[2].data.iter().sum();
+        assert!(
+            (hidden2_sum - 1.0).abs() < 1e-10,
+            "Hidden2 layer outputs should sum to 1 (softmax), got {}",
+            hidden2_sum
+        );
+    }
+
+    #[test]
+    fn test_calculate_gradients() {
+        // Test with Sigmoid activation
+        let sigmoid = Box::new(Sigmoid) as Box<dyn ActivationFunction + Send + Sync>;
+        let outputs = vec![0.7, 0.3].into_matrix(2, 1);
+        let errors = vec![0.1, -0.1].into_matrix(2, 1);
+
+        let gradients = Network::calculate_gradients(&sigmoid, &outputs, &errors);
+
+        // For sigmoid, gradient = error * output * (1 - output)
+        assert_eq!(gradients.rows, 2);
+        assert_eq!(gradients.cols, 1);
+        assert_relative_eq!(gradients.data[0], 0.1 * 0.7 * 0.3, epsilon = 1e-10);
+        assert_relative_eq!(gradients.data[1], -0.1 * 0.3 * 0.7, epsilon = 1e-10);
+
+        // Test with Softmax activation
+        let softmax = Box::new(Softmax) as Box<dyn ActivationFunction + Send + Sync>;
+        let outputs = vec![0.7, 0.3].into_matrix(2, 1);
+        let errors = vec![0.1, -0.1].into_matrix(2, 1);
+
+        let gradients = Network::calculate_gradients(&softmax, &outputs, &errors);
+
+        // For softmax with cross-entropy loss, gradient = error directly
+        assert_eq!(gradients.rows, 2);
+        assert_eq!(gradients.cols, 1);
+        assert_relative_eq!(gradients.data[0], 0.1, epsilon = 1e-10);
+        assert_relative_eq!(gradients.data[1], -0.1, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_calculate_gradients_edge_cases() {
+        // Test with sigmoid(0) = 0.5 outputs
+        let sigmoid = Box::new(Sigmoid) as Box<dyn ActivationFunction + Send + Sync>;
+        let outputs = vec![0.5, 0.5].into_matrix(2, 1); // sigmoid(0) = 0.5
+        let errors = vec![0.1, -0.1].into_matrix(2, 1);
+
+        let gradients = Network::calculate_gradients(&sigmoid, &outputs, &errors);
+
+        // For sigmoid at x=0, output is 0.5 and derivative is 0.25
+        assert_relative_eq!(gradients.data[0], 0.1 * 0.5 * 0.5, epsilon = 1e-10);
+        assert_relative_eq!(gradients.data[1], -0.1 * 0.5 * 0.5, epsilon = 1e-10);
+
+        // Test with one output (edge case for softmax)
+        let softmax = Box::new(Softmax) as Box<dyn ActivationFunction + Send + Sync>;
+        let outputs = vec![1.0].into_matrix(1, 1);
+        let errors = vec![0.1].into_matrix(1, 1);
+
+        let gradients = Network::calculate_gradients(&softmax, &outputs, &errors);
+
+        // For softmax with single output, gradient = error directly
+        assert_eq!(gradients.rows, 1);
+        assert_eq!(gradients.cols, 1);
+        assert_relative_eq!(gradients.data[0], 0.1, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_calculate_gradients_large_values() {
+        // Test with large values to ensure numerical stability
+        let sigmoid = Box::new(Sigmoid) as Box<dyn ActivationFunction + Send + Sync>;
+        let outputs = vec![0.999, 0.001].into_matrix(2, 1);
+        let errors = vec![1.0, -1.0].into_matrix(2, 1);
+
+        let gradients = Network::calculate_gradients(&sigmoid, &outputs, &errors);
+
+        // Should handle large values without numerical instability
+        assert!(gradients.data[0].is_finite());
+        assert!(gradients.data[1].is_finite());
+        assert!(gradients.data[0] > 0.0);
+        assert!(gradients.data[1] < 0.0);
     }
 }
