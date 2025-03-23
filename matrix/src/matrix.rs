@@ -1,4 +1,4 @@
-use ndarray::Array2;
+use ndarray::{azip, concatenate, Array2, ArrayView2, Axis};
 use ndarray_rand::rand_distr::Uniform;
 use ndarray_rand::RandomExt;
 use serde::{Deserialize, Serialize};
@@ -19,12 +19,10 @@ impl Matrix {
     /// # Returns
     /// A new matrix with an additional row of 1.0s for bias terms
     pub fn augment_with_bias(&self) -> Self {
-        let mut new_data = Array2::zeros((self.rows() + 1, self.cols()));
-        new_data
-            .slice_mut(ndarray::s![..self.rows(), ..])
-            .assign(&self.data);
-        new_data.row_mut(self.rows()).fill(1.0);
-        Matrix { data: new_data }
+        let bias_row = Array2::ones((1, self.cols()));
+        Matrix {
+            data: concatenate![Axis(0), self.data, bias_row],
+        }
     }
 
     pub fn elementwise_multiply(&self, other: &Matrix) -> Matrix {
@@ -84,6 +82,61 @@ impl Matrix {
         Matrix {
             data: self.data.mapv(func),
         }
+    }
+
+    /// Get a view of the matrix
+    pub fn view(&self) -> ArrayView2<f64> {
+        self.data.view()
+    }
+
+    /// Apply a function element-wise with broadcasting
+    pub fn broadcast_apply<F>(&self, other: &Matrix, f: F) -> Matrix
+    where
+        F: Fn(f64, f64) -> f64,
+    {
+        Matrix {
+            data: azip!(&self.data, &other.data).map_collect(|&a, &b| f(a, b)),
+        }
+    }
+
+    /// Sum along specified axis
+    pub fn sum_axis(&self, axis: Axis) -> Matrix {
+        Matrix {
+            data: self.data.sum_axis(axis).insert_axis(axis),
+        }
+    }
+
+    /// Mean along specified axis
+    pub fn mean_axis(&self, axis: Axis) -> Matrix {
+        Matrix {
+            data: self.data.mean_axis(axis).unwrap().insert_axis(axis),
+        }
+    }
+
+    /// Concatenate matrices along specified axis
+    pub fn concatenate(matrices: &[&Matrix], axis: Axis) -> Matrix {
+        let views: Vec<_> = matrices.iter().map(|m| m.data.view()).collect();
+        Matrix {
+            data: concatenate(axis, &views[..]).unwrap(),
+        }
+    }
+
+    /// Slice the matrix
+    pub fn slice(&self, rows: std::ops::Range<usize>, cols: std::ops::Range<usize>) -> Matrix {
+        Matrix {
+            data: self.data.slice(ndarray::s![rows, cols]).to_owned(),
+        }
+    }
+
+    /// Create a matrix from a slice
+    pub fn from_slice(
+        slice: &[f64],
+        rows: usize,
+        cols: usize,
+    ) -> Result<Self, ndarray::ShapeError> {
+        Ok(Matrix {
+            data: Array2::from_shape_vec((rows, cols), slice.to_vec())?,
+        })
     }
 
     pub fn get(&self, row: usize, col: usize) -> f64 {
@@ -555,5 +608,169 @@ mod tests {
             augmented.data.into_iter().collect::<Vec<_>>(),
             vec![1.0, 1.0, 1.0]
         );
+    }
+
+    #[test]
+    fn test_view() {
+        let m = matrix![
+            1.0, 2.0;
+            3.0, 4.0
+        ];
+        let view = m.view();
+        assert_eq!(view[[0, 0]], 1.0);
+        assert_eq!(view[[0, 1]], 2.0);
+        assert_eq!(view[[1, 0]], 3.0);
+        assert_eq!(view[[1, 1]], 4.0);
+    }
+
+    #[test]
+    fn test_broadcast_apply() {
+        let m1 = matrix![
+            1.0, 2.0;
+            3.0, 4.0
+        ];
+        let m2 = matrix![
+            2.0, 3.0;
+            4.0, 5.0
+        ];
+
+        // Test addition
+        let sum = m1.broadcast_apply(&m2, |a, b| a + b);
+        assert_eq!(
+            sum,
+            matrix![
+                3.0, 5.0;
+                7.0, 9.0
+            ]
+        );
+
+        // Test multiplication
+        let product = m1.broadcast_apply(&m2, |a, b| a * b);
+        assert_eq!(
+            product,
+            matrix![
+                2.0, 6.0;
+                12.0, 20.0
+            ]
+        );
+    }
+
+    #[test]
+    fn test_sum_axis() {
+        let m = matrix![
+            1.0, 2.0, 3.0;
+            4.0, 5.0, 6.0
+        ];
+
+        // Sum along rows (Axis(1))
+        let row_sums = m.sum_axis(Axis(1));
+        assert_eq!(
+            row_sums,
+            matrix![
+                6.0;
+                15.0
+            ]
+        );
+
+        // Sum along columns (Axis(0))
+        let col_sums = m.sum_axis(Axis(0));
+        assert_eq!(col_sums, matrix![5.0, 7.0, 9.0]);
+    }
+
+    #[test]
+    fn test_mean_axis() {
+        let m = matrix![
+            1.0, 2.0, 3.0;
+            4.0, 5.0, 6.0
+        ];
+
+        // Mean along rows (Axis(1))
+        let row_means = m.mean_axis(Axis(1));
+        assert_eq!(
+            row_means,
+            matrix![
+                2.0;
+                5.0
+            ]
+        );
+
+        // Mean along columns (Axis(0))
+        let col_means = m.mean_axis(Axis(0));
+        assert_eq!(col_means, matrix![2.5, 3.5, 4.5]);
+    }
+
+    #[test]
+    fn test_concatenate() {
+        let m1 = matrix![
+            1.0, 2.0;
+            3.0, 4.0
+        ];
+        let m2 = matrix![
+            5.0, 6.0;
+            7.0, 8.0
+        ];
+
+        // Concatenate along rows (Axis(0))
+        let vertical = Matrix::concatenate(&[&m1, &m2], Axis(0));
+        assert_eq!(
+            vertical,
+            matrix![
+                1.0, 2.0;
+                3.0, 4.0;
+                5.0, 6.0;
+                7.0, 8.0
+            ]
+        );
+
+        // Concatenate along columns (Axis(1))
+        let horizontal = Matrix::concatenate(&[&m1, &m2], Axis(1));
+        assert_eq!(
+            horizontal,
+            matrix![
+                1.0, 2.0, 5.0, 6.0;
+                3.0, 4.0, 7.0, 8.0
+            ]
+        );
+    }
+
+    #[test]
+    fn test_slice() {
+        let m = matrix![
+            1.0, 2.0, 3.0;
+            4.0, 5.0, 6.0;
+            7.0, 8.0, 9.0
+        ];
+
+        // Slice middle row and columns
+        let middle = m.slice(1..2, 1..2);
+        assert_eq!(middle, matrix![5.0]);
+
+        // Slice multiple rows and columns
+        let subset = m.slice(0..2, 1..3);
+        assert_eq!(
+            subset,
+            matrix![
+                2.0, 3.0;
+                5.0, 6.0
+            ]
+        );
+    }
+
+    #[test]
+    fn test_from_slice() {
+        let data = vec![1.0, 2.0, 3.0, 4.0];
+
+        // Create 2x2 matrix
+        let m = Matrix::from_slice(&data, 2, 2).unwrap();
+        assert_eq!(
+            m,
+            matrix![
+                1.0, 2.0;
+                3.0, 4.0
+            ]
+        );
+
+        // Test error case with wrong dimensions
+        assert!(Matrix::from_slice(&data, 3, 3).is_err());
     }
 }

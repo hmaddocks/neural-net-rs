@@ -34,6 +34,7 @@ use std::io;
 
 /// A feed-forward neural network with configurable layers and activation functions.
 #[derive(Serialize, Deserialize)]
+#[serde(crate = "serde")]
 pub struct Network {
     /// Sizes of each layer in the network, including input and output layers
     layers: Vec<usize>,
@@ -119,27 +120,39 @@ impl Network {
     /// * `targets` - Vector of target output vectors
     /// * `epochs` - Number of training epochs
     pub fn train(&mut self, inputs: Vec<Vec<f64>>, targets: Vec<Vec<f64>>, epochs: u32) {
+        // Convert inputs and targets to Matrix format once before training
+        let input_matrices: Vec<_> = inputs
+            .iter()
+            .map(|input| Matrix::from(input.clone()))
+            .collect();
+        let target_matrices: Vec<_> = targets
+            .iter()
+            .map(|target| Matrix::from(target.clone()))
+            .collect();
+
         for epoch in 1..=epochs {
             let epoch_start = std::time::Instant::now();
+
+            // Process batches sequentially for better stability
             let mut total_error = 0.0;
             let mut correct_predictions = 0;
-            let total_samples = inputs.len();
 
-            inputs.iter().zip(&targets).for_each(|(input, target)| {
-                let outputs = self.feed_forward(Matrix::from(input.clone()));
-                let error = &Matrix::from(target.clone()) - &outputs;
-                total_error += error.data.iter().map(|x| x * x).sum::<f64>();
+            for (input, target) in input_matrices.iter().zip(&target_matrices) {
+                // Forward pass
+                let outputs = self.feed_forward(input.clone());
 
-                // Calculate accuracy - handle single output case differently
-                if outputs.cols() == 1 {
-                    // Binary classification - compare with threshold
+                // Calculate error and accuracy more efficiently
+                let error = target - &outputs;
+                let error_sum = error.data.iter().map(|x| x * x).sum::<f64>();
+                total_error += error_sum;
+
+                // Calculate accuracy more efficiently
+                let correct = if outputs.cols() == 1 {
                     let predicted = outputs.get(0, 0) >= 0.5;
-                    let actual = target[0] >= 0.5;
-                    if predicted == actual {
-                        correct_predictions += 1;
-                    }
+                    let actual = target.get(0, 0) >= 0.5;
+                    predicted == actual
                 } else {
-                    // Multi-class classification
+                    // Use matrix operations for finding max index
                     let predicted = outputs
                         .data
                         .iter()
@@ -148,19 +161,22 @@ impl Network {
                         .map(|(idx, _)| idx)
                         .unwrap();
                     let actual = target
+                        .data
                         .iter()
                         .position(|&val| (val - 1.0).abs() < f64::EPSILON)
-                        .expect(
-                            "Target vector should contain exactly one 1.0 value (one-hot encoding)",
-                        );
-                    if predicted == actual {
-                        correct_predictions += 1;
-                    }
+                        .expect("Target vector should contain exactly one 1.0 value");
+                    predicted == actual
+                };
+
+                if correct {
+                    correct_predictions += 1;
                 }
 
-                self.back_propagate(outputs, Matrix::from(target.clone()));
-            });
+                // Backpropagation
+                self.back_propagate(outputs, target.clone());
+            }
 
+            let total_samples = inputs.len();
             let avg_error = total_error / total_samples as f64;
             let accuracy = correct_predictions as f64 / total_samples as f64;
 
@@ -267,14 +283,9 @@ impl Network {
                 let next_weights = &self.weights[i + 1];
                 let next_delta = &deltas[deltas.len() - 1];
 
-                // Remove bias weights for backpropagation
-                let weights_no_bias = Matrix {
-                    data: next_weights
-                        .data
-                        .slice(ndarray::s![.., ..next_weights.cols() - 1])
-                        .to_owned(),
-                };
-
+                // Remove bias weights for backpropagation more efficiently
+                let weights_no_bias =
+                    next_weights.slice(0..next_weights.rows(), 0..next_weights.cols() - 1);
                 let propagated_error = weights_no_bias.transpose().dot_multiply(next_delta);
                 deltas.push(propagated_error.elementwise_multiply(&activation_derivative));
             }
@@ -286,13 +297,13 @@ impl Network {
             let input_with_bias = self.data[i].augment_with_bias();
             let delta = &deltas[i];
 
-            // Calculate weight updates with momentum
+            // Calculate weight updates with momentum more efficiently
             let weight_updates = delta.dot_multiply(&input_with_bias.transpose());
-            let momentum_term = &self.prev_weight_updates[i].map(|x| x * self.momentum);
+            let momentum_term = self.prev_weight_updates[i].map(|x| x * self.momentum);
             let learning_term = weight_updates.map(|x| x * self.learning_rate);
 
-            // Update weights and store updates for next iteration
-            self.prev_weight_updates[i] = &learning_term + momentum_term;
+            // Update weights and store updates for next iteration using efficient operations
+            self.prev_weight_updates[i] = &learning_term + &momentum_term;
             self.weights[i] = &self.weights[i] + &self.prev_weight_updates[i];
         }
     }
