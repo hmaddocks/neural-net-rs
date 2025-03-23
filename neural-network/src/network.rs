@@ -286,6 +286,7 @@ impl Network {
     /// * `outputs` - Current network outputs
     /// * `targets` - Target outputs for training
     pub fn back_propagate(&mut self, outputs: Matrix, targets: Matrix) {
+        // Error and gradient for the output layer
         let mut errors = &targets - &outputs;
         let mut gradients = Self::calculate_gradients(
             &self.activations[self.activations.len() - 1],
@@ -315,6 +316,8 @@ impl Network {
                     self.weights[i].data[..self.weights[i].rows * (self.weights[i].cols - 1)]
                         .to_vec(),
                 );
+
+                // Error and gradient for the hidden layers
                 errors = weight_no_bias.transpose().dot_multiply(&errors);
                 gradients =
                     Self::calculate_gradients(&self.activations[i - 1], &self.data[i], &errors);
