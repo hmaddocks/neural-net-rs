@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .position(|&x| x > 0.9)
             .unwrap_or(0);
 
-        match save_image(&train_images[i].data, i, "train", label) {
+        match save_image(train_images[i].data.as_slice().unwrap(), i, "train", label) {
             Ok(()) => println!("Training image {} label: {}", i, label),
             Err(e) => {
                 eprintln!("Failed to save training image {}: {}", i, e);
@@ -94,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .position(|&x| x > 0.9)
             .unwrap_or(0);
-        match save_image(&test_images[i].data, i, "test", label) {
+        match save_image(test_images[i].data.as_slice().unwrap(), i, "test", label) {
             Ok(()) => println!("Test image {} label: {}", i, label),
             Err(e) => {
                 eprintln!("Failed to save test image {}: {}", i, e);

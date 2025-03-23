@@ -1,4 +1,5 @@
-use matrix::matrix::Matrix;
+use crate::matrix::Matrix;
+use ndarray::Array2;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::E;
 
@@ -97,38 +98,47 @@ impl ActivationFunction for Softmax {
     }
 
     fn apply_vector(&self, input: &Matrix) -> Matrix {
-        let mut exp_values = Vec::with_capacity(input.rows * input.cols);
-        exp_values.extend(input.data.iter().map(|x| E.powf(*x)));
-        let mut exp_matrix = Matrix::new(input.rows, input.cols, exp_values);
-
         // For column vectors, treat the entire vector as one group
-        if input.cols == 1 {
-            let sum: f64 = exp_matrix.data.iter().sum();
-            exp_matrix.data.iter_mut().for_each(|x| *x /= sum);
+        if input.cols() == 1 {
+            // Calculate exp(x) for each element
+            let exp_data = input.data.mapv(|x| E.powf(x));
+
+            // Calculate sum of exp values
+            let sum: f64 = exp_data.sum();
+
+            // Normalize by sum to get probabilities
+            Matrix {
+                data: exp_data.mapv(|x| x / sum),
+            }
         } else {
             panic!("Softmax not implemented for matrices");
         }
-        exp_matrix
     }
 
     fn derivative_vector(&self, input: &Matrix) -> Matrix {
-        // For softmax derivative, we need the Jacobian matrix
-        // ∂softmax(x[i])/∂x[j] = softmax(x[i]) * (δ[i,j] - softmax(x[j]))
-        let softmax_output = self.apply_vector(input);
-
         // For column vectors, create a diagonal matrix with derivatives
-        if input.cols == 1 {
-            let mut result = Matrix::zeros(input.rows, input.rows);
-            for i in 0..input.rows {
-                let si = softmax_output.data[i];
-                result.data[i * input.rows + i] = si * (1.0 - si);
-                for j in 0..input.rows {
-                    if i != j {
-                        result.data[i * input.rows + j] = -si * softmax_output.data[j];
+        if input.cols() == 1 {
+            let softmax_output = self.apply_vector(input);
+            let rows = input.rows();
+
+            // Create a matrix to store the Jacobian
+            let mut result = Array2::zeros((rows, rows));
+
+            // Get the softmax probabilities as a vector for easier access
+            let probs = softmax_output.data.as_slice().unwrap();
+
+            // Fill in the Jacobian matrix
+            for i in 0..rows {
+                for j in 0..rows {
+                    if i == j {
+                        result[[i, j]] = probs[i] * (1.0 - probs[i]);
+                    } else {
+                        result[[i, j]] = -probs[i] * probs[j];
                     }
                 }
             }
-            result
+
+            Matrix { data: result }
         } else {
             panic!("Softmax derivative not implemented for matrices");
         }

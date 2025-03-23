@@ -17,11 +17,7 @@ macro_rules! matrix {
                 }
             )*
 
-            Matrix {
-                rows,
-                cols,
-                data,
-            }
+            Matrix::new(rows, cols, data)
         }
     };
 }
@@ -38,8 +34,13 @@ mod tests {
             7.0, 8.0, 9.0
         ];
 
-        assert_eq!(m.rows, 3);
-        assert_eq!(m.cols, 3);
-        assert_eq!(m.data, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,]);
+        assert_eq!(m.rows(), 3);
+        assert_eq!(m.cols(), 3);
+        let expected = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        for (i, &val) in expected.iter().enumerate() {
+            let row = i / 3;
+            let col = i % 3;
+            assert_eq!(m.get(row, col), val);
+        }
     }
 }

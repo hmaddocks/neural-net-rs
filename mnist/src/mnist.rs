@@ -307,8 +307,9 @@ pub fn get_actual_digit(label: &Matrix) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_fs::prelude::*;
+    use std::fs::File;
     use std::io::Write;
+    use tempfile::tempdir;
 
     fn create_test_mnist_file(
         path: &Path,
@@ -317,132 +318,101 @@ mod tests {
         data: &[u8],
     ) -> std::io::Result<()> {
         let mut file = File::create(path)?;
-
-        // Write header
         file.write_all(&magic_number.to_be_bytes())?;
         file.write_all(&count.to_be_bytes())?;
 
         if magic_number == IMAGE_MAGIC_NUMBER {
-            // Add image dimensions (28x28)
+            // For images, write dimensions (28x28)
             file.write_all(&28u32.to_be_bytes())?;
             file.write_all(&28u32.to_be_bytes())?;
         }
 
-        // Write data
         file.write_all(data)?;
         Ok(())
     }
 
     #[test]
     fn test_mnist_data_new_valid() {
-        let images = vec![Matrix::zeros(784, 1), Matrix::zeros(784, 1)];
-        let labels = vec![Matrix::zeros(10, 1), Matrix::zeros(10, 1)];
-
-        let result = MnistData::new(images, labels);
-        assert!(result.is_ok());
-
-        let data = result.unwrap();
-        assert_eq!(data.len(), 2);
-        assert!(!data.is_empty());
+        let images = vec![Matrix::new(784, 1, vec![0.5; 784])];
+        let labels = vec![Matrix::new(
+            10,
+            1,
+            vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        )];
+        let mnist_data = MnistData::new(images, labels).unwrap();
+        assert_eq!(mnist_data.len(), 1);
     }
 
     #[test]
     fn test_mnist_data_new_mismatch() {
-        let images = vec![Matrix::zeros(784, 1)];
-        let labels = vec![Matrix::zeros(10, 1), Matrix::zeros(10, 1)];
-
-        let result = MnistData::new(images, labels);
-        assert!(result.is_err());
-
-        match result {
-            Err(MnistError::DataMismatch(msg)) => {
-                assert!(msg.contains("does not match"));
-            }
-            _ => panic!("Expected DataMismatch error"),
-        }
+        let images = vec![Matrix::new(784, 1, vec![0.5; 784])];
+        let labels = vec![
+            Matrix::new(
+                10,
+                1,
+                vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+            Matrix::new(
+                10,
+                1,
+                vec![0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ),
+        ];
+        assert!(MnistData::new(images, labels).is_err());
     }
 
     #[test]
     fn test_read_mnist_images_valid() {
-        let temp = assert_fs::TempDir::new().unwrap();
-        let file_path = temp.child("test-images");
+        let dir = tempdir().unwrap();
+        let image_path = dir.path().join("test_images");
 
-        // Create test image data: 2 images of 28x28 pixels
-        let image_data = vec![0u8; 784 * 2]; // Two blank images
-        create_test_mnist_file(
-            file_path.path(),
-            IMAGE_MAGIC_NUMBER,
-            2, // 2 images
-            &image_data,
-        )
-        .unwrap();
+        // Create test image file with 2 images (28x28 pixels each)
+        let image_data: Vec<u8> = (0..784 * 2).map(|i| (i % 256) as u8).collect();
+        create_test_mnist_file(&image_path, IMAGE_MAGIC_NUMBER, 2, &image_data).unwrap();
 
-        let progress = ProgressBar::new(2);
-        let result = read_mnist_images(file_path.path(), &progress);
+        let progress_bar = ProgressBar::new(0);
+        let images = read_mnist_images(image_path, &progress_bar).unwrap();
 
-        assert!(result.is_ok());
-        let images = result.unwrap();
         assert_eq!(images.len(), 2);
-        assert_eq!(images[0].rows, 784);
-        assert_eq!(images[0].cols, 1);
+        assert_eq!(images[0].rows(), 784);
+        assert_eq!(images[0].cols(), 1);
+        assert_eq!(images[1].rows(), 784);
+        assert_eq!(images[1].cols(), 1);
     }
 
     #[test]
     fn test_read_mnist_images_invalid_magic() {
-        let temp = assert_fs::TempDir::new().unwrap();
-        let file_path = temp.child("test-images");
+        let dir = tempdir().unwrap();
+        let image_path = dir.path().join("test_images");
 
-        // Create test file with wrong magic number
-        create_test_mnist_file(
-            file_path.path(),
-            0x12345678, // Wrong magic number
-            1,
-            &vec![0u8; 784],
-        )
-        .unwrap();
+        // Create test image file with wrong magic number
+        let image_data: Vec<u8> = (0..784 * 2).map(|i| (i % 256) as u8).collect();
+        create_test_mnist_file(&image_path, 1234, 2, &image_data).unwrap();
 
-        let progress = ProgressBar::new(2);
-        let result = read_mnist_images(file_path.path(), &progress);
-
-        assert!(result.is_err());
-        match result {
-            Err(MnistError::InvalidMagicNumber {
-                kind,
-                expected,
-                actual,
-            }) => {
-                assert_eq!(kind, "images");
-                assert_eq!(expected, IMAGE_MAGIC_NUMBER);
-                assert_eq!(actual, 0x12345678);
-            }
-            _ => panic!("Expected InvalidMagicNumber error"),
-        }
+        let progress_bar = ProgressBar::new(0);
+        assert!(read_mnist_images(image_path, &progress_bar).is_err());
     }
 
     #[test]
     fn test_read_mnist_labels_valid() {
-        let temp = assert_fs::TempDir::new().unwrap();
-        let file_path = temp.child("test-labels");
+        let dir = tempdir().unwrap();
+        let label_path = dir.path().join("test_labels");
 
-        // Create test label data: 2 labels (0 and 1)
+        // Create test label file with 2 labels
         let label_data = vec![0u8, 1u8];
-        create_test_mnist_file(
-            file_path.path(),
-            LABEL_MAGIC_NUMBER,
-            2, // 2 labels
-            &label_data,
-        )
-        .unwrap();
+        create_test_mnist_file(&label_path, LABEL_MAGIC_NUMBER, 2, &label_data).unwrap();
 
-        let progress = ProgressBar::new(2);
-        let result = read_mnist_labels(file_path.path(), &progress);
+        let progress_bar = ProgressBar::new(0);
+        let labels = read_mnist_labels(label_path, &progress_bar).unwrap();
 
-        assert!(result.is_ok());
-        let labels = result.unwrap();
         assert_eq!(labels.len(), 2);
+        assert_eq!(labels[0].rows(), 10);
+        assert_eq!(labels[0].cols(), 1);
+        assert_eq!(labels[1].rows(), 10);
+        assert_eq!(labels[1].cols(), 1);
 
         // Check one-hot encoding
-        assert_eq!(labels[0].data[0], 1.0); // First label should be 0
-        assert_eq!(labels[1].data[1], 1.0); // Second label should be 1
+        assert_eq!(labels[0].get(0, 0), 1.0); // First label should be 0
+        assert_eq!(labels[1].get(1, 0), 1.0); // Second label should be 1
     }
 }

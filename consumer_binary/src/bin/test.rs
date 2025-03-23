@@ -118,6 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(e.into());
         }
     };
+
     let network = Network::load(model_path.to_str().unwrap())?;
 
     println!("\nTesting network predictions...");
@@ -137,7 +138,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .zip(test_data.labels().iter())
         .for_each(|(image, label)| {
-            let output = network.predict(Matrix::new(784, 1, image.data.clone()));
+            // Convert image data to Matrix
+            let input = Matrix::new(784, 1, image.data.as_slice().unwrap().to_vec());
+            let output = network.predict(input);
             let predicted = get_actual_digit(&output);
             let actual = get_actual_digit(label);
 

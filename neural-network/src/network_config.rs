@@ -44,6 +44,35 @@ pub struct NetworkConfig {
 }
 
 impl NetworkConfig {
+    /// Creates a new NetworkConfig with default values except for the layer sizes.
+    ///
+    /// # Arguments
+    ///
+    /// * `layers` - A vector of layer sizes
+    /// * `activations` - A vector of activation types for each layer transition
+    /// * `learning_rate` - Learning rate for gradient descent
+    /// * `momentum` - Optional momentum coefficient
+    /// * `epochs` - Number of training epochs
+    ///
+    /// # Returns
+    ///
+    /// A new NetworkConfig instance
+    pub fn new(
+        layers: Vec<usize>,
+        activations: Vec<ActivationType>,
+        learning_rate: f64,
+        momentum: Option<f64>,
+        epochs: usize,
+    ) -> Self {
+        Self {
+            layers,
+            activations,
+            learning_rate,
+            momentum,
+            epochs,
+        }
+    }
+
     /// Loads a network configuration from a JSON file.
     ///
     /// # Arguments

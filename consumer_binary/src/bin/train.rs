@@ -1,4 +1,4 @@
-use mnist::mnist::{MnistData, load_training_data};
+use mnist::mnist::{load_training_data, MnistData};
 use neural_network::network::Network;
 use neural_network::network_config::NetworkConfig;
 use std::fs::File;
@@ -46,9 +46,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut network = Network::new(&network_config);
 
     println!("Training network...");
-    let inputs: Vec<Vec<f64>> = mnist_data.images().iter().map(|m| m.data.clone()).collect();
+    let inputs: Vec<Vec<f64>> = mnist_data
+        .images()
+        .iter()
+        .map(|m| m.data.as_slice().unwrap().to_vec())
+        .collect();
 
-    let targets: Vec<Vec<f64>> = mnist_data.labels().iter().map(|m| m.data.clone()).collect();
+    let targets: Vec<Vec<f64>> = mnist_data
+        .labels()
+        .iter()
+        .map(|m| m.data.as_slice().unwrap().to_vec())
+        .collect();
 
     let start_time = Instant::now();
     network.train(inputs, targets, network_config.epochs.try_into().unwrap());
