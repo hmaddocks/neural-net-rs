@@ -11,7 +11,7 @@ pub enum ActivationType {
 
 impl ActivationType {
     /// Creates a new activation function instance based on the type
-    pub fn create_activation(&self) -> Box<dyn ActivationFunction + Send + Sync> {
+    pub fn create_activation(&self) -> Box<dyn ActivationFunction> {
         match self {
             ActivationType::Sigmoid => Box::new(Sigmoid),
             ActivationType::Softmax => Box::new(Softmax),
@@ -34,7 +34,7 @@ impl ActivationType {
 /// let result = sigmoid.apply(0.5);
 /// let derivative = sigmoid.derivative(result);
 /// ```
-pub trait ActivationFunction: Send + Sync {
+pub trait ActivationFunction {
     /// Applies the activation function to a scalar value
     fn apply(&self, x: f64) -> f64;
 

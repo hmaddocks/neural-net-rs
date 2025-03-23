@@ -77,16 +77,12 @@ impl NetworkConfig {
     /// # Returns
     ///
     /// A vector of boxed activation functions.
-    pub fn get_activations(&self) -> Vec<Box<dyn ActivationFunction + Send + Sync>> {
+    pub fn get_activations(&self) -> Vec<Box<dyn ActivationFunction>> {
         self.activations
             .iter()
             .map(|activation_type| match activation_type {
-                ActivationType::Sigmoid => {
-                    Box::new(SIGMOID) as Box<dyn ActivationFunction + Send + Sync>
-                }
-                ActivationType::Softmax => {
-                    Box::new(SOFTMAX) as Box<dyn ActivationFunction + Send + Sync>
-                }
+                ActivationType::Sigmoid => Box::new(SIGMOID) as Box<dyn ActivationFunction>,
+                ActivationType::Softmax => Box::new(SOFTMAX) as Box<dyn ActivationFunction>,
             })
             .collect()
     }
