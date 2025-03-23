@@ -18,7 +18,7 @@ impl Matrix {
     ///
     /// # Returns
     /// A new matrix with an additional row of 1.0s for bias terms
-    pub fn augment_with_bias(&self) -> Matrix {
+    pub fn augment_with_bias(&self) -> Self {
         let mut augmented = Vec::with_capacity(self.data.len() + self.cols);
         augmented.extend_from_slice(&self.data);
         augmented.extend(std::iter::repeat(1.0).take(self.cols));
@@ -70,7 +70,7 @@ impl Matrix {
         }
     }
 
-    pub fn dot_multiply(&self, other: &Matrix) -> Matrix {
+    pub fn dot_multiply(&self, other: &Matrix) -> Self {
         assert_eq!(
             self.cols, other.rows,
             "Invalid dimensions for matrix multiplication"
@@ -134,7 +134,7 @@ impl Matrix {
 impl Add for &Matrix {
     type Output = Matrix;
 
-    fn add(self, other: &Matrix) -> Matrix {
+    fn add(self, other: &Matrix) -> Self::Output {
         assert_eq!(
             (self.rows, self.cols),
             (other.rows, other.cols),
@@ -157,7 +157,7 @@ impl Add for &Matrix {
 impl Sub for &Matrix {
     type Output = Matrix;
 
-    fn sub(self, other: &Matrix) -> Matrix {
+    fn sub(self, other: &Matrix) -> Self::Output {
         assert_eq!(
             (self.rows, self.cols),
             (other.rows, other.cols),
@@ -174,6 +174,12 @@ impl Sub for &Matrix {
                 .map(|(&a, &b)| a - b)
                 .collect(),
         }
+    }
+}
+
+impl Default for Matrix {
+    fn default() -> Self {
+        Self::zeros(0, 0)
     }
 }
 
