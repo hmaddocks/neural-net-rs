@@ -138,7 +138,7 @@ impl Add for &Matrix {
         assert_eq!(
             (self.rows, self.cols),
             (other.rows, other.cols),
-            "Matrix dimensions must match for addition"
+            "Cannot add matrices with different dimensions"
         );
 
         Matrix {
@@ -273,19 +273,42 @@ mod tests {
     }
 
     #[test]
-    fn test_elementwise_multiply() {
-        // Create two matrices for testing
-        let matrix1 = Matrix::new(2, 2, vec![1.0, 2.0, 3.0, 4.0]);
-        let matrix2 = Matrix::new(2, 2, vec![5.0, 6.0, 7.0, 8.0]);
+    fn test_add() {
+        let matrix1 = matrix![
+            1.0, 2.0;
+            3.0, 4.0
+        ];
 
-        // Perform element-wise multiplication
-        let result = matrix1.elementwise_multiply(&matrix2);
+        let matrix2 = matrix![
+            5.0, 6.0;
+            7.0, 8.0
+        ];
 
-        // Define the expected result
-        let expected_result = Matrix::new(2, 2, vec![5.0, 12.0, 21.0, 32.0]);
+        let result = &matrix1 + &matrix2;
 
-        // Check if the actual result matches the expected result
-        assert_eq!(result, expected_result);
+        let expected = matrix![
+            6.0, 8.0;
+            10.0, 12.0
+        ];
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot add matrices with different dimensions")]
+    fn test_add_mismatched_dimensions() {
+        let matrix1 = matrix![
+            1.0, 2.0;
+            3.0, 4.0
+        ];
+
+        let matrix2 = matrix![
+            5.0, 6.0;
+            7.0, 8.0;
+            9.0, 10.0
+        ];
+
+        let _ = &matrix1 + &matrix2;
     }
 
     #[test]
@@ -311,6 +334,22 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Cannot subtract matrices with different dimensions")]
+    fn test_subtract_different_dimensions() {
+        let matrix1 = matrix![
+            1.0, 2.0;
+            3.0, 4.0
+        ];
+
+        let matrix2 = matrix![
+            5.0, 6.0, 7.0;
+            8.0, 9.0, 10.0
+        ];
+
+        let _ = &matrix1 - &matrix2;
+    }
+
+    #[test]
     fn test_dot_multiply() {
         let a = matrix![
             1.0, 2.0, 3.0;
@@ -333,22 +372,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Cannot subtract matrices with different dimensions")]
-    fn test_subtract_different_dimensions() {
-        let matrix1 = matrix![
-            1.0, 2.0;
-            3.0, 4.0
-        ];
-
-        let matrix2 = matrix![
-            5.0, 6.0, 7.0;
-            8.0, 9.0, 10.0
-        ];
-
-        let _ = &matrix1 - &matrix2;
-    }
-
-    #[test]
     fn test_matrix_addition() {
         let a = matrix![
             1.0, 2.0, 3.0;
@@ -368,7 +391,7 @@ mod tests {
             18.0, 20.0, 22.0
         ];
 
-        let result = a.add(&b);
+        let result = &a + &b;
 
         assert_eq!(result, expected_result);
     }
