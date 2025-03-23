@@ -287,14 +287,11 @@ impl Network {
     /// * `targets` - Target outputs for training
     pub fn back_propagate(&mut self, outputs: Matrix, targets: Matrix) {
         let mut errors = &targets - &outputs;
-        let mut gradients = if self.activations.is_empty() {
-            // If no activation functions, just use the error directly
-            errors.clone()
-        } else {
-            // For each layer, use the appropriate gradient calculation
-            let last_layer_idx = self.activations.len() - 1;
-            Self::calculate_gradients(&self.activations[last_layer_idx], &outputs, &errors)
-        };
+        let mut gradients = Self::calculate_gradients(
+            &self.activations[self.activations.len() - 1],
+            &outputs,
+            &errors,
+        );
 
         for i in (0..self.layers.len() - 1).rev() {
             gradients = gradients.map(|x| x * self.learning_rate);
