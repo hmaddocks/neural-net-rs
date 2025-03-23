@@ -18,7 +18,7 @@ use std::ops::{Add, Sub};
 ///
 /// # Example
 /// ```
-/// use matrix::Matrix;
+/// use matrix::matrix::Matrix;
 ///
 /// // Create a 2x3 matrix
 /// let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
@@ -151,7 +151,7 @@ impl Matrix {
     ///
     /// # Examples
     /// ```
-    /// use matrix::Matrix;
+    /// use matrix::matrix::Matrix;
     /// let m = Matrix::new(2, 2, vec![1.0, 2.0, 3.0, 4.0]);
     /// let result = m.map(|x| x * 2.0);
     /// ```

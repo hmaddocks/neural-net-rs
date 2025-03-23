@@ -16,7 +16,7 @@ use std::path::Path;
 /// let config = NetworkConfig::default();
 /// assert_eq!(config.layers, vec![784, 128, 10]); // MNIST-like architecture
 /// ```
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NetworkConfig {
     /// Sizes of each layer in the network, including input and output layers.
     /// For example, `[784, 128, 10]` represents a network with:
@@ -41,6 +41,11 @@ pub struct NetworkConfig {
     /// Number of training epochs.
     /// One epoch represents one complete pass through the training dataset.
     pub epochs: usize,
+
+    /// Size of mini-batches for gradient descent.
+    /// Larger batches provide more stable gradients but slower training.
+    /// Default is 32.
+    pub batch_size: usize,
 }
 
 impl NetworkConfig {
@@ -53,6 +58,7 @@ impl NetworkConfig {
     /// * `learning_rate` - Learning rate for gradient descent
     /// * `momentum` - Optional momentum coefficient
     /// * `epochs` - Number of training epochs
+    /// * `batch_size` - Size of mini-batches for gradient descent
     ///
     /// # Returns
     ///
@@ -63,6 +69,7 @@ impl NetworkConfig {
         learning_rate: f64,
         momentum: Option<f64>,
         epochs: usize,
+        batch_size: usize,
     ) -> Self {
         Self {
             layers,
@@ -70,6 +77,7 @@ impl NetworkConfig {
             learning_rate,
             momentum,
             epochs,
+            batch_size,
         }
     }
 
@@ -127,6 +135,7 @@ impl NetworkConfig {
 /// - Learning rate: 0.1
 /// - Momentum: 0.9
 /// - 30 training epochs
+/// - Batch size: 32
 impl Default for NetworkConfig {
     fn default() -> Self {
         Self {
@@ -135,6 +144,7 @@ impl Default for NetworkConfig {
             learning_rate: 0.1,
             momentum: Some(0.9),
             epochs: 30,
+            batch_size: 32,
         }
     }
 }
@@ -156,7 +166,8 @@ mod tests {
             "activations": ["Sigmoid", "Sigmoid"],
             "learning_rate": 0.01,
             "momentum": 0.5,
-            "epochs": 30
+            "epochs": 30,
+            "batch_size": 32
         }"#;
 
         let mut file = File::create(&config_path).unwrap();
@@ -171,6 +182,7 @@ mod tests {
         assert_eq!(config.learning_rate, 0.01);
         assert_eq!(config.momentum, Some(0.5));
         assert_eq!(config.epochs, 30);
+        assert_eq!(config.batch_size, 32);
     }
 
     #[test]

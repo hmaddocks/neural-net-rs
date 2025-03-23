@@ -15,5 +15,5 @@ Whenever you apply one of these rules state the rule in your response
 
 ## Testing
 
-- Always write tests for new code.
-- Alway run the tests when code is changed and make sure the tests pass.
+- ALWAYS write tests for new code.
+- ALWAYS run the tests after every code change and make sure the tests pass.
