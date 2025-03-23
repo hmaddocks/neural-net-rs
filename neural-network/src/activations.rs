@@ -99,11 +99,14 @@ impl ActivationFunction for Softmax {
     fn apply_vector(&self, input: &Matrix) -> Matrix {
         // For column vectors, treat the entire vector as one group
         if input.cols() == 1 {
-            // Calculate exp(x) for each element and sum in one pass
-            let exp_matrix = input.map(|x| E.powf(x));
+            // Find maximum value for numerical stability
+            let max_val = input.data.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+
+            // Calculate exp(x - max) for each element and sum
+            let exp_matrix = input.map(|x| E.powf(x - max_val));
             let sum = exp_matrix.data.sum();
 
-            // Use broadcast_apply for more efficient normalization
+            // Normalize
             exp_matrix.map(|x| x / sum)
         } else {
             // For matrices, apply softmax to each column independently
@@ -121,7 +124,7 @@ impl ActivationFunction for Softmax {
             let rows = input.rows();
             let probs = softmax_output.data.as_slice().unwrap();
 
-            // Create Jacobian matrix more efficiently using Matrix operations
+            // Create Jacobian matrix using Matrix operations
             let mut result = Matrix::zeros(rows, rows);
 
             for i in 0..rows {
@@ -287,5 +290,27 @@ mod tests {
         let json = r#"{"activation_type":"Sigmoid"}"#;
         let activation = <Sigmoid as ActivationFunctionSerialize>::from_json(json);
         assert_eq!(activation.activation_type(), ActivationType::Sigmoid);
+    }
+
+    #[test]
+    fn test_softmax_numerical_stability() {
+        // Test with large numbers that could cause overflow
+        let input = vec![1000.0, 1000.1].into_matrix(2, 1);
+        let result = SOFTMAX.apply_vector(&input);
+
+        // Should still sum to 1.0
+        let sum: f64 = result.data.iter().sum();
+        assert_relative_eq!(sum, 1.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_softmax_zero_input() {
+        // Test with all zeros
+        let input = vec![0.0, 0.0].into_matrix(2, 1);
+        let result = SOFTMAX.apply_vector(&input);
+
+        // Should give equal probabilities
+        assert_relative_eq!(result.get(0, 0), 0.5, epsilon = 1e-10);
+        assert_relative_eq!(result.get(1, 0), 0.5, epsilon = 1e-10);
     }
 }

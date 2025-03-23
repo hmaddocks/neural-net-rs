@@ -154,61 +154,77 @@ impl Network {
             "Number of inputs must match number of targets"
         );
 
-        // Create indices and shuffle them
-        let mut indices: Vec<usize> = (0..inputs.len()).collect();
-        let mut rng = thread_rng();
-        indices.shuffle(&mut rng);
+        let total_samples = inputs.len();
+        let mut indices: Vec<_> = (0..total_samples).collect();
+        indices.shuffle(&mut thread_rng());
 
-        // Create batches using iterator chunks
         indices
             .chunks(batch_size)
-            .map(|batch_indices| {
-                let input_batch = batch_indices.iter().map(|&i| &inputs[i]).collect();
-                let target_batch = batch_indices.iter().map(|&i| &targets[i]).collect();
-                (input_batch, target_batch)
+            .map(|chunk| {
+                (
+                    chunk.iter().map(|&i| &inputs[i]).collect(),
+                    chunk.iter().map(|&i| &targets[i]).collect(),
+                )
             })
             .collect()
     }
 
-    /// Accumulates gradients without updating weights
+    /// Performs gradient accumulation for batch training.
+    ///
+    /// # Arguments
+    /// * `outputs` - Network output for current batch
+    /// * `targets` - Target values for current batch
+    ///
+    /// # Returns
+    /// Vector of gradient matrices for each layer
+    ///
+    /// # Implementation Details
+    /// Uses backpropagation algorithm with the following steps:
+    /// 1. Calculates output error
+    /// 2. Propagates error backwards through layers
+    /// 3. Computes gradients using layer activations
     fn accumulate_gradients(&mut self, outputs: Matrix, targets: Matrix) -> Vec<Matrix> {
-        let mut deltas = Vec::with_capacity(self.weights.len());
         let error = &targets - &outputs;
 
-        // Calculate deltas for each layer, starting from the output layer
-        for i in (0..self.weights.len()).rev() {
-            let activation_output = &self.data[i + 1];
-            let activation_derivative = self.activations[i].derivative_vector(activation_output);
+        // Calculate all deltas
+        let deltas: Vec<Matrix> = (0..self.weights.len())
+            .rev()
+            .scan(None, |prev_delta, i| {
+                let activation_output = &self.data[i + 1];
+                let activation_derivative =
+                    self.activations[i].derivative_vector(activation_output);
 
-            if i == self.weights.len() - 1 {
-                if self.activation_types[i] == ActivationType::Softmax {
-                    deltas.push(activation_derivative.dot_multiply(&error));
+                let delta = if i == self.weights.len() - 1 {
+                    // Output layer
+                    if self.activation_types[i] == ActivationType::Softmax {
+                        activation_derivative.dot_multiply(&error)
+                    } else {
+                        error.elementwise_multiply(&activation_derivative)
+                    }
                 } else {
-                    deltas.push(error.elementwise_multiply(&activation_derivative));
-                }
-            } else {
-                let next_weights = &self.weights[i + 1];
-                let next_delta = &deltas[deltas.len() - 1];
+                    // Hidden layers
+                    let next_weights = &self.weights[i + 1];
+                    let weights_no_bias =
+                        next_weights.slice(0..next_weights.rows(), 0..next_weights.cols() - 1);
+                    let propagated_error = weights_no_bias
+                        .transpose()
+                        .dot_multiply(prev_delta.as_ref().unwrap());
+                    propagated_error.elementwise_multiply(&activation_derivative)
+                };
 
-                let weights_no_bias =
-                    next_weights.slice(0..next_weights.rows(), 0..next_weights.cols() - 1);
-                let propagated_error = weights_no_bias.transpose().dot_multiply(next_delta);
-                deltas.push(propagated_error.elementwise_multiply(&activation_derivative));
-            }
-        }
+                *prev_delta = Some(delta.clone());
+                Some(delta)
+            })
+            .collect();
 
-        deltas.reverse();
-        let mut gradients = Vec::with_capacity(self.weights.len());
-
-        // Calculate gradients without applying updates
-        for i in 0..self.weights.len() {
-            let input_with_bias = self.data[i].augment_with_bias();
-            let delta = &deltas[i];
-            let gradient = delta.dot_multiply(&input_with_bias.transpose());
-            gradients.push(gradient);
-        }
-
-        gradients
+        // Calculate gradients using iterators
+        (0..self.weights.len())
+            .map(|i| {
+                let input_with_bias = self.data[i].augment_with_bias();
+                let delta = &deltas[self.weights.len() - 1 - i];
+                delta.dot_multiply(&input_with_bias.transpose())
+            })
+            .collect()
     }
 
     /// Updates weights using accumulated gradients
@@ -225,6 +241,110 @@ impl Network {
         }
     }
 
+    /// Converts input vectors to matrices
+    fn convert_to_matrices(data: Vec<Vec<f64>>) -> Vec<Matrix> {
+        data.iter()
+            .map(|input| Matrix::from(input.clone()))
+            .collect()
+    }
+
+    /// Evaluates a single sample and returns (error, is_correct)
+    fn evaluate_sample(&mut self, input: &Matrix, target: &Matrix) -> (f64, bool) {
+        let outputs = self.feed_forward(input.clone());
+
+        // Calculate error
+        let error = target - &outputs;
+        let error_sum = error.data.iter().map(|x| x * x).sum::<f64>();
+
+        // Calculate accuracy
+        let correct = if outputs.cols() == 1 {
+            let predicted = outputs.get(0, 0) >= 0.5;
+            let actual = target.get(0, 0) >= 0.5;
+            predicted == actual
+        } else {
+            let predicted = outputs
+                .data
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                .map(|(idx, _)| idx)
+                .unwrap();
+            let actual = target
+                .data
+                .iter()
+                .position(|&val| (val - 1.0).abs() < f64::EPSILON)
+                .expect("Target vector should contain exactly one 1.0 value");
+            predicted == actual
+        };
+
+        (error_sum, correct)
+    }
+
+    /// Processes a single batch and returns (batch_error, correct_predictions, gradients)
+    fn process_batch(
+        &mut self,
+        batch_inputs: &[&Matrix],
+        batch_targets: &[&Matrix],
+    ) -> (f64, usize, Vec<Matrix>) {
+        let mut accumulated_gradients = Vec::new();
+        let mut batch_error = 0.0;
+        let mut batch_correct = 0;
+
+        // Process each sample in the batch
+        for (input, target) in batch_inputs.iter().zip(batch_targets.iter()) {
+            let outputs = self.feed_forward((*input).clone());
+            let (error_sum, correct) = self.evaluate_sample(input, target);
+
+            batch_error += error_sum;
+            if correct {
+                batch_correct += 1;
+            }
+
+            // Accumulate gradients
+            let gradients = self.accumulate_gradients(outputs, (*target).clone());
+            if accumulated_gradients.is_empty() {
+                accumulated_gradients = gradients;
+            } else {
+                // Add gradients element-wise
+                for (acc, grad) in accumulated_gradients.iter_mut().zip(gradients.iter()) {
+                    *acc = &*acc + grad;
+                }
+            }
+        }
+
+        (batch_error, batch_correct, accumulated_gradients)
+    }
+
+    /// Trains a single epoch and returns (total_error, correct_predictions, epoch_duration)
+    fn train_epoch(
+        &mut self,
+        input_matrices: &[Matrix],
+        target_matrices: &[Matrix],
+        batch_size: usize,
+    ) -> (f64, usize, std::time::Duration) {
+        let epoch_start = std::time::Instant::now();
+        let mut total_error = 0.0;
+        let mut correct_predictions = 0;
+
+        // Create mini-batches for this epoch
+        let mini_batches = Self::prepare_mini_batches(input_matrices, target_matrices, batch_size);
+
+        // Process each mini-batch
+        for (batch_inputs, batch_targets) in mini_batches {
+            let (batch_error, batch_correct, accumulated_gradients) =
+                self.process_batch(&batch_inputs, &batch_targets);
+
+            // Update weights using accumulated gradients
+            self.update_weights(&accumulated_gradients);
+
+            // Update statistics
+            total_error += batch_error;
+            correct_predictions += batch_correct;
+        }
+
+        (total_error, correct_predictions, epoch_start.elapsed())
+    }
+
     /// Trains the network on a dataset for a specified number of epochs.
     ///
     /// # Arguments
@@ -232,83 +352,14 @@ impl Network {
     /// * `targets` - Vector of target output vectors
     /// * `epochs` - Number of training epochs
     pub fn train(&mut self, inputs: Vec<Vec<f64>>, targets: Vec<Vec<f64>>, epochs: u32) {
-        let input_matrices: Vec<_> = inputs
-            .iter()
-            .map(|input| Matrix::from(input.clone()))
-            .collect();
-        let target_matrices: Vec<_> = targets
-            .iter()
-            .map(|target| Matrix::from(target.clone()))
-            .collect();
+        let input_matrices = Self::convert_to_matrices(inputs);
+        let target_matrices = Self::convert_to_matrices(targets);
+        let total_samples = input_matrices.len();
 
         for epoch in 1..=epochs {
-            let epoch_start = std::time::Instant::now();
-            let mut total_error = 0.0;
-            let mut correct_predictions = 0;
+            let (total_error, correct_predictions, epoch_duration) =
+                self.train_epoch(&input_matrices, &target_matrices, 32);
 
-            // Create mini-batches for this epoch
-            let mini_batches = Self::prepare_mini_batches(&input_matrices, &target_matrices, 32);
-
-            // Process each mini-batch
-            for (batch_inputs, batch_targets) in mini_batches {
-                let mut accumulated_gradients = Vec::new();
-                let mut batch_error = 0.0;
-                let mut batch_correct = 0;
-
-                // First pass: Accumulate gradients over the batch
-                for (input, target) in batch_inputs.iter().zip(batch_targets.iter()) {
-                    let outputs = self.feed_forward((*input).clone());
-
-                    // Calculate error and accuracy
-                    let error = *target - &outputs;
-                    let error_sum = error.data.iter().map(|x| x * x).sum::<f64>();
-                    batch_error += error_sum;
-
-                    let correct = if outputs.cols() == 1 {
-                        let predicted = outputs.get(0, 0) >= 0.5;
-                        let actual = target.get(0, 0) >= 0.5;
-                        predicted == actual
-                    } else {
-                        let predicted = outputs
-                            .data
-                            .iter()
-                            .enumerate()
-                            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-                            .map(|(idx, _)| idx)
-                            .unwrap();
-                        let actual = target
-                            .data
-                            .iter()
-                            .position(|&val| (val - 1.0).abs() < f64::EPSILON)
-                            .expect("Target vector should contain exactly one 1.0 value");
-                        predicted == actual
-                    };
-
-                    if correct {
-                        batch_correct += 1;
-                    }
-
-                    // Accumulate gradients without updating weights
-                    let gradients = self.accumulate_gradients(outputs, (*target).clone());
-                    if accumulated_gradients.is_empty() {
-                        accumulated_gradients = gradients;
-                    } else {
-                        // Add gradients element-wise
-                        for (acc, grad) in accumulated_gradients.iter_mut().zip(gradients.iter()) {
-                            *acc = &*acc + grad;
-                        }
-                    }
-                }
-
-                // Second pass: Update weights using accumulated gradients
-                self.update_weights(&accumulated_gradients);
-
-                // Update statistics
-                total_error += batch_error;
-                correct_predictions += batch_correct;
-            }
-
-            let total_samples = inputs.len();
             let avg_error = total_error / total_samples as f64;
             let accuracy = correct_predictions as f64 / total_samples as f64;
 
@@ -318,7 +369,7 @@ impl Network {
                 epochs,
                 avg_error,
                 accuracy * 100.0,
-                epoch_start.elapsed().as_secs_f64()
+                epoch_duration.as_secs_f64()
             );
         }
     }
@@ -810,6 +861,35 @@ mod tests {
     }
 
     #[test]
+    fn test_gradient_computation() {
+        let mut network = create_test_network();
+        let input = Matrix::from(vec![0.5]);
+        let target = Matrix::from(vec![1.0]);
+
+        let output = network.feed_forward(input);
+        let gradients = network.accumulate_gradients(output, target);
+
+        assert_eq!(gradients.len(), network.weights.len());
+        for (gradient, weight) in gradients.iter().zip(network.weights.iter()) {
+            assert_eq!(gradient.rows(), weight.rows());
+            assert_eq!(gradient.cols(), weight.cols());
+        }
+    }
+
+    #[test]
+    fn test_batch_training_convergence() {
+        let mut network = create_test_network();
+        let inputs = vec![vec![0.0], vec![1.0]];
+        let targets = vec![vec![1.0], vec![0.0]];
+
+        let initial_error = compute_error(&network, &inputs, &targets);
+        network.train(inputs.clone(), targets.clone(), 1000);
+        let final_error = compute_error(&network, &inputs, &targets);
+
+        assert!(final_error < initial_error, "Training should reduce error");
+    }
+
+    #[test]
     fn test_mini_batch_shuffling() {
         let inputs = vec![
             vec![0.0, 0.0],
@@ -841,23 +921,176 @@ mod tests {
         assert!(!all_same, "Mini-batches should be randomly shuffled");
     }
 
-    // Helper functions for tests
-    fn create_test_network() -> Network {
+    #[test]
+    fn test_convert_to_matrices() {
+        let input_data = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
+
+        let matrices = Network::convert_to_matrices(input_data);
+
+        assert_eq!(matrices.len(), 2);
+        assert_eq!(matrices[0].rows(), 2);
+        assert_eq!(matrices[0].cols(), 1);
+        assert_relative_eq!(matrices[0].get(0, 0), 1.0);
+        assert_relative_eq!(matrices[0].get(1, 0), 2.0);
+        assert_relative_eq!(matrices[1].get(0, 0), 3.0);
+        assert_relative_eq!(matrices[1].get(1, 0), 4.0);
+    }
+
+    #[test]
+    fn test_evaluate_sample() {
+        let mut network = create_test_network();
+
+        // Test binary classification
+        let input = Matrix::from(vec![0.5]);
+        let target = Matrix::from(vec![1.0]);
+
+        let (error, _correct) = network.evaluate_sample(&input, &target);
+
+        assert!(error >= 0.0, "Error should be non-negative");
+        assert!(error <= 1.0, "Error should be normalized");
+        // Note: correctness can be either true or false as this is initial prediction
+
+        // Test multi-class classification
         let config = NetworkConfig::new(
-            vec![1, 2, 1],
-            vec![ActivationType::Sigmoid, ActivationType::Sigmoid],
+            vec![2, 3, 3],
+            vec![ActivationType::Sigmoid, ActivationType::Softmax],
             0.1,
             Some(0.9),
             30,
             32,
         );
+        let mut network = Network::new(&config);
 
-        Network::new(&config)
+        let input = Matrix::from(vec![0.5, 0.3]);
+        let target = Matrix::from(vec![1.0, 0.0, 0.0]); // One-hot encoded
+
+        let (error, _correct) = network.evaluate_sample(&input, &target);
+
+        assert!(error >= 0.0, "Error should be non-negative");
+        // Note: correctness can be either true or false as this is initial prediction
     }
 
-    fn create_xor_network() -> Network {
+    #[test]
+    fn test_process_batch() {
+        let mut network = create_test_network();
+
+        let inputs = vec![Matrix::from(vec![0.0]), Matrix::from(vec![1.0])];
+        let targets = vec![Matrix::from(vec![1.0]), Matrix::from(vec![0.0])];
+
+        let input_refs: Vec<&Matrix> = inputs.iter().collect();
+        let target_refs: Vec<&Matrix> = targets.iter().collect();
+
+        let (batch_error, correct_count, gradients) =
+            network.process_batch(&input_refs, &target_refs);
+
+        assert!(batch_error >= 0.0, "Batch error should be non-negative");
+        assert!(
+            correct_count <= 2,
+            "Correct count should not exceed batch size"
+        );
+        assert_eq!(
+            gradients.len(),
+            network.weights.len(),
+            "Should have gradients for each layer"
+        );
+
+        // Check gradient dimensions
+        for (gradient, weight) in gradients.iter().zip(network.weights.iter()) {
+            assert_eq!(gradient.rows(), weight.rows());
+            assert_eq!(gradient.cols(), weight.cols());
+        }
+    }
+
+    #[test]
+    fn test_train_epoch() {
+        let mut network = create_test_network();
+
+        let inputs = vec![
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.5]),
+            Matrix::from(vec![0.7]),
+        ];
+        let targets = vec![
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![0.5]),
+            Matrix::from(vec![0.3]),
+        ];
+
+        let (total_error, correct_predictions, duration) =
+            network.train_epoch(&inputs, &targets, 2);
+
+        assert!(total_error >= 0.0, "Total error should be non-negative");
+        assert!(
+            correct_predictions <= inputs.len(),
+            "Correct predictions should not exceed dataset size"
+        );
+        assert!(duration.as_secs_f64() > 0.0, "Duration should be positive");
+
+        // Test with different batch sizes
+        let batch_sizes = [1, 2, 4];
+        for &batch_size in &batch_sizes {
+            let (error, predictions, _) = network.train_epoch(&inputs, &targets, batch_size);
+            assert!(
+                error >= 0.0,
+                "Error should be non-negative for batch size {}",
+                batch_size
+            );
+            assert!(
+                predictions <= inputs.len(),
+                "Predictions should not exceed dataset size for batch size {}",
+                batch_size
+            );
+        }
+    }
+
+    #[test]
+    fn test_training_integration() {
+        let mut network = create_test_network();
+        let inputs = vec![vec![0.0], vec![1.0]];
+        let targets = vec![vec![1.0], vec![0.0]];
+
+        // Record initial state
+        let initial_weights: Vec<Matrix> = network.weights.iter().cloned().collect();
+
+        // Train for a few epochs
+        network.train(inputs.clone(), targets.clone(), 5);
+
+        // Verify weights have been updated
+        for (initial, current) in initial_weights.iter().zip(network.weights.iter()) {
+            assert!(
+                initial.data != current.data,
+                "Weights should be updated during training"
+            );
+        }
+
+        // Verify error decreases
+        let final_error = compute_error(&network, &inputs, &targets);
+        assert!(
+            final_error < 1.0,
+            "Error should decrease after training, got {}",
+            final_error
+        );
+    }
+
+    // Helper functions for tests
+    fn compute_error(network: &Network, inputs: &[Vec<f64>], targets: &[Vec<f64>]) -> f64 {
+        inputs
+            .iter()
+            .zip(targets)
+            .map(|(input, target)| {
+                let output = network.predict(Matrix::from(input.clone()));
+                let error = target[0] - output.get(0, 0);
+                error * error
+            })
+            .sum::<f64>()
+            / inputs.len() as f64
+    }
+
+    fn create_test_network() -> Network {
         let config = NetworkConfig::new(
-            vec![2, 3, 1],
+            vec![1, 2, 1],
             vec![ActivationType::Sigmoid, ActivationType::Sigmoid],
             0.1,
             Some(0.9),
