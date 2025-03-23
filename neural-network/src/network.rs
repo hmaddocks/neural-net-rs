@@ -138,15 +138,12 @@ impl Network {
             let mut correct_predictions = 0;
 
             for (input, target) in input_matrices.iter().zip(&target_matrices) {
-                // Forward pass
                 let outputs = self.feed_forward(input.clone());
 
-                // Calculate error and accuracy more efficiently
                 let error = target - &outputs;
                 let error_sum = error.data.iter().map(|x| x * x).sum::<f64>();
                 total_error += error_sum;
 
-                // Calculate accuracy more efficiently
                 let correct = if outputs.cols() == 1 {
                     let predicted = outputs.get(0, 0) >= 0.5;
                     let actual = target.get(0, 0) >= 0.5;
@@ -172,7 +169,6 @@ impl Network {
                     correct_predictions += 1;
                 }
 
-                // Backpropagation
                 self.back_propagate(outputs, target.clone());
             }
 
@@ -181,12 +177,12 @@ impl Network {
             let accuracy = correct_predictions as f64 / total_samples as f64;
 
             println!(
-                "Epoch {}/{}: Error = {:.6}, Accuracy = {:.2}%, Time = {:?}",
+                "Epoch {}/{}: Error = {:.6}, Accuracy = {:.2}%, Time = {:.2}s",
                 epoch,
                 epochs,
                 avg_error,
                 accuracy * 100.0,
-                epoch_start.elapsed()
+                epoch_start.elapsed().as_secs_f64()
             );
         }
     }
@@ -212,7 +208,7 @@ impl Network {
         // Store original input
         self.data = vec![inputs.clone()];
 
-        // Process through layers functionally
+        // Process through layers
         let result = self
             .weights
             .iter()
@@ -246,7 +242,7 @@ impl Network {
             inputs.rows()
         );
 
-        // Process through layers functionally without storing intermediates
+        // Process through layers without storing intermediates
         self.weights
             .iter()
             .enumerate()
@@ -256,11 +252,16 @@ impl Network {
             })
     }
 
-    /// Performs backpropagation to update network weights.
+    /// Performs backpropagation to update network weights based on error.
+    ///
+    /// # Algorithm
+    /// 1. Computes the output layer error (target - actual)
+    /// 2. Propagates the error backwards through the network
+    /// 3. Updates weights using gradient descent with optional momentum
     ///
     /// # Arguments
-    /// * `outputs` - Current network outputs
-    /// * `targets` - Target outputs for training
+    /// * `outputs` - The actual output matrix from feed_forward
+    /// * `targets` - The desired target output matrix
     pub fn back_propagate(&mut self, outputs: Matrix, targets: Matrix) {
         let mut deltas = Vec::with_capacity(self.weights.len());
         let error = &targets - &outputs;
@@ -395,11 +396,16 @@ impl Network {
     }
 }
 
-/// Processes a single layer of the network.
+/// Processes a single layer in the neural network.
+///
+/// # Algorithm
+/// 1. Computes the weighted sum (weight * input)
+/// 2. Adds bias terms (included in weight matrix)
+/// 3. Applies the activation function
 ///
 /// # Arguments
-/// * `weight` - Weight matrix for the layer
-/// * `input` - Input matrix including bias terms
+/// * `weight` - Weight matrix including bias weights
+/// * `input` - Input values from previous layer
 /// * `activation` - Activation function to apply
 ///
 /// # Returns

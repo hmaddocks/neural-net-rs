@@ -5,12 +5,81 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, Sub};
 
+/// A 2D matrix implementation optimized for neural network operations.
+///
+/// This implementation uses ndarray internally for efficient matrix operations
+/// and provides a high-level interface for common neural network computations.
+///
+/// # Features
+/// - Efficient matrix operations using ndarray
+/// - Neural network specific operations (bias augmentation, Xavier initialization)
+/// - Broadcasting support for element-wise operations
+/// - Serialization support via serde
+///
+/// # Example
+/// ```
+/// use matrix::Matrix;
+///
+/// // Create a 2x3 matrix
+/// let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+/// let matrix = Matrix::new(2, 3, data);
+///
+/// // Perform matrix operations
+/// let transposed = matrix.transpose();
+/// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Matrix {
     pub data: Array2<f64>,
 }
 
 impl Matrix {
+    /// Creates a new matrix with the specified dimensions and data.
+    ///
+    /// # Arguments
+    /// * `rows` - Number of rows in the matrix
+    /// * `cols` - Number of columns in the matrix
+    /// * `data` - Vector containing the matrix elements in row-major order
+    ///
+    /// # Panics
+    /// Panics if data.len() != rows * cols
+    pub fn new(rows: usize, cols: usize, data: Vec<f64>) -> Self {
+        assert_eq!(data.len(), rows * cols, "Invalid matrix dimensions");
+        Matrix {
+            data: Array2::from_shape_vec((rows, cols), data)
+                .expect("Failed to create matrix from data"),
+        }
+    }
+
+    /// Creates a new matrix filled with zeros.
+    ///
+    /// # Arguments
+    /// * `rows` - Number of rows in the matrix
+    /// * `cols` - Number of columns in the matrix
+    pub fn zeros(rows: usize, cols: usize) -> Self {
+        Matrix {
+            data: Array2::zeros((rows, cols)),
+        }
+    }
+
+    /// Creates a new matrix with random weights using Xavier/Glorot initialization.
+    ///
+    /// Xavier initialization helps maintain the variance of activations and gradients
+    /// across layers, preventing vanishing or exploding gradients.
+    ///
+    /// The weights are initialized from a uniform distribution U(-scale, scale) where:
+    /// scale = 1/sqrt(n_inputs)
+    ///
+    /// # Arguments
+    /// * `rows` - Number of rows in the matrix
+    /// * `cols` - Number of columns in the matrix
+    pub fn random(rows: usize, cols: usize) -> Self {
+        let scale = 1.0 / (rows as f64).sqrt(); // Xavier/Glorot initialization
+        let dist = Uniform::new(-scale, scale);
+        Matrix {
+            data: Array2::random((rows, cols), dist),
+        }
+    }
+
     /// Augments an input matrix with bias terms (adds a row of 1.0s).
     ///
     /// # Arguments
@@ -25,6 +94,13 @@ impl Matrix {
         }
     }
 
+    /// Performs element-wise multiplication of two matrices.
+    ///
+    /// # Arguments
+    /// * `other` - The matrix to multiply element-wise with
+    ///
+    /// # Panics
+    /// Panics if the dimensions of the matrices don't match
     pub fn elementwise_multiply(&self, other: &Matrix) -> Matrix {
         assert_eq!(
             (self.rows(), self.cols()),
@@ -36,28 +112,14 @@ impl Matrix {
         }
     }
 
-    pub fn random(rows: usize, cols: usize) -> Self {
-        let scale = 1.0 / (rows as f64).sqrt(); // Xavier/Glorot initialization
-        let dist = Uniform::new(-scale, scale);
-        Matrix {
-            data: Array2::random((rows, cols), dist),
-        }
-    }
-
-    pub fn new(rows: usize, cols: usize, data: Vec<f64>) -> Self {
-        assert_eq!(data.len(), rows * cols, "Invalid matrix dimensions");
-        Matrix {
-            data: Array2::from_shape_vec((rows, cols), data)
-                .expect("Failed to create matrix from data"),
-        }
-    }
-
-    pub fn zeros(rows: usize, cols: usize) -> Self {
-        Matrix {
-            data: Array2::zeros((rows, cols)),
-        }
-    }
-
+    /// Performs matrix multiplication (dot product).
+    ///
+    /// # Arguments
+    /// * `other` - The matrix to multiply with
+    ///
+    /// # Panics
+    /// Panics if the number of columns in self does not match
+    /// the number of rows in other.
     pub fn dot_multiply(&self, other: &Matrix) -> Self {
         assert_eq!(
             self.cols(),
@@ -69,12 +131,30 @@ impl Matrix {
         }
     }
 
+    /// Returns a transposed copy of the matrix.
+    ///
+    /// # Returns
+    /// A new matrix where rows and columns are swapped
     pub fn transpose(&self) -> Self {
         Matrix {
             data: self.data.t().to_owned(),
         }
     }
 
+    /// Applies a function to each element of the matrix.
+    ///
+    /// # Arguments
+    /// * `func` - Function that takes a f64 and returns a f64
+    ///
+    /// # Type Parameters
+    /// * `F` - Type of the function to apply
+    ///
+    /// # Examples
+    /// ```
+    /// use matrix::Matrix;
+    /// let m = Matrix::new(2, 2, vec![1.0, 2.0, 3.0, 4.0]);
+    /// let result = m.map(|x| x * 2.0);
+    /// ```
     pub fn map<F>(&self, func: F) -> Self
     where
         F: Fn(f64) -> f64,
@@ -139,19 +219,39 @@ impl Matrix {
         })
     }
 
+    /// Returns the value at the specified position in the matrix.
+    ///
+    /// # Arguments
+    /// * `row` - Row index (0-based)
+    /// * `col` - Column index (0-based)
+    ///
+    /// # Panics
+    /// Panics if the indices are out of bounds
     pub fn get(&self, row: usize, col: usize) -> f64 {
         self.data[[row, col]]
     }
 
+    /// Returns the number of rows in the matrix.
     pub fn rows(&self) -> usize {
         self.data.nrows()
     }
 
+    /// Returns the number of columns in the matrix.
     pub fn cols(&self) -> usize {
         self.data.ncols()
     }
 }
 
+/// Implementation of the Add trait for Matrix references.
+///
+/// # Arguments
+/// * `other` - The matrix to add to this one
+///
+/// # Returns
+/// A new matrix containing the sum of the two matrices
+///
+/// # Panics
+/// Panics if the dimensions of the matrices don't match
 impl Add for &Matrix {
     type Output = Matrix;
 
@@ -167,6 +267,16 @@ impl Add for &Matrix {
     }
 }
 
+/// Implementation of the Sub trait for Matrix references.
+///
+/// # Arguments
+/// * `other` - The matrix to subtract from this one
+///
+/// # Returns
+/// A new matrix containing the difference of the two matrices
+///
+/// # Panics
+/// Panics if the dimensions of the matrices don't match
 impl Sub for &Matrix {
     type Output = Matrix;
 
@@ -182,6 +292,9 @@ impl Sub for &Matrix {
     }
 }
 
+/// Implementation of the Default trait for Matrix.
+///
+/// Creates a 0x0 matrix filled with zeros.
 impl Default for Matrix {
     fn default() -> Self {
         Self::zeros(0, 0)
@@ -235,6 +348,9 @@ impl IntoMatrix for Vec<f64> {
     }
 }
 
+/// Implementation of the Display trait for Matrix.
+///
+/// Formats the matrix for display with tab-separated values and newlines between rows.
 impl fmt::Display for Matrix {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for row in self.data.rows() {
