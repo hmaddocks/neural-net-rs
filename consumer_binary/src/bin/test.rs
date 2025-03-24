@@ -1,6 +1,7 @@
 use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
-use mnist::mnist::{get_actual_digit, load_test_data};
+use mnist::mnist::get_actual_digit;
+use mnist::standardize::load_standardized_test_data;
 use neural_network::network::Network;
 
 /// Calculates metrics for a digit from the confusion matrix
@@ -101,14 +102,23 @@ fn print_confusion_matrix(confusion_matrix: [[usize; 10]; 10]) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Loading test data...");
-    let test_data = match load_test_data() {
+    println!("Loading standardized test data...");
+    let standardized_data = match load_standardized_test_data() {
         Ok(data) => data,
         Err(e) => {
-            eprintln!("Failed to load test data: {}", e);
+            eprintln!("Failed to load standardized test data: {}", e);
             return Err(e.into());
         }
     };
+
+    // Get the actual MNIST data from the standardized wrapper
+    let test_data = standardized_data.data();
+
+    println!(
+        "Data standardization parameters: mean={:.6}, std_dev={:.6}",
+        standardized_data.mean(),
+        standardized_data.std_dev()
+    );
 
     println!("Loading trained network...");
     let model_path = match std::env::current_dir() {

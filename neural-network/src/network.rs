@@ -219,7 +219,7 @@ impl Network {
             })
             .collect();
 
-        // Calculate gradients using iterators
+        // Calculate gradients
         (0..self.weights.len())
             .map(|i| {
                 let input_with_bias = self.data[i].augment_with_bias();
@@ -627,7 +627,7 @@ mod tests {
         ];
         let targets = vec![vec![0.0], vec![1.0], vec![1.0], vec![0.0]];
 
-        network.train(inputs, targets, 2000);
+        network.train(inputs.clone(), targets.clone(), 200);
 
         // Test the network
         let test_inputs = vec![

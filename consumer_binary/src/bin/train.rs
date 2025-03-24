@@ -1,4 +1,4 @@
-use mnist::mnist::{load_training_data, MnistData};
+use mnist::standardize::load_standardized_training_data;
 use neural_network::network::Network;
 use neural_network::network_config::NetworkConfig;
 use std::fs::File;
@@ -27,14 +27,23 @@ fn format_duration(duration: Duration) -> String {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Loading MNIST training data...");
-    let mnist_data: MnistData = match load_training_data() {
+    println!("Loading standardized MNIST training data...");
+    let standardized_data = match load_standardized_training_data() {
         Ok(data) => data,
         Err(e) => {
-            eprintln!("Failed to load training data: {}", e);
+            eprintln!("Failed to load standardized training data: {}", e);
             return Err(e.into());
         }
     };
+
+    // Get the actual MNIST data from the standardized wrapper
+    let mnist_data = standardized_data.data();
+
+    println!(
+        "Data standardization parameters: mean={:.6}, std_dev={:.6}",
+        standardized_data.mean(),
+        standardized_data.std_dev()
+    );
 
     println!("Loading network configuration...");
     // Get the path to config.json in the consumer_binary root
