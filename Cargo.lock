@@ -1072,6 +1072,7 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "derive_builder",
+ "indicatif",
  "matrix",
  "ndarray",
  "rand 0.8.5",

@@ -28,11 +28,13 @@
 /// ```
 use crate::activations::{ActivationFunction, ActivationType};
 use crate::network_config::NetworkConfig;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 use std::io;
+use std::time::Duration;
 
 /// A feed-forward neural network with configurable layers and activation functions.
 #[derive(Serialize, Deserialize)]
@@ -356,22 +358,80 @@ impl Network {
         let target_matrices = Self::convert_to_matrices(targets);
         let total_samples = input_matrices.len();
 
+        // Create progress bars
+        let multi = MultiProgress::new();
+        let total_style = ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} Epochs {msg}")
+            .unwrap()
+            .progress_chars("##-");
+        let epoch_style = ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] {bar:40.green/white} {pos:>7}/{len:7} Batches {msg}")
+            .unwrap()
+            .progress_chars("##-");
+
+        let total_pb = multi.add(ProgressBar::new(epochs as u64));
+        total_pb.set_style(total_style);
+
+        let epoch_pb = multi.add(ProgressBar::new(total_samples as u64));
+        epoch_pb.set_style(epoch_style);
+
         for epoch in 1..=epochs {
+            epoch_pb.set_position(0);
+            epoch_pb.set_message(format!("Epoch {}/{}", epoch, epochs));
+
             let (total_error, correct_predictions, epoch_duration) =
-                self.train_epoch(&input_matrices, &target_matrices, 32);
+                self.train_epoch_with_progress(&input_matrices, &target_matrices, 32, &epoch_pb);
 
             let avg_error = total_error / total_samples as f64;
             let accuracy = correct_predictions as f64 / total_samples as f64;
 
-            println!(
-                "Epoch {}/{}: Error = {:.6}, Accuracy = {:.2}%, Time = {:.2}s",
-                epoch,
-                epochs,
+            total_pb.set_message(format!(
+                "Error = {:.6}, Accuracy = {:.2}%",
                 avg_error,
-                accuracy * 100.0,
-                epoch_duration.as_secs_f64()
-            );
+                accuracy * 100.0
+            ));
+            total_pb.inc(1);
+
+            // Optional: Add a small delay to ensure progress bars render properly
+            std::thread::sleep(Duration::from_millis(50));
         }
+
+        total_pb.finish_with_message("Training complete!");
+        epoch_pb.finish_and_clear();
+    }
+
+    /// Trains a single epoch with progress tracking
+    fn train_epoch_with_progress(
+        &mut self,
+        input_matrices: &[Matrix],
+        target_matrices: &[Matrix],
+        batch_size: usize,
+        progress: &ProgressBar,
+    ) -> (f64, usize, std::time::Duration) {
+        let epoch_start = std::time::Instant::now();
+        let mut total_error = 0.0;
+        let mut correct_predictions = 0;
+
+        // Create mini-batches for this epoch
+        let mini_batches = Self::prepare_mini_batches(input_matrices, target_matrices, batch_size);
+        progress.set_length(mini_batches.len() as u64);
+
+        // Process each mini-batch
+        for (batch_inputs, batch_targets) in mini_batches {
+            let (batch_error, batch_correct, accumulated_gradients) =
+                self.process_batch(&batch_inputs, &batch_targets);
+
+            // Update weights using accumulated gradients
+            self.update_weights(&accumulated_gradients);
+
+            // Update statistics
+            total_error += batch_error;
+            correct_predictions += batch_correct;
+
+            progress.inc(1);
+        }
+
+        (total_error, correct_predictions, epoch_start.elapsed())
     }
 
     /// Performs forward propagation through the network.
