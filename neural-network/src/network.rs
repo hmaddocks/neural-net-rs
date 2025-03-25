@@ -28,11 +28,13 @@
 /// ```
 use crate::activations::{ActivationFunction, ActivationType};
 use crate::network_config::NetworkConfig;
+use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 use std::io;
+use std::time::Instant;
 
 /// A feed-forward neural network with configurable layers and activation functions.
 #[derive(Serialize, Deserialize)]
@@ -351,10 +353,28 @@ impl Network {
     pub fn train(&mut self, inputs: Vec<Vec<f64>>, targets: Vec<Vec<f64>>, epochs: u32) {
         let input_matrices = Self::convert_to_matrices(inputs);
         let target_matrices = Self::convert_to_matrices(targets);
+        let total_samples = input_matrices.len();
+
+        // Create progress bar
+        let progress_bar = ProgressBar::new(epochs as u64);
+        let style = ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos}/{len} epochs | Accuracy: {msg}")
+            .unwrap()
+            .progress_chars("#>-");
+        progress_bar.set_style(style);
+
+        let start_time = Instant::now();
 
         for _ in 1..=epochs {
-            self.train_epoch(&input_matrices, &target_matrices, 32);
+            let (_, correct_predictions) = self.train_epoch(&input_matrices, &target_matrices, 32);
+            let accuracy = (correct_predictions as f64 / total_samples as f64) * 100.0;
+
+            progress_bar.set_message(format!("{:.2}%", accuracy));
+            progress_bar.inc(1);
         }
+
+        progress_bar
+            .finish_with_message(format!("Training completed in {:?}", start_time.elapsed()));
     }
 
     /// Performs forward propagation through the network.
@@ -1058,6 +1078,21 @@ mod tests {
             "Error should decrease after training, got {}",
             final_error
         );
+    }
+
+    #[test]
+    fn test_training_progress() {
+        let mut network = create_test_network();
+
+        // Simple dataset
+        let inputs = vec![vec![0.0], vec![1.0]];
+        let targets = vec![vec![1.0], vec![0.0]];
+
+        // Training should complete without errors and show progress
+        network.train(inputs, targets, 5);
+
+        // Since progress bar is just for display, we only test that training completes
+        assert!(true, "Training with progress bar completed successfully");
     }
 
     // Helper functions for tests
