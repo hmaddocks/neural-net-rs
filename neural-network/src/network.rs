@@ -28,13 +28,11 @@
 /// ```
 use crate::activations::{ActivationFunction, ActivationType};
 use crate::network_config::NetworkConfig;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 use std::io;
-use std::time::Duration;
 
 /// A feed-forward neural network with configurable layers and activation functions.
 #[derive(Serialize, Deserialize)]
@@ -243,19 +241,10 @@ impl Network {
         }
     }
 
-    /// Converts input vectors to matrices
-    fn convert_to_matrices(data: Vec<Vec<f64>>) -> Vec<Matrix> {
-        data.iter()
-            .map(|input| Matrix::from(input.clone()))
-            .collect()
-    }
-
     /// Evaluates a single sample and returns (error, is_correct)
-    fn evaluate_sample(&mut self, input: &Matrix, target: &Matrix) -> (f64, bool) {
-        let outputs = self.feed_forward(input.clone());
-
+    fn evaluate_sample(&mut self, target: &Matrix, outputs: &Matrix) -> (f64, bool) {
         // Calculate error
-        let error = target - &outputs;
+        let error = target - outputs;
         let error_sum = error.data.iter().map(|x| x * x).sum::<f64>();
 
         // Calculate accuracy
@@ -295,7 +284,7 @@ impl Network {
         // Process each sample in the batch
         for (input, target) in batch_inputs.iter().zip(batch_targets.iter()) {
             let outputs = self.feed_forward((*input).clone());
-            let (error_sum, correct) = self.evaluate_sample(input, target);
+            let (error_sum, correct) = self.evaluate_sample(target, &outputs);
 
             batch_error += error_sum;
             if correct {
@@ -323,8 +312,7 @@ impl Network {
         input_matrices: &[Matrix],
         target_matrices: &[Matrix],
         batch_size: usize,
-    ) -> (f64, usize, std::time::Duration) {
-        let epoch_start = std::time::Instant::now();
+    ) -> (f64, usize) {
         let mut total_error = 0.0;
         let mut correct_predictions = 0;
 
@@ -344,7 +332,14 @@ impl Network {
             correct_predictions += batch_correct;
         }
 
-        (total_error, correct_predictions, epoch_start.elapsed())
+        (total_error, correct_predictions)
+    }
+
+    /// Converts input vectors to matrices
+    fn convert_to_matrices(data: Vec<Vec<f64>>) -> Vec<Matrix> {
+        data.iter()
+            .map(|input| Matrix::from(input.clone()))
+            .collect()
     }
 
     /// Trains the network on a dataset for a specified number of epochs.
@@ -356,82 +351,10 @@ impl Network {
     pub fn train(&mut self, inputs: Vec<Vec<f64>>, targets: Vec<Vec<f64>>, epochs: u32) {
         let input_matrices = Self::convert_to_matrices(inputs);
         let target_matrices = Self::convert_to_matrices(targets);
-        let total_samples = input_matrices.len();
 
-        // Create progress bars
-        let multi = MultiProgress::new();
-        let total_style = ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} Epochs {msg}")
-            .unwrap()
-            .progress_chars("##-");
-        let epoch_style = ProgressStyle::default_bar()
-            .template("[{elapsed_precise}] {bar:40.green/white} {pos:>7}/{len:7} Batches {msg}")
-            .unwrap()
-            .progress_chars("##-");
-
-        let total_pb = multi.add(ProgressBar::new(epochs as u64));
-        total_pb.set_style(total_style);
-
-        let epoch_pb = multi.add(ProgressBar::new(total_samples as u64));
-        epoch_pb.set_style(epoch_style);
-
-        for epoch in 1..=epochs {
-            epoch_pb.set_position(0);
-            epoch_pb.set_message(format!("Epoch {}/{}", epoch, epochs));
-
-            let (total_error, correct_predictions, epoch_duration) =
-                self.train_epoch_with_progress(&input_matrices, &target_matrices, 32, &epoch_pb);
-
-            let avg_error = total_error / total_samples as f64;
-            let accuracy = correct_predictions as f64 / total_samples as f64;
-
-            total_pb.set_message(format!(
-                "Error = {:.6}, Accuracy = {:.2}%",
-                avg_error,
-                accuracy * 100.0
-            ));
-            total_pb.inc(1);
-
-            // Optional: Add a small delay to ensure progress bars render properly
-            std::thread::sleep(Duration::from_millis(50));
+        for _ in 1..=epochs {
+            self.train_epoch(&input_matrices, &target_matrices, 32);
         }
-
-        total_pb.finish_with_message("Training complete!");
-        epoch_pb.finish_and_clear();
-    }
-
-    /// Trains a single epoch with progress tracking
-    fn train_epoch_with_progress(
-        &mut self,
-        input_matrices: &[Matrix],
-        target_matrices: &[Matrix],
-        batch_size: usize,
-        progress: &ProgressBar,
-    ) -> (f64, usize, std::time::Duration) {
-        let epoch_start = std::time::Instant::now();
-        let mut total_error = 0.0;
-        let mut correct_predictions = 0;
-
-        // Create mini-batches for this epoch
-        let mini_batches = Self::prepare_mini_batches(input_matrices, target_matrices, batch_size);
-        progress.set_length(mini_batches.len() as u64);
-
-        // Process each mini-batch
-        for (batch_inputs, batch_targets) in mini_batches {
-            let (batch_error, batch_correct, accumulated_gradients) =
-                self.process_batch(&batch_inputs, &batch_targets);
-
-            // Update weights using accumulated gradients
-            self.update_weights(&accumulated_gradients);
-
-            // Update statistics
-            total_error += batch_error;
-            correct_predictions += batch_correct;
-
-            progress.inc(1);
-        }
-
-        (total_error, correct_predictions, epoch_start.elapsed())
     }
 
     /// Performs forward propagation through the network.
@@ -1004,7 +927,9 @@ mod tests {
         let input = Matrix::from(vec![0.5]);
         let target = Matrix::from(vec![1.0]);
 
-        let (error, _correct) = network.evaluate_sample(&input, &target);
+        // Separate feed_forward call to avoid multiple mutable borrows
+        let outputs = network.feed_forward(input.clone());
+        let (error, _correct) = network.evaluate_sample(&target, &outputs);
 
         assert!(error >= 0.0, "Error should be non-negative");
         assert!(error <= 1.0, "Error should be normalized");
@@ -1024,7 +949,9 @@ mod tests {
         let input = Matrix::from(vec![0.5, 0.3]);
         let target = Matrix::from(vec![1.0, 0.0, 0.0]); // One-hot encoded
 
-        let (error, _correct) = network.evaluate_sample(&input, &target);
+        // Separate feed_forward call to avoid multiple mutable borrows
+        let outputs = network.feed_forward(input.clone());
+        let (error, _correct) = network.evaluate_sample(&target, &outputs);
 
         assert!(error >= 0.0, "Error should be non-negative");
         // Note: correctness can be either true or false as this is initial prediction
@@ -1078,20 +1005,19 @@ mod tests {
             Matrix::from(vec![0.3]),
         ];
 
-        let (total_error, correct_predictions, duration) =
-            network.train_epoch(&inputs, &targets, 2);
+        let (total_error, correct_predictions) = network.train_epoch(&inputs, &targets, 2);
 
         assert!(total_error >= 0.0, "Total error should be non-negative");
         assert!(
             correct_predictions <= inputs.len(),
             "Correct predictions should not exceed dataset size"
         );
-        assert!(duration.as_secs_f64() > 0.0, "Duration should be positive");
+        // assert!(duration.as_secs_f64() > 0.0, "Duration should be positive");
 
         // Test with different batch sizes
         let batch_sizes = [1, 2, 4];
         for &batch_size in &batch_sizes {
-            let (error, predictions, _) = network.train_epoch(&inputs, &targets, batch_size);
+            let (error, predictions) = network.train_epoch(&inputs, &targets, batch_size);
             assert!(
                 error >= 0.0,
                 "Error should be non-negative for batch size {}",
