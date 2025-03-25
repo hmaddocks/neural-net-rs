@@ -13,6 +13,10 @@ path = "src/bin/train.rs"
 name = "test"
 path = "src/bin/test.rs"
 
+[[bin]]
+name = "guess_digit"
+path = "src/bin/guess_digit.rs"
+
 [dependencies]
 neural-network = { path = "../neural-network" }
 mnist = { path = "../mnist" }
