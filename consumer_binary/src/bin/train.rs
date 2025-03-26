@@ -71,7 +71,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     let start_time = Instant::now();
-    let epochs_trained = network.train(inputs, targets, network_config.epochs.try_into().unwrap());
+    network.train(inputs, targets, network_config.epochs as u32);
+
     let total_duration = start_time.elapsed();
     println!(
         "Total training time: {} ({:.2?})",
@@ -79,14 +80,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_duration
     );
 
-    let avg_duration = total_duration / epochs_trained;
-    println!(
-        "Average time per epoch: {} ({:.2?})",
-        format_duration(avg_duration),
-        avg_duration
-    );
+    // let avg_duration = total_duration / epochs_trained;
+    // println!(
+    //     "Average time per epoch: {} ({:.2?})",
+    //     format_duration(avg_duration),
+    //     avg_duration
+    // );
 
-    println!("Training completed in {} epochs", epochs_trained);
+    // println!("Training completed in {} epochs", epochs_trained);
 
     println!("Saving trained network...");
     let network_json = match serde_json::to_string(&network) {
