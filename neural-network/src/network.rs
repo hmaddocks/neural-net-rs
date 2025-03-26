@@ -337,23 +337,14 @@ impl Network {
         (total_error, correct_predictions)
     }
 
-    /// Converts input vectors to matrices
-    fn convert_to_matrices(data: Vec<Vec<f64>>) -> Vec<Matrix> {
-        data.iter()
-            .map(|input| Matrix::from(input.clone()))
-            .collect()
-    }
-
     /// Trains the network on a dataset for a specified number of epochs.
     ///
     /// # Arguments
-    /// * `inputs` - Vector of input vectors
-    /// * `targets` - Vector of target output vectors
+    /// * `inputs` - Slice of input matrices
+    /// * `targets` - Slice of target matrices
     /// * `epochs` - Number of training epochs
-    pub fn train(&mut self, inputs: Vec<Vec<f64>>, targets: Vec<Vec<f64>>, epochs: u32) {
-        let input_matrices = Self::convert_to_matrices(inputs);
-        let target_matrices = Self::convert_to_matrices(targets);
-        let total_samples = input_matrices.len();
+    pub fn train(&mut self, inputs: &[Matrix], targets: &[Matrix], epochs: u32) {
+        let total_samples = inputs.len();
 
         // Create progress bar
         let progress_bar = ProgressBar::new(epochs as u64);
@@ -366,7 +357,7 @@ impl Network {
         let start_time = Instant::now();
 
         for _ in 1..=epochs {
-            let (_, correct_predictions) = self.train_epoch(&input_matrices, &target_matrices, 32);
+            let (_, correct_predictions) = self.train_epoch(&inputs, &targets, 32);
             let accuracy = (correct_predictions as f64 / total_samples as f64) * 100.0;
 
             progress_bar.set_message(format!("{:.2}%", accuracy));
@@ -620,14 +611,19 @@ mod tests {
 
         // XOR training data
         let inputs = vec![
-            vec![0.0, 0.0],
-            vec![0.0, 1.0],
-            vec![1.0, 0.0],
-            vec![1.0, 1.0],
+            Matrix::from(vec![0.0, 0.0]),
+            Matrix::from(vec![0.0, 1.0]),
+            Matrix::from(vec![1.0, 0.0]),
+            Matrix::from(vec![1.0, 1.0]),
         ];
-        let targets = vec![vec![0.0], vec![1.0], vec![1.0], vec![0.0]];
+        let targets = vec![
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.0]),
+        ];
 
-        network.train(inputs, targets, 2000);
+        network.train(&inputs, &targets, 2000);
 
         // Test the network
         let test_inputs = vec![
@@ -725,19 +721,19 @@ mod tests {
 
         // Simple 3-class classification problem
         let inputs = vec![
-            vec![0.0, 0.0], // Class 0
-            vec![1.0, 0.0], // Class 1
-            vec![0.0, 1.0], // Class 2
+            Matrix::from(vec![0.0, 0.0]), // Class 0
+            Matrix::from(vec![1.0, 0.0]), // Class 1
+            Matrix::from(vec![0.0, 1.0]), // Class 2
         ];
 
         let targets = vec![
-            vec![1.0, 0.0, 0.0], // One-hot encoding for class 0
-            vec![0.0, 1.0, 0.0], // One-hot encoding for class 1
-            vec![0.0, 0.0, 1.0], // One-hot encoding for class 2
+            Matrix::from(vec![1.0, 0.0, 0.0]), // One-hot encoding for class 0
+            Matrix::from(vec![0.0, 1.0, 0.0]), // One-hot encoding for class 1
+            Matrix::from(vec![0.0, 0.0, 1.0]), // One-hot encoding for class 2
         ];
 
         // This should not panic with dimension mismatch
-        network.train(inputs.clone(), targets.clone(), 1);
+        network.train(&inputs, &targets, 1);
 
         // Test forward pass dimensions
         let output = network.predict(Matrix::from(inputs[0].clone()));
@@ -772,22 +768,21 @@ mod tests {
 
         // Create a simple dataset with clear separation
         let inputs = vec![
-            vec![0.0, 0.0],
-            vec![0.0, 1.0],
-            vec![1.0, 0.0],
-            vec![1.0, 1.0],
+            Matrix::from(vec![0.0, 0.0]),
+            Matrix::from(vec![0.0, 1.0]),
+            Matrix::from(vec![1.0, 0.0]),
+            Matrix::from(vec![1.0, 1.0]),
         ];
-        let targets = vec![vec![0.0], vec![1.0], vec![1.0], vec![0.0]];
+        let targets = vec![
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.0]),
+        ];
 
         // Test prepare_mini_batches directly
-        let input_matrices: Vec<_> = inputs
-            .iter()
-            .map(|input| Matrix::from(input.clone()))
-            .collect();
-        let target_matrices: Vec<_> = targets
-            .iter()
-            .map(|target| Matrix::from(target.clone()))
-            .collect();
+        let input_matrices = inputs.clone();
+        let target_matrices = targets.clone();
 
         let batches = Network::prepare_mini_batches(&input_matrices, &target_matrices, 2);
         assert_eq!(batches.len(), 2, "Should create 2 batches of size 2");
@@ -801,13 +796,13 @@ mod tests {
         }
 
         // Train the network
-        network.train(inputs.clone(), targets.clone(), 1000);
+        network.train(&inputs, &targets, 1000);
 
         // Test predictions with a more lenient error threshold
         let mut total_error = 0.0;
         for (input, target) in inputs.iter().zip(targets.iter()) {
-            let output = network.feed_forward(Matrix::from(input.clone()));
-            let error = (target[0] - output.get(0, 0)).abs();
+            let output = network.feed_forward(input.clone());
+            let error = (target.get(0, 0) - output.get(0, 0)).abs();
             total_error += error;
         }
 
@@ -832,24 +827,29 @@ mod tests {
 
         // XOR training data
         let inputs = vec![
-            vec![0.0, 0.0],
-            vec![0.0, 1.0],
-            vec![1.0, 0.0],
-            vec![1.0, 1.0],
+            Matrix::from(vec![0.0, 0.0]),
+            Matrix::from(vec![0.0, 1.0]),
+            Matrix::from(vec![1.0, 0.0]),
+            Matrix::from(vec![1.0, 1.0]),
         ];
-        let targets = vec![vec![0.0], vec![1.0], vec![1.0], vec![0.0]];
+        let targets = vec![
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.0]),
+        ];
 
         // Test different batch sizes
         for &batch_size in &[1, 2, 4] {
             config.batch_size = batch_size;
             let mut network = Network::new(&config);
-            network.train(inputs.clone(), targets.clone(), 1000);
+            network.train(&inputs, &targets, 1000);
 
             // Test predictions
             let mut total_error = 0.0;
             for (input, target) in inputs.iter().zip(targets.iter()) {
-                let output = network.predict(Matrix::from(input.clone()));
-                let error = (target[0] - output.get(0, 0)).abs();
+                let output = network.predict(input.clone());
+                let error = (target.get(0, 0) - output.get(0, 0)).abs();
                 total_error += error;
             }
             let avg_error = total_error / 4.0;
@@ -882,11 +882,11 @@ mod tests {
     #[test]
     fn test_batch_training_convergence() {
         let mut network = create_test_network();
-        let inputs = vec![vec![0.0], vec![1.0]];
-        let targets = vec![vec![1.0], vec![0.0]];
+        let inputs = vec![Matrix::from(vec![0.0]), Matrix::from(vec![1.0])];
+        let targets = vec![Matrix::from(vec![1.0]), Matrix::from(vec![0.0])];
 
         let initial_error = compute_error(&network, &inputs, &targets);
-        network.train(inputs.clone(), targets.clone(), 1000);
+        network.train(&inputs, &targets, 1000);
         let final_error = compute_error(&network, &inputs, &targets);
 
         assert!(final_error < initial_error, "Training should reduce error");
@@ -895,48 +895,29 @@ mod tests {
     #[test]
     fn test_mini_batch_shuffling() {
         let inputs = vec![
-            vec![0.0, 0.0],
-            vec![0.0, 1.0],
-            vec![1.0, 0.0],
-            vec![1.0, 1.0],
+            Matrix::from(vec![0.0, 0.0]),
+            Matrix::from(vec![0.0, 1.0]),
+            Matrix::from(vec![1.0, 0.0]),
+            Matrix::from(vec![1.0, 1.0]),
         ];
-        let targets = vec![vec![0.0], vec![1.0], vec![1.0], vec![0.0]];
-
-        let input_matrices: Vec<_> = inputs
-            .iter()
-            .map(|input| Matrix::from(input.clone()))
-            .collect();
-        let target_matrices: Vec<_> = targets
-            .iter()
-            .map(|target| Matrix::from(target.clone()))
-            .collect();
+        let targets = vec![
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.0]),
+        ];
 
         // Generate multiple batches and verify they're not always in the same order
         let mut all_same = true;
-        let first_batch = Network::prepare_mini_batches(&input_matrices, &target_matrices, 2);
+        let first_batch = Network::prepare_mini_batches(&inputs, &targets, 2);
         for _ in 0..5 {
-            let next_batch = Network::prepare_mini_batches(&input_matrices, &target_matrices, 2);
+            let next_batch = Network::prepare_mini_batches(&inputs, &targets, 2);
             if first_batch != next_batch {
                 all_same = false;
                 break;
             }
         }
         assert!(!all_same, "Mini-batches should be randomly shuffled");
-    }
-
-    #[test]
-    fn test_convert_to_matrices() {
-        let input_data = vec![vec![1.0, 2.0], vec![3.0, 4.0]];
-
-        let matrices = Network::convert_to_matrices(input_data);
-
-        assert_eq!(matrices.len(), 2);
-        assert_eq!(matrices[0].rows(), 2);
-        assert_eq!(matrices[0].cols(), 1);
-        assert_relative_eq!(matrices[0].get(0, 0), 1.0);
-        assert_relative_eq!(matrices[0].get(1, 0), 2.0);
-        assert_relative_eq!(matrices[1].get(0, 0), 3.0);
-        assert_relative_eq!(matrices[1].get(1, 0), 4.0);
     }
 
     #[test]
@@ -1054,14 +1035,14 @@ mod tests {
     #[test]
     fn test_training_integration() {
         let mut network = create_test_network();
-        let inputs = vec![vec![0.0], vec![1.0]];
-        let targets = vec![vec![1.0], vec![0.0]];
+        let inputs = vec![Matrix::from(vec![0.0]), Matrix::from(vec![1.0])];
+        let targets = vec![Matrix::from(vec![1.0]), Matrix::from(vec![0.0])];
 
         // Record initial state
         let initial_weights: Vec<Matrix> = network.weights.iter().cloned().collect();
 
         // Train for a few epochs
-        network.train(inputs.clone(), targets.clone(), 5);
+        network.train(&inputs, &targets, 5);
 
         // Verify weights have been updated
         for (initial, current) in initial_weights.iter().zip(network.weights.iter()) {
@@ -1085,24 +1066,24 @@ mod tests {
         let mut network = create_test_network();
 
         // Simple dataset
-        let inputs = vec![vec![0.0], vec![1.0]];
-        let targets = vec![vec![1.0], vec![0.0]];
+        let inputs = vec![Matrix::from(vec![0.0]), Matrix::from(vec![1.0])];
+        let targets = vec![Matrix::from(vec![1.0]), Matrix::from(vec![0.0])];
 
         // Training should complete without errors and show progress
-        network.train(inputs, targets, 5);
+        network.train(&inputs, &targets, 5);
 
         // Since progress bar is just for display, we only test that training completes
         assert!(true, "Training with progress bar completed successfully");
     }
 
     // Helper functions for tests
-    fn compute_error(network: &Network, inputs: &[Vec<f64>], targets: &[Vec<f64>]) -> f64 {
+    fn compute_error(network: &Network, inputs: &[Matrix], targets: &[Matrix]) -> f64 {
         inputs
             .iter()
             .zip(targets)
             .map(|(input, target)| {
-                let output = network.predict(Matrix::from(input.clone()));
-                let error = target[0] - output.get(0, 0);
+                let output = network.predict(input.clone());
+                let error = target.get(0, 0) - output.get(0, 0);
                 error * error
             })
             .sum::<f64>()

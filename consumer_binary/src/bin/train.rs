@@ -56,22 +56,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut network = Network::new(&network_config);
 
     println!("Training network...");
-    let inputs: Vec<Vec<f64>> = standardized_data
-        .data
-        .images()
-        .iter()
-        .map(|m| m.data.as_slice().unwrap().to_vec())
-        .collect();
-
-    let targets: Vec<Vec<f64>> = standardized_data
-        .data
-        .labels()
-        .iter()
-        .map(|m| m.data.as_slice().unwrap().to_vec())
-        .collect();
-
     let start_time = Instant::now();
-    network.train(inputs, targets, network_config.epochs as u32);
+    network.train(
+        standardized_data.data.images(),
+        standardized_data.data.labels(),
+        network_config.epochs as u32,
+    );
 
     let total_duration = start_time.elapsed();
     println!(
@@ -79,15 +69,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         format_duration(total_duration),
         total_duration
     );
-
-    // let avg_duration = total_duration / epochs_trained;
-    // println!(
-    //     "Average time per epoch: {} ({:.2?})",
-    //     format_duration(avg_duration),
-    //     avg_duration
-    // );
-
-    // println!("Training completed in {} epochs", epochs_trained);
 
     println!("Saving trained network...");
     let network_json = match serde_json::to_string(&network) {
