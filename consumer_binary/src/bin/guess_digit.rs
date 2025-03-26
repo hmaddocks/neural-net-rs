@@ -1,7 +1,10 @@
 use image::DynamicImage;
 use matrix::matrix::Matrix;
 use mnist::mnist::get_actual_digit;
+use mnist::standardized_mnist::StandardizationParams;
 use neural_network::network::Network;
+use std::fs::File;
+use std::io::Read;
 
 fn process_image(img: DynamicImage) -> Result<Matrix, Box<dyn std::error::Error>> {
     // Resize to 28x28 if needed
@@ -27,13 +30,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let image_path = &args[1];
 
+    // Load standardization parameters
+    println!("Loading standardization parameters...");
+    let params_path = std::env::current_dir()?
+        .join("models")
+        .join("standardization_params.json");
+
+    let mut params_file = File::open(&params_path)?;
+    let mut params_json = String::new();
+    params_file.read_to_string(&mut params_json)?;
+
+    let standardization_params: StandardizationParams = serde_json::from_str(&params_json)?;
+
     // Load the image
     println!("Loading image from {}...", image_path);
     let img = image::open(image_path)?;
 
     // Process the image
     println!("Processing image...");
-    let input = process_image(img)?;
+    let input_matrix = process_image(img)?;
+    let standardized_input = standardization_params.standardize(&input_matrix);
 
     // Load the trained network
     println!("Loading trained network...");
@@ -44,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Make prediction
     println!("Making prediction...");
-    let output = network.predict(input);
+    let output = network.predict(standardized_input);
     let predicted_digit = get_actual_digit(&output);
 
     println!("\nPredicted digit: {}", predicted_digit);

@@ -1,4 +1,5 @@
-use mnist::mnist::{load_training_data, MnistData};
+use mnist::mnist::load_training_data;
+use mnist::standardized_mnist::StandardizedMnistData;
 use neural_network::network::Network;
 use neural_network::network_config::NetworkConfig;
 use std::fs::File;
@@ -28,10 +29,19 @@ fn format_duration(duration: Duration) -> String {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Loading MNIST training data...");
-    let mnist_data: MnistData = match load_training_data() {
+    let mnist_data = match load_training_data() {
         Ok(data) => data,
         Err(e) => {
             eprintln!("Failed to load training data: {}", e);
+            return Err(e.into());
+        }
+    };
+
+    println!("Standardizing MNIST data...");
+    let standardized_data = match StandardizedMnistData::new(mnist_data) {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!("Failed to standardize data: {}", e);
             return Err(e.into());
         }
     };
@@ -46,20 +56,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut network = Network::new(&network_config);
 
     println!("Training network...");
-    let inputs: Vec<Vec<f64>> = mnist_data
+    let inputs: Vec<Vec<f64>> = standardized_data
+        .data
         .images()
         .iter()
         .map(|m| m.data.as_slice().unwrap().to_vec())
         .collect();
 
-    let targets: Vec<Vec<f64>> = mnist_data
+    let targets: Vec<Vec<f64>> = standardized_data
+        .data
         .labels()
         .iter()
         .map(|m| m.data.as_slice().unwrap().to_vec())
         .collect();
 
     let start_time = Instant::now();
-    network.train(inputs, targets, network_config.epochs.try_into().unwrap());
+    let epochs_trained = network.train(inputs, targets, network_config.epochs.try_into().unwrap());
     let total_duration = start_time.elapsed();
     println!(
         "Total training time: {} ({:.2?})",
@@ -67,12 +79,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_duration
     );
 
-    let avg_duration = total_duration / network_config.epochs as u32;
+    let avg_duration = total_duration / epochs_trained;
     println!(
         "Average time per epoch: {} ({:.2?})",
         format_duration(avg_duration),
         avg_duration
     );
+
+    println!("Training completed in {} epochs", epochs_trained);
 
     println!("Saving trained network...");
     let network_json = match serde_json::to_string(&network) {
@@ -105,6 +119,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Save standardization parameters
+    println!("Saving standardization parameters...");
+    let params_json = match serde_json::to_string(&standardized_data.params) {
+        Ok(json) => json,
+        Err(e) => {
+            eprintln!("Failed to serialize standardization parameters: {}", e);
+            return Err(e.into());
+        }
+    };
+    let params_path = match std::env::current_dir() {
+        Ok(path) => path.join("models").join("standardization_params.json"),
+        Err(e) => {
+            eprintln!("Failed to get current directory: {}", e);
+            return Err(e.into());
+        }
+    };
+
+    let mut file = match File::create(&params_path) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("Failed to create parameters file: {}", e);
+            return Err(e.into());
+        }
+    };
+    match file.write_all(params_json.as_bytes()) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("Failed to write parameters file: {}", e);
+            return Err(e.into());
+        }
+    };
+
     println!("Network trained and saved to {}", model_path.display());
+    println!(
+        "Standardization parameters saved to {}",
+        params_path.display()
+    );
     Ok(())
 }

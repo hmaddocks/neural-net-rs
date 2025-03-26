@@ -114,7 +114,7 @@ impl NetworkConfig {
     /// # Returns
     ///
     /// A vector of boxed activation functions.
-    pub fn get_activations(&self) -> Vec<Box<dyn ActivationFunction>> {
+    pub fn activations(&self) -> Vec<Box<dyn ActivationFunction>> {
         self.activations
             .iter()
             .map(|activation_type| match activation_type {

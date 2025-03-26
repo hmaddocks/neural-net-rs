@@ -128,7 +128,7 @@ impl Network {
             layers: network_config.layers.clone(),
             weights,
             data,
-            activations: network_config.get_activations(),
+            activations: network_config.activations(),
             activation_types: network_config.activations.clone(),
             learning_rate: network_config.learning_rate,
             momentum: network_config.momentum.unwrap_or(0.9),

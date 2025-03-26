@@ -1,7 +1,9 @@
 use indicatif::{ProgressBar, ProgressStyle};
-use matrix::matrix::Matrix;
 use mnist::mnist::{get_actual_digit, load_test_data};
+use mnist::standardized_mnist::StandardizationParams;
 use neural_network::network::Network;
+use std::fs::File;
+use std::io::Read;
 
 /// Calculates metrics for a digit from the confusion matrix
 fn calculate_metrics(confusion_matrix: &[[usize; 10]; 10], digit: usize) -> (f64, f64, f64, f64) {
@@ -110,6 +112,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    println!("Loading standardization parameters...");
+    let params_path = match std::env::current_dir() {
+        Ok(path) => path.join("models").join("standardization_params.json"),
+        Err(e) => {
+            eprintln!("Failed to get current directory: {}", e);
+            return Err(e.into());
+        }
+    };
+
+    let mut params_file = match File::open(&params_path) {
+        Ok(file) => file,
+        Err(e) => {
+            eprintln!("Failed to open parameters file: {}", e);
+            return Err(e.into());
+        }
+    };
+
+    let mut params_json = String::new();
+    match params_file.read_to_string(&mut params_json) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("Failed to read parameters file: {}", e);
+            return Err(e.into());
+        }
+    };
+
+    let standardization_params: StandardizationParams = match serde_json::from_str(&params_json) {
+        Ok(params) => params,
+        Err(e) => {
+            eprintln!("Failed to parse standardization parameters: {}", e);
+            return Err(e.into());
+        }
+    };
+
     println!("Loading trained network...");
     let model_path = match std::env::current_dir() {
         Ok(path) => path.join("models").join("trained_network.json"),
@@ -138,9 +174,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .zip(test_data.labels().iter())
         .for_each(|(image, label)| {
-            // Convert image data to Matrix
-            let input = Matrix::new(784, 1, image.data.as_slice().unwrap().to_vec());
-            let output = network.predict(input);
+            // Standardize the image data
+            let standardized_image = standardization_params.standardize(image);
+            let output = network.predict(standardized_image);
             let predicted = get_actual_digit(&output);
             let actual = get_actual_digit(label);
 
