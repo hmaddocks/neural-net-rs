@@ -59,6 +59,10 @@ pub struct Network {
     /// Previous weight updates for momentum calculation
     #[serde(skip)]
     prev_weight_updates: Vec<Matrix>,
+    /// Mean of the dataset
+    pub mean: Option<f64>,
+    /// Standard deviation of the dataset
+    pub std_dev: Option<f64>,
 }
 
 impl Network {
@@ -133,6 +137,8 @@ impl Network {
             learning_rate: network_config.learning_rate,
             momentum: network_config.momentum.unwrap_or(0.9),
             prev_weight_updates,
+            mean: None,
+            std_dev: None,
         }
     }
 

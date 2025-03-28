@@ -1,9 +1,7 @@
 use indicatif::{ProgressBar, ProgressStyle};
 use mnist::mnist::{get_actual_digit, load_test_data};
-use mnist::standardized_mnist::StandardizationParams;
+use mnist::standardized_mnist::{StandardizationParams, StandardizedMnistData};
 use neural_network::network::Network;
-use std::fs::File;
-use std::io::Read;
 
 /// Calculates metrics for a digit from the confusion matrix
 fn calculate_metrics(confusion_matrix: &[[usize; 10]; 10], digit: usize) -> (f64, f64, f64, f64) {
@@ -112,39 +110,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    println!("Loading standardization parameters...");
-    let params_path = match std::env::current_dir() {
-        Ok(path) => path.join("models").join("standardization_params.json"),
-        Err(e) => {
-            eprintln!("Failed to get current directory: {}", e);
-            return Err(e.into());
-        }
-    };
-
-    let mut params_file = match File::open(&params_path) {
-        Ok(file) => file,
-        Err(e) => {
-            eprintln!("Failed to open parameters file: {}", e);
-            return Err(e.into());
-        }
-    };
-
-    let mut params_json = String::new();
-    match params_file.read_to_string(&mut params_json) {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!("Failed to read parameters file: {}", e);
-            return Err(e.into());
-        }
-    };
-
-    let standardization_params: StandardizationParams = match serde_json::from_str(&params_json) {
-        Ok(params) => params,
-        Err(e) => {
-            eprintln!("Failed to parse standardization parameters: {}", e);
-            return Err(e.into());
-        }
-    };
+    println!("Standardizing test data...");
+    let standardized_params = StandardizationParams::build(&test_data.images());
+    let standardised_test_data =
+        StandardizedMnistData::new(standardized_params).standardize(&test_data.images());
 
     println!("Loading trained network...");
     let model_path = match std::env::current_dir() {
@@ -159,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nTesting network predictions...");
     let mut confusion_matrix = [[0usize; 10]; 10];
-    let total = test_data.len();
+    let total = standardised_test_data.len();
 
     let progress_bar = ProgressBar::new(total as u64);
     progress_bar.set_style(
@@ -169,14 +138,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .progress_chars("#>-")
     );
 
-    test_data
-        .images()
+    standardised_test_data
         .iter()
         .zip(test_data.labels().iter())
         .for_each(|(image, label)| {
-            // Standardize the image data
-            let standardized_image = standardization_params.standardize(image);
-            let output = network.predict(standardized_image);
+            let output = network.predict(image.clone());
             let predicted = get_actual_digit(&output);
             let actual = get_actual_digit(label);
 

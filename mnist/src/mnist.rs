@@ -86,10 +86,10 @@ impl MnistData {
         self.images.len()
     }
 
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.images.is_empty()
-    }
+    // #[allow(dead_code)]
+    // pub fn is_empty(&self) -> bool {
+    //     self.images.is_empty()
+    // }
 
     pub fn images(&self) -> &[Matrix] {
         &self.images
