@@ -82,14 +82,41 @@ impl MnistData {
         Ok(Self { images, labels })
     }
 
+    /// Loads MNIST images and labels from the specified file paths.
+    ///
+    /// # Arguments
+    /// * `images_path` - Path to the images file
+    /// * `labels_path` - Path to the labels file
+    ///
+    /// # Returns
+    /// * `Ok(MnistData)` containing paired images and labels
+    /// * `Err(MnistError)` if loading fails
+    fn load_mnist_data(
+        images_path: PathBuf,
+        labels_path: PathBuf,
+    ) -> Result<MnistData, MnistError> {
+        let multi_progress = indicatif::MultiProgress::new();
+        let style = ProgressStyle::default_bar()
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos:>7}/{len:7} {msg}",
+            )
+            .unwrap()
+            .progress_chars("##-");
+
+        let images_progress = multi_progress.add(ProgressBar::new(0));
+        let labels_progress = multi_progress.add(ProgressBar::new(0));
+        images_progress.set_style(style.clone());
+        labels_progress.set_style(style);
+
+        let images = Self::read_mnist_images(images_path, &images_progress)?;
+        let labels = Self::read_mnist_labels(labels_path, &labels_progress)?;
+
+        Ok(Self { images, labels })
+    }
+
     pub fn len(&self) -> usize {
         self.images.len()
     }
-
-    // #[allow(dead_code)]
-    // pub fn is_empty(&self) -> bool {
-    //     self.images.is_empty()
-    // }
 
     pub fn images(&self) -> &[Matrix] {
         &self.images
@@ -98,141 +125,138 @@ impl MnistData {
     pub fn labels(&self) -> &[Matrix] {
         &self.labels
     }
-}
 
-/// Reads a 32-bit unsigned integer in big-endian format from a file
-fn read_u32(file: &mut File) -> std::io::Result<u32> {
-    let mut buffer = [0; 4];
-    match file.read_exact(&mut buffer) {
-        Ok(_) => Ok(u32::from_be_bytes(buffer)),
-        Err(e) => Err(e),
-    }
-}
-
-/// Reads MNIST image data from an IDX file format.
-///
-/// # Arguments
-/// * `path` - Path to the MNIST image file
-/// * `progress` - Progress bar for tracking loading progress
-///
-/// # Returns
-/// * `Ok(Vec<Matrix>)` containing normalized image matrices (pixel values scaled to 0.0-1.0)
-/// * `Err(MnistError)` if file reading fails or format is invalid
-///
-/// # Format
-/// The IDX file format consists of:
-/// * 32-bit magic number (2051)
-/// * 32-bit number of images
-/// * 32-bit number of rows
-/// * 32-bit number of columns
-/// * Pixels in row-major order (1 byte per pixel)
-pub fn read_mnist_images(
-    path: impl AsRef<Path>,
-    progress: &ProgressBar,
-) -> Result<Vec<Matrix>, MnistError> {
-    let mut file = match File::open(path) {
-        Ok(file) => file,
-        Err(e) => return Err(e.into()),
-    };
-
-    let magic_number = read_u32(&mut file)?;
-    if magic_number != IMAGE_MAGIC_NUMBER {
-        return Err(MnistError::InvalidMagicNumber {
-            kind: "images",
-            expected: IMAGE_MAGIC_NUMBER,
-            actual: magic_number,
-        });
+    /// Reads a 32-bit unsigned integer in big-endian format from a file
+    fn read_u32(file: &mut File) -> std::io::Result<u32> {
+        let mut buffer = [0; 4];
+        match file.read_exact(&mut buffer) {
+            Ok(_) => Ok(u32::from_be_bytes(buffer)),
+            Err(e) => Err(e),
+        }
     }
 
-    let num_images = read_u32(&mut file)? as usize;
-    let num_rows = read_u32(&mut file)? as usize;
-    let num_cols = read_u32(&mut file)? as usize;
-    let pixels_per_image = num_rows * num_cols;
+    /// Reads MNIST image data from an IDX file format.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the MNIST image file
+    /// * `progress` - Progress bar for tracking loading progress
+    ///
+    /// # Returns
+    /// * `Ok(Vec<Matrix>)` containing normalized image matrices (pixel values scaled to 0.0-1.0)
+    /// * `Err(MnistError)` if file reading fails or format is invalid
+    ///
+    /// # Format
+    /// The IDX file format consists of:
+    /// * 32-bit magic number (2051)
+    /// * 32-bit number of images
+    /// * 32-bit number of rows
+    /// * 32-bit number of columns
+    /// * Pixels in row-major order (1 byte per pixel)
+    fn read_mnist_images(
+        path: impl AsRef<Path>,
+        progress: &ProgressBar,
+    ) -> Result<Vec<Matrix>, MnistError> {
+        let mut file = match File::open(path) {
+            Ok(file) => file,
+            Err(e) => return Err(e.into()),
+        };
 
-    if pixels_per_image != INPUT_NODES {
-        return Err(MnistError::InvalidDimensions {
-            expected: INPUT_NODES,
-            actual: pixels_per_image,
-            rows: num_rows,
-            cols: num_cols,
-        });
+        let magic_number = Self::read_u32(&mut file)?;
+        if magic_number != IMAGE_MAGIC_NUMBER {
+            return Err(MnistError::InvalidMagicNumber {
+                kind: "images",
+                expected: IMAGE_MAGIC_NUMBER,
+                actual: magic_number,
+            });
+        }
+
+        let num_images = Self::read_u32(&mut file)? as usize;
+        let num_rows = Self::read_u32(&mut file)? as usize;
+        let num_cols = Self::read_u32(&mut file)? as usize;
+        let pixels_per_image = num_rows * num_cols;
+
+        if pixels_per_image != INPUT_NODES {
+            return Err(MnistError::InvalidDimensions {
+                expected: INPUT_NODES,
+                actual: pixels_per_image,
+                rows: num_rows,
+                cols: num_cols,
+            });
+        }
+
+        progress.set_length(num_images as u64);
+        progress.set_message("Loading images...");
+
+        let mut images = Vec::with_capacity(num_images);
+        let mut buffer = vec![0u8; pixels_per_image];
+
+        for _ in 0..num_images {
+            file.read_exact(&mut buffer)?;
+            let data = Vec::from_iter(buffer.iter().map(|&pixel| f64::from(pixel) / 255.0));
+            images.push(Matrix::new(pixels_per_image, 1, data));
+            progress.inc(1);
+        }
+
+        progress.finish_with_message("Images loaded successfully");
+        Ok(images)
     }
 
-    progress.set_length(num_images as u64);
-    progress.set_message("Loading images...");
+    /// Reads MNIST label data from an IDX file format.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the MNIST label file
+    /// * `progress` - Progress bar for tracking loading progress
+    ///
+    /// # Returns
+    /// * `Ok(Vec<Matrix>)` containing one-hot encoded label matrices
+    /// * `Err(MnistError)` if file reading fails or format is invalid
+    ///
+    /// # Format
+    /// The IDX file format consists of:
+    /// * 32-bit magic number (2049)
+    /// * 32-bit number of labels
+    /// * Labels (1 byte per label)
+    fn read_mnist_labels(
+        path: impl AsRef<Path>,
+        progress: &ProgressBar,
+    ) -> Result<Vec<Matrix>, MnistError> {
+        let mut file = match File::open(path) {
+            Ok(file) => file,
+            Err(e) => return Err(e.into()),
+        };
 
-    let mut images = Vec::with_capacity(num_images);
-    let mut buffer = vec![0u8; pixels_per_image];
+        let magic_number = Self::read_u32(&mut file)?;
+        if magic_number != LABEL_MAGIC_NUMBER {
+            return Err(MnistError::InvalidMagicNumber {
+                kind: "labels",
+                expected: LABEL_MAGIC_NUMBER,
+                actual: magic_number,
+            });
+        }
 
-    for _ in 0..num_images {
-        file.read_exact(&mut buffer)?;
-        let data = Vec::from_iter(buffer.iter().map(|&pixel| f64::from(pixel) / 255.0));
-        images.push(Matrix::new(pixels_per_image, 1, data));
-        progress.inc(1);
+        let num_labels = Self::read_u32(&mut file)? as usize;
+        progress.set_length(num_labels as u64);
+        progress.set_message("Loading labels...");
+
+        let mut labels = Vec::with_capacity(num_labels);
+        let mut buffer = [0u8; 1];
+
+        for _ in 0..num_labels {
+            file.read_exact(&mut buffer)?;
+            let mut data = vec![0.0; OUTPUT_NODES];
+            data[buffer[0] as usize] = 1.0;
+
+            labels.push(Matrix::new(OUTPUT_NODES, 1, data));
+            progress.inc(1);
+        }
+
+        progress.finish_with_message("Labels loaded successfully");
+        Ok(labels)
     }
-
-    progress.finish_with_message("Images loaded successfully");
-    Ok(images)
-}
-
-/// Reads MNIST label data from an IDX file format.
-///
-/// # Arguments
-/// * `path` - Path to the MNIST label file
-/// * `progress` - Progress bar for tracking loading progress
-///
-/// # Returns
-/// * `Ok(Vec<Matrix>)` containing one-hot encoded label matrices
-/// * `Err(MnistError)` if file reading fails or format is invalid
-///
-/// # Format
-/// The IDX file format consists of:
-/// * 32-bit magic number (2049)
-/// * 32-bit number of labels
-/// * Labels (1 byte per label)
-pub fn read_mnist_labels(
-    path: impl AsRef<Path>,
-    progress: &ProgressBar,
-) -> Result<Vec<Matrix>, MnistError> {
-    let mut file = match File::open(path) {
-        Ok(file) => file,
-        Err(e) => return Err(e.into()),
-    };
-
-    let magic_number = read_u32(&mut file)?;
-    if magic_number != LABEL_MAGIC_NUMBER {
-        return Err(MnistError::InvalidMagicNumber {
-            kind: "labels",
-            expected: LABEL_MAGIC_NUMBER,
-            actual: magic_number,
-        });
-    }
-
-    let num_labels = read_u32(&mut file)? as usize;
-    progress.set_length(num_labels as u64);
-    progress.set_message("Loading labels...");
-
-    let mut labels = Vec::with_capacity(num_labels);
-    let mut buffer = [0u8; 1];
-
-    for _ in 0..num_labels {
-        file.read_exact(&mut buffer)?;
-        let mut data = vec![0.0; OUTPUT_NODES];
-        data[buffer[0] as usize] = 1.0;
-
-        labels.push(Matrix::new(OUTPUT_NODES, 1, data));
-        progress.inc(1);
-    }
-
-    progress.finish_with_message("Labels loaded successfully");
-    Ok(labels)
 }
 
 /// Returns the path to the MNIST data directory
-pub fn get_mnist_dir() -> Result<PathBuf, MnistError> {
-    // PathBuf::from(std::env::var("HOME").expect("HOME environment variable not set"))
-    //     .join("Documents")
-    //     .join("NMIST")
+fn get_mnist_dir() -> Result<PathBuf, MnistError> {
     let current_dir = match std::env::current_dir() {
         Ok(dir) => dir,
         Err(e) => {
@@ -246,7 +270,7 @@ pub fn get_mnist_dir() -> Result<PathBuf, MnistError> {
 /// Loads the standard MNIST training dataset
 pub fn load_training_data() -> Result<MnistData, MnistError> {
     let mnist_dir = get_mnist_dir()?;
-    load_mnist_data(
+    MnistData::load_mnist_data(
         mnist_dir.join("train-images-idx3-ubyte"),
         mnist_dir.join("train-labels-idx1-ubyte"),
     )
@@ -255,45 +279,25 @@ pub fn load_training_data() -> Result<MnistData, MnistError> {
 /// Loads the standard MNIST test dataset
 pub fn load_test_data() -> Result<MnistData, MnistError> {
     let mnist_dir = get_mnist_dir()?;
-    load_mnist_data(
+    MnistData::load_mnist_data(
         mnist_dir.join("t10k-images-idx3-ubyte"),
         mnist_dir.join("t10k-labels-idx1-ubyte"),
     )
 }
 
-/// Loads MNIST images and labels from the specified file paths.
+/// Gets the actual digit from a one-hot encoded label matrix
 ///
 /// # Arguments
-/// * `images_path` - Path to the images file
-/// * `labels_path` - Path to the labels file
+/// * `label` - One-hot encoded label matrix
 ///
 /// # Returns
-/// * `Ok(MnistData)` containing paired images and labels
-/// * `Err(MnistError)` if loading fails
-pub fn load_mnist_data(
-    images_path: PathBuf,
-    labels_path: PathBuf,
-) -> Result<MnistData, MnistError> {
-    let multi_progress = indicatif::MultiProgress::new();
-    let style = ProgressStyle::default_bar()
-        .template(
-            "{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos:>7}/{len:7} {msg}",
-        )
-        .unwrap()
-        .progress_chars("##-");
-
-    let images_progress = multi_progress.add(ProgressBar::new(0));
-    let labels_progress = multi_progress.add(ProgressBar::new(0));
-    images_progress.set_style(style.clone());
-    labels_progress.set_style(style);
-
-    let images = read_mnist_images(images_path, &images_progress)?;
-    let labels = read_mnist_labels(labels_path, &labels_progress)?;
-
-    MnistData::new(images, labels)
-}
-
-/// Gets the actual digit from a one-hot encoded label matrix
+/// * `usize` - Actual digit
+///
+/// # Example
+/// ```
+/// let label = Matrix::new(10, 1, vec![0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.9, 0.1]);
+/// assert_eq!(get_actual_digit(&label), 8);
+/// ```
 pub fn get_actual_digit(label: &Matrix) -> usize {
     label
         .data
@@ -310,6 +314,41 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_get_actual_digit() {
+        // Test case 1: One-hot encoded vector for digit 0
+        let digit_0 = Matrix::new(
+            10,
+            1,
+            vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        );
+        assert_eq!(get_actual_digit(&digit_0), 0);
+
+        // Test case 2: One-hot encoded vector for digit 5
+        let digit_5 = Matrix::new(
+            10,
+            1,
+            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+        );
+        assert_eq!(get_actual_digit(&digit_5), 5);
+
+        // Test case 4: Non-binary values (softmax output)
+        let softmax_output = Matrix::new(
+            10,
+            1,
+            vec![0.1, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.5, 0.05, 0.05],
+        );
+        assert_eq!(get_actual_digit(&softmax_output), 7);
+
+        // Test case 5: Very close values
+        let close_values = Matrix::new(
+            10,
+            1,
+            vec![0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1001, 0.1],
+        );
+        assert_eq!(get_actual_digit(&close_values), 8);
+    }
 
     fn create_test_mnist_file(
         path: &Path,
@@ -366,12 +405,12 @@ mod tests {
         let dir = tempdir().unwrap();
         let image_path = dir.path().join("test_images");
 
-        // Create test image file with 2 images (28x28 pixels each)
+        // Create test image file with 2 images
         let image_data: Vec<u8> = (0..784 * 2).map(|i| (i % 256) as u8).collect();
         create_test_mnist_file(&image_path, IMAGE_MAGIC_NUMBER, 2, &image_data).unwrap();
 
         let progress_bar = ProgressBar::new(0);
-        let images = read_mnist_images(image_path, &progress_bar).unwrap();
+        let images = MnistData::read_mnist_images(image_path, &progress_bar).unwrap();
 
         assert_eq!(images.len(), 2);
         assert_eq!(images[0].rows(), 784);
@@ -390,7 +429,7 @@ mod tests {
         create_test_mnist_file(&image_path, 1234, 2, &image_data).unwrap();
 
         let progress_bar = ProgressBar::new(0);
-        assert!(read_mnist_images(image_path, &progress_bar).is_err());
+        assert!(MnistData::read_mnist_images(image_path, &progress_bar).is_err());
     }
 
     #[test]
@@ -403,7 +442,7 @@ mod tests {
         create_test_mnist_file(&label_path, LABEL_MAGIC_NUMBER, 2, &label_data).unwrap();
 
         let progress_bar = ProgressBar::new(0);
-        let labels = read_mnist_labels(label_path, &progress_bar).unwrap();
+        let labels = MnistData::read_mnist_labels(label_path, &progress_bar).unwrap();
 
         assert_eq!(labels.len(), 2);
         assert_eq!(labels[0].rows(), 10);

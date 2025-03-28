@@ -1,6 +1,6 @@
 use image::{ImageBuffer, Luma};
 use indicatif::{ProgressBar, ProgressStyle};
-use mnist::mnist::{read_mnist_images, read_mnist_labels};
+use mnist::mnist::{load_test_data, load_training_data};
 
 fn save_image(
     image_data: &[f64],
@@ -16,15 +16,6 @@ fn save_image(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let current_dir = match std::env::current_dir() {
-        Ok(dir) => dir,
-        Err(e) => {
-            eprintln!("Failed to get current directory: {}", e);
-            return Err(e.into());
-        }
-    };
-    let mnist_dir = current_dir.join("mnist").join("data");
-
     // Process training data
     println!("Processing training data...");
     let progress_bar = ProgressBar::new(5);
@@ -34,22 +25,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap()
             .progress_chars("#>-")
     );
-    let train_images =
-        match read_mnist_images(mnist_dir.join("train-images-idx3-ubyte"), &progress_bar) {
-            Ok(images) => images,
-            Err(e) => {
-                eprintln!("Failed to read training images: {}", e);
-                return Err(e.into());
-            }
-        };
-    let train_labels =
-        match read_mnist_labels(mnist_dir.join("train-labels-idx1-ubyte"), &progress_bar) {
-            Ok(labels) => labels,
-            Err(e) => {
-                eprintln!("Failed to read training labels: {}", e);
-                return Err(e.into());
-            }
-        };
+    let training_data = match load_training_data() {
+        Ok(images) => images,
+        Err(e) => {
+            eprintln!("Failed to read training images: {}", e);
+            return Err(e.into());
+        }
+    };
+    let train_images = training_data.images();
+    let train_labels = training_data.labels();
 
     // Save first 5 training images
     for i in 0..5 {
@@ -70,22 +54,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Process test data
     println!("\nProcessing test data...");
-    let test_images =
-        match read_mnist_images(mnist_dir.join("t10k-images-idx3-ubyte"), &progress_bar) {
-            Ok(images) => images,
-            Err(e) => {
-                eprintln!("Failed to read test images: {}", e);
-                return Err(e.into());
-            }
-        };
-    let test_labels =
-        match read_mnist_labels(mnist_dir.join("t10k-labels-idx1-ubyte"), &progress_bar) {
-            Ok(labels) => labels,
-            Err(e) => {
-                eprintln!("Failed to read test labels: {}", e);
-                return Err(e.into());
-            }
-        };
+    let test_data = match load_test_data() {
+        Ok(images) => images,
+        Err(e) => {
+            eprintln!("Failed to read test images: {}", e);
+            return Err(e.into());
+        }
+    };
+    let test_images = test_data.images();
+    let test_labels = test_data.labels();
 
     // Save first 5 test images
     for i in 0..5 {
