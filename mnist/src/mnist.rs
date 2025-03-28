@@ -295,8 +295,8 @@ pub fn load_test_data() -> Result<MnistData, MnistError> {
 ///
 /// # Example
 /// ```
-/// let label = Matrix::new(10, 1, vec![0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.9, 0.1]);
-/// assert_eq!(get_actual_digit(&label), 8);
+/// let label = matrix::Matrix::new(10, 1, vec![0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.9, 0.1]);
+/// assert_eq!(mnist::get_actual_digit(&label), 8);
 /// ```
 pub fn get_actual_digit(label: &Matrix) -> usize {
     label

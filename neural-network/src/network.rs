@@ -225,14 +225,14 @@ impl Network {
             })
             .collect();
 
-        // Calculate gradients using iterators
-        (0..self.weights.len())
-            .map(|i| {
-                let input_with_bias = self.data[i].augment_with_bias();
-                let delta = &deltas[self.weights.len() - 1 - i];
-                delta.dot_multiply(&input_with_bias.transpose())
-            })
-            .collect()
+        // Calculate gradients
+        let mut gradients = Vec::with_capacity(self.weights.len());
+        for i in 0..self.weights.len() {
+            let input_with_bias = self.data[i].augment_with_bias();
+            let delta = &deltas[self.weights.len() - 1 - i];
+            gradients.push(delta.dot_multiply(&input_with_bias.transpose()));
+        }
+        gradients
     }
 
     /// Updates weights using accumulated gradients
@@ -374,6 +374,29 @@ impl Network {
             .finish_with_message(format!("Training completed in {:?}", start_time.elapsed()));
     }
 
+    /// Processes a single layer in the neural network.
+    ///
+    /// # Algorithm
+    /// 1. Computes the weighted sum (weight * input)
+    /// 2. Adds bias terms (included in weight matrix)
+    /// 3. Applies the activation function
+    ///
+    /// # Arguments
+    /// * `weight` - Weight matrix including bias weights
+    /// * `input` - Input values from previous layer
+    /// * `activation` - Activation function to apply
+    ///
+    /// # Returns
+    /// The processed output matrix after applying weights and activation
+    fn process_layer(
+        weight: &Matrix,
+        input: &Matrix,
+        activation: &dyn ActivationFunction,
+    ) -> Matrix {
+        let output = weight.dot_multiply(input);
+        activation.apply_vector(&output)
+    }
+
     /// Performs forward propagation through the network.
     ///
     /// # Arguments
@@ -384,7 +407,7 @@ impl Network {
     ///
     /// # Panics
     /// Panics if the number of inputs doesn't match the first layer size
-    pub fn feed_forward(&mut self, inputs: Matrix) -> Matrix {
+    fn feed_forward(&mut self, inputs: Matrix) -> Matrix {
         assert!(
             self.layers[0] == inputs.rows(),
             "Invalid number of inputs. Expected {}, got {}",
@@ -402,7 +425,7 @@ impl Network {
             .enumerate()
             .fold(inputs, |current, (i, weight)| {
                 let with_bias = current.augment_with_bias();
-                let output = process_layer(weight, &with_bias, self.activations[i].as_ref());
+                let output = Self::process_layer(weight, &with_bias, self.activations[i].as_ref());
                 self.data.push(output.clone());
                 output
             });
@@ -435,7 +458,7 @@ impl Network {
             .enumerate()
             .fold(inputs, |current, (i, weight)| {
                 let with_bias = current.augment_with_bias();
-                process_layer(weight, &with_bias, self.activations[i].as_ref())
+                Self::process_layer(weight, &with_bias, self.activations[i].as_ref())
             })
     }
 
@@ -524,25 +547,6 @@ impl Network {
 
         Ok(network)
     }
-}
-
-/// Processes a single layer in the neural network.
-///
-/// # Algorithm
-/// 1. Computes the weighted sum (weight * input)
-/// 2. Adds bias terms (included in weight matrix)
-/// 3. Applies the activation function
-///
-/// # Arguments
-/// * `weight` - Weight matrix including bias weights
-/// * `input` - Input values from previous layer
-/// * `activation` - Activation function to apply
-///
-/// # Returns
-/// The processed output matrix after applying weights and activation
-fn process_layer(weight: &Matrix, input: &Matrix, activation: &dyn ActivationFunction) -> Matrix {
-    let output = weight.dot_multiply(input);
-    activation.apply_vector(&output)
 }
 
 #[cfg(test)]
