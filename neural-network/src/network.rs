@@ -378,8 +378,7 @@ impl Network {
     ///
     /// # Algorithm
     /// 1. Computes the weighted sum (weight * input)
-    /// 2. Adds bias terms (included in weight matrix)
-    /// 3. Applies the activation function
+    /// 2. Applies the activation function
     ///
     /// # Arguments
     /// * `weight` - Weight matrix including bias weights
