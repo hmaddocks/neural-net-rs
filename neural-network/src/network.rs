@@ -9,7 +9,7 @@
 ///
 /// # Example
 /// ```
-/// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig};
+/// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig, layer::Layer};
 /// use tempfile::tempdir;
 ///
 /// let dir = tempdir().unwrap();
@@ -17,8 +17,11 @@
 ///
 /// // Create network configuration
 /// let mut config = NetworkConfig::default();
-/// config.layers = vec![2, 3, 1];
-/// config.activations = vec![ActivationType::Sigmoid, ActivationType::Sigmoid];
+/// config.layers = vec![
+///     Layer { nodes: 2, activation: Some(ActivationType::Sigmoid) },
+///     Layer { nodes: 3, activation: Some(ActivationType::Sigmoid) },
+///     Layer { nodes: 1, activation: None },
+/// ];
 /// config.learning_rate = 0.1;
 /// config.momentum = Some(0.8);
 ///
@@ -85,12 +88,15 @@ impl Network {
     ///
     /// # Example
     /// ```
-    /// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig};
+    /// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig, layer::Layer};
     ///
     /// // Create network configuration for a simple XOR network
     /// let config = NetworkConfig::new(
-    ///     vec![2, 3, 1],                                          // 2 inputs, 3 hidden, 1 output
-    ///     vec![ActivationType::Sigmoid, ActivationType::Sigmoid], // Activation functions
+    ///     vec![
+    ///         Layer { nodes: 2, activation: Some(ActivationType::Sigmoid) },
+    ///         Layer { nodes: 3, activation: Some(ActivationType::Sigmoid) },
+    ///         Layer { nodes: 1, activation: None },
+    ///     ],
     ///     0.1,                                                    // Learning rate
     ///     Some(0.9),                                              // Momentum
     ///     30,                                                     // Epochs
@@ -101,13 +107,14 @@ impl Network {
     /// ```
     pub fn new(network_config: &NetworkConfig) -> Self {
         assert!(
-            network_config.activations.len() == network_config.layers.len() - 1,
+            network_config.activations().len() == network_config.layers.len() - 1,
             "Number of activation functions ({}) must be one less than number of layers ({})",
-            network_config.activations.len(),
+            network_config.activations().len(),
             network_config.layers.len()
         );
 
-        let layer_pairs: Vec<_> = network_config.layers.windows(2).collect();
+        let nodes = network_config.nodes();
+        let layer_pairs: Vec<_> = nodes.windows(2).collect();
 
         let weights = layer_pairs
             .iter()
@@ -129,11 +136,11 @@ impl Network {
         data.resize(network_config.layers.len(), Matrix::default());
 
         Network {
-            layers: network_config.layers.clone(),
+            layers: nodes.clone(),
             weights,
             data,
             activations: network_config.activations(),
-            activation_types: network_config.activations.clone(),
+            activation_types: network_config.activations_types(),
             learning_rate: network_config.learning_rate,
             momentum: network_config.momentum.unwrap_or(0.9),
             prev_weight_updates,
@@ -471,7 +478,7 @@ impl Network {
     ///
     /// # Example
     /// ```
-    /// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig};
+    /// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig, layer::Layer};
     /// use tempfile::tempdir;
     ///
     /// let dir = tempdir().unwrap();
@@ -479,8 +486,11 @@ impl Network {
     ///
     /// // Create network configuration
     /// let mut config = NetworkConfig::default();
-    /// config.layers = vec![2, 3, 1];
-    /// config.activations = vec![ActivationType::Sigmoid, ActivationType::Sigmoid];
+    /// config.layers = vec![
+    ///     Layer { nodes: 2, activation: Some(ActivationType::Sigmoid) },
+    ///     Layer { nodes: 3, activation: Some(ActivationType::Sigmoid) },
+    ///     Layer { nodes: 1, activation: None },
+    /// ];
     /// config.learning_rate = 0.1;
     /// config.momentum = Some(0.8);
     ///
@@ -551,14 +561,27 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layer::Layer;
     use approx::assert_relative_eq;
     use tempfile::tempdir;
 
     #[test]
     fn test_network_creation() {
         let config = NetworkConfig::new(
-            vec![3, 4, 2],
-            vec![ActivationType::Sigmoid, ActivationType::Sigmoid],
+            vec![
+                Layer {
+                    nodes: 3,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 4,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 2,
+                    activation: None,
+                },
+            ],
             0.1,
             Some(0.9),
             30,
@@ -608,8 +631,20 @@ mod tests {
     fn test_xor_training() {
         // Create a simpler network for XOR
         let config = NetworkConfig::new(
-            vec![2, 4, 1], // Simpler architecture: 2-4-1
-            vec![ActivationType::Sigmoid, ActivationType::Sigmoid],
+            vec![
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 4,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 1,
+                    activation: None,
+                },
+            ],
             0.5, // Higher learning rate
             Some(0.9),
             2000,
@@ -718,8 +753,20 @@ mod tests {
     fn test_softmax_backpropagation() {
         // Create a simple network with Softmax output layer
         let config = NetworkConfig::new(
-            vec![2, 4, 3], // 2 inputs, 4 hidden neurons, 3 output classes
-            vec![ActivationType::Sigmoid, ActivationType::Softmax],
+            vec![
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 4,
+                    activation: Some(ActivationType::Softmax),
+                },
+                Layer {
+                    nodes: 3,
+                    activation: None,
+                },
+            ],
             0.1,
             Some(0.9),
             30,
@@ -761,11 +808,23 @@ mod tests {
     fn test_mini_batch_training() {
         // Create a network with a more robust architecture
         let config = NetworkConfig::new(
-            vec![2, 8, 4, 1], // More layers with more neurons
             vec![
-                ActivationType::Sigmoid,
-                ActivationType::Sigmoid,
-                ActivationType::Sigmoid,
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 8,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 4,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 1,
+                    activation: None,
+                },
             ],
             1.0,       // Higher learning rate
             Some(0.9), // High momentum
@@ -826,8 +885,20 @@ mod tests {
     #[test]
     fn test_batch_size_effects() {
         let mut config = NetworkConfig::new(
-            vec![2, 4, 1], // Simpler architecture
-            vec![ActivationType::Sigmoid, ActivationType::Sigmoid],
+            vec![
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 4,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 1,
+                    activation: None,
+                },
+            ],
             0.8, // Higher learning rate
             Some(0.9),
             1000,
@@ -947,8 +1018,20 @@ mod tests {
 
         // Test multi-class classification
         let config = NetworkConfig::new(
-            vec![2, 3, 3],
-            vec![ActivationType::Sigmoid, ActivationType::Softmax],
+            vec![
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 3,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 3,
+                    activation: None,
+                },
+            ],
             0.1,
             Some(0.9),
             30,
@@ -1101,8 +1184,20 @@ mod tests {
 
     fn create_test_network() -> Network {
         let config = NetworkConfig::new(
-            vec![1, 2, 1],
-            vec![ActivationType::Sigmoid, ActivationType::Sigmoid],
+            vec![
+                Layer {
+                    nodes: 1,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 1,
+                    activation: None,
+                },
+            ],
             0.1,
             Some(0.9),
             30,
@@ -1114,11 +1209,23 @@ mod tests {
 
     fn create_deep_network() -> Network {
         let config = NetworkConfig::new(
-            vec![2, 4, 3, 2],
             vec![
-                ActivationType::Sigmoid,
-                ActivationType::Sigmoid,
-                ActivationType::Sigmoid,
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 4,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 3,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 2,
+                    activation: None,
+                },
             ],
             0.1,
             Some(0.9),

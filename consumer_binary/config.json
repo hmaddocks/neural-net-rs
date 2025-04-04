@@ -1,6 +1,10 @@
 {
-  "layers": [784, 128, 64, 10],
-  "activations": ["Sigmoid", "Sigmoid", "Softmax"],
+  "layers": [
+    { "nodes": 784, "activation": "Sigmoid" },
+    { "nodes": 128, "activation": "Sigmoid" },
+    { "nodes": 64, "activation": "Softmax" },
+    { "nodes": 10 }
+  ],
   "learning_rate": 0.01,
   "epochs": 30,
   "batch_size": 256

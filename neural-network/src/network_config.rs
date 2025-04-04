@@ -1,4 +1,5 @@
-use crate::activations::{ActivationFunction, ActivationType, SIGMOID, SOFTMAX};
+use crate::activations::{ActivationFunction, ActivationType, Sigmoid, Softmax};
+use crate::layer::Layer;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -11,24 +12,19 @@ use std::path::Path;
 /// # Example
 ///
 /// ```
-/// use neural_network::network_config::NetworkConfig;
+/// use neural_network::{network_config::NetworkConfig, layer::Layer, activations::ActivationType};
 ///
 /// let config = NetworkConfig::default();
-/// assert_eq!(config.layers, vec![784, 128, 10]); // MNIST-like architecture
+/// assert_eq!(config.layers, vec![Layer { nodes: 784, activation: Some(ActivationType::Sigmoid) }, Layer { nodes: 128, activation: Some(ActivationType::Sigmoid) }, Layer { nodes: 10, activation: None }]); // MNIST-like architecture
 /// ```
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NetworkConfig {
-    /// Sizes of each layer in the network, including input and output layers.
-    /// For example, `[784, 128, 10]` represents a network with:
-    /// - 784 input neurons
-    /// - 128 hidden neurons
-    /// - 10 output neurons
-    pub layers: Vec<usize>,
-
-    /// Activation types for each layer transition.
-    /// The length should be one less than the number of layers.
-    /// Each activation function is applied to the output of its corresponding layer.
-    pub activations: Vec<ActivationType>,
+    /// A collection of [`Layer`]s in the network, including input and output layers.
+    /// For example, `vec![Layer { nodes: 784, activation: Some(ActivationType::Sigmoid) }, Layer { nodes: 128, activation: Some(ActivationType::Sigmoid) }, Layer { nodes: 10, activation: None }]` represents a network with:
+    /// - 784 input neurons (e.g., 28x28 pixels) and sigmoid activation
+    /// - 128 hidden neurons and sigmoid activation
+    /// - 10 output neurons and no activation
+    pub layers: Vec<Layer>,
 
     /// Learning rate for gradient descent.
     /// Controls how much the weights are adjusted during training.
@@ -53,8 +49,7 @@ impl NetworkConfig {
     ///
     /// # Arguments
     ///
-    /// * `layers` - A vector of layer sizes
-    /// * `activations` - A vector of activation types for each layer transition
+    /// * `layers` - A vector of [`Layer`]s
     /// * `learning_rate` - Learning rate for gradient descent
     /// * `momentum` - Optional momentum coefficient
     /// * `epochs` - Number of training epochs
@@ -64,8 +59,7 @@ impl NetworkConfig {
     ///
     /// A new NetworkConfig instance
     pub fn new(
-        layers: Vec<usize>,
-        activations: Vec<ActivationType>,
+        layers: Vec<Layer>,
         learning_rate: f64,
         momentum: Option<f64>,
         epochs: usize,
@@ -73,7 +67,6 @@ impl NetworkConfig {
     ) -> Self {
         Self {
             layers,
-            activations,
             learning_rate,
             momentum,
             epochs,
@@ -106,20 +99,23 @@ impl NetworkConfig {
         Ok(config)
     }
 
-    /// Returns a vector of activation functions based on the configuration.
-    ///
-    /// This method converts the stored activation types into their corresponding
-    /// function implementations.
-    ///
-    /// # Returns
-    ///
-    /// A vector of boxed activation functions.
+    pub fn nodes(&self) -> Vec<usize> {
+        self.layers.iter().map(|layer| layer.nodes).collect()
+    }
+
+    pub fn activations_types(&self) -> Vec<ActivationType> {
+        self.layers
+            .iter()
+            .filter_map(|layer| layer.activation)
+            .collect()
+    }
+
     pub fn activations(&self) -> Vec<Box<dyn ActivationFunction>> {
-        self.activations
+        self.activations_types()
             .iter()
             .map(|activation_type| match activation_type {
-                ActivationType::Sigmoid => Box::new(SIGMOID) as Box<dyn ActivationFunction>,
-                ActivationType::Softmax => Box::new(SOFTMAX) as Box<dyn ActivationFunction>,
+                ActivationType::Sigmoid => Box::new(Sigmoid) as Box<dyn ActivationFunction>,
+                ActivationType::Softmax => Box::new(Softmax) as Box<dyn ActivationFunction>,
             })
             .collect()
     }
@@ -139,8 +135,20 @@ impl NetworkConfig {
 impl Default for NetworkConfig {
     fn default() -> Self {
         Self {
-            layers: vec![784, 128, 10], // Common MNIST-like default architecture
-            activations: vec![ActivationType::Sigmoid, ActivationType::Sigmoid], // Sigmoid for hidden and output layers
+            layers: vec![
+                Layer {
+                    nodes: 784,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 128,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 10,
+                    activation: None,
+                },
+            ], // Common MNIST-like default architecture
             learning_rate: 0.1,
             momentum: Some(0.9),
             epochs: 30,
@@ -162,8 +170,7 @@ mod tests {
         let config_path = dir.path().join("test_config.json");
 
         let config_json = r#"{
-            "layers": [784, 200, 10],
-            "activations": ["Sigmoid", "Sigmoid"],
+            "layers": [{"nodes": 784, "activation": "Sigmoid"}, {"nodes": 200, "activation": "Sigmoid"}, {"nodes": 10}],
             "learning_rate": 0.01,
             "momentum": 0.5,
             "epochs": 30,
@@ -174,10 +181,22 @@ mod tests {
         file.write_all(config_json.as_bytes()).unwrap();
 
         let config = NetworkConfig::load(&config_path).unwrap();
-        assert_eq!(config.layers, vec![784, 200, 10]);
         assert_eq!(
-            config.activations,
-            vec![ActivationType::Sigmoid, ActivationType::Sigmoid]
+            config.layers,
+            vec![
+                Layer {
+                    nodes: 784,
+                    activation: Some(ActivationType::Sigmoid)
+                },
+                Layer {
+                    nodes: 200,
+                    activation: Some(ActivationType::Sigmoid)
+                },
+                Layer {
+                    nodes: 10,
+                    activation: None
+                }
+            ]
         );
         assert_eq!(config.learning_rate, 0.01);
         assert_eq!(config.momentum, Some(0.5));
@@ -188,10 +207,22 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = NetworkConfig::default();
-        assert_eq!(config.layers, vec![784, 128, 10]);
         assert_eq!(
-            config.activations,
-            vec![ActivationType::Sigmoid, ActivationType::Sigmoid]
+            config.layers,
+            vec![
+                Layer {
+                    nodes: 784,
+                    activation: Some(ActivationType::Sigmoid)
+                },
+                Layer {
+                    nodes: 128,
+                    activation: Some(ActivationType::Sigmoid)
+                },
+                Layer {
+                    nodes: 10,
+                    activation: None
+                }
+            ]
         );
         assert_eq!(config.learning_rate, 0.1);
         assert_eq!(config.momentum, Some(0.9));
