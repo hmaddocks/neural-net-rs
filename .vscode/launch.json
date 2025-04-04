@@ -1,0 +1,213 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'matrix'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=matrix"
+                ],
+                "filter": {
+                    "name": "matrix",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'neural_network'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=neural-network"
+                ],
+                "filter": {
+                    "name": "neural_network",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'guess_digit'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=guess_digit",
+                    "--package=consumer_binary"
+                ],
+                "filter": {
+                    "name": "guess_digit",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'guess_digit'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=guess_digit",
+                    "--package=consumer_binary"
+                ],
+                "filter": {
+                    "name": "guess_digit",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'save_mnist_images'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=save_mnist_images",
+                    "--package=consumer_binary"
+                ],
+                "filter": {
+                    "name": "save_mnist_images",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'save_mnist_images'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=save_mnist_images",
+                    "--package=consumer_binary"
+                ],
+                "filter": {
+                    "name": "save_mnist_images",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'test'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=test",
+                    "--package=consumer_binary"
+                ],
+                "filter": {
+                    "name": "test",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'test'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=test",
+                    "--package=consumer_binary"
+                ],
+                "filter": {
+                    "name": "test",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'train'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=train",
+                    "--package=consumer_binary"
+                ],
+                "filter": {
+                    "name": "train",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'train'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=train",
+                    "--package=consumer_binary"
+                ],
+                "filter": {
+                    "name": "train",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'mnist'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=mnist"
+                ],
+                "filter": {
+                    "name": "mnist",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
