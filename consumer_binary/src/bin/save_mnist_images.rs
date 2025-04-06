@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     progress_bar.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos}/{len} ({percent}%)")
-            .unwrap()
+            .map_err(|e| Box::new(e))?
             .progress_chars("#>-")
     );
     let training_data = match load_training_data() {
@@ -43,7 +43,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .position(|&x| x > 0.9)
             .unwrap_or(0);
 
-        match save_image(train_images[i].data.as_slice().unwrap(), i, "train", label) {
+        let image_data = train_images[i]
+            .data
+            .as_slice()
+            .ok_or("Failed to get image data as slice")?;
+        match save_image(image_data, i, "train", label) {
             Ok(()) => println!("Training image {} label: {}", i, label),
             Err(e) => {
                 eprintln!("Failed to save training image {}: {}", i, e);
@@ -71,7 +75,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .position(|&x| x > 0.9)
             .unwrap_or(0);
-        match save_image(test_images[i].data.as_slice().unwrap(), i, "test", label) {
+        let image_data = test_images[i]
+            .data
+            .as_slice()
+            .ok_or("Failed to get image data as slice")?;
+        match save_image(image_data, i, "test", label) {
             Ok(()) => println!("Test image {} label: {}", i, label),
             Err(e) => {
                 eprintln!("Failed to save test image {}: {}", i, e);

@@ -111,9 +111,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("Standardizing test data...");
-    let standardized_params = StandardizationParams::build(&test_data.images());
+    let standardized_params = StandardizationParams::build(&test_data.images())?;
     let standardised_test_data =
-        StandardizedMnistData::new(standardized_params).standardize(&test_data.images());
+        StandardizedMnistData::new(standardized_params).standardize(&test_data.images())?;
 
     println!("Loading trained network...");
     let model_path = match std::env::current_dir() {
@@ -123,8 +123,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(e.into());
         }
     };
-
-    let network = Network::load(model_path.to_str().unwrap())?;
+    let model_path = match model_path.to_str() {
+        Some(path) => path,
+        None => {
+            return Err("Failed to get model path".into());
+        }
+    };
+    let network = Network::load(model_path)?;
 
     println!("\nTesting network predictions...");
     let mut confusion_matrix = [[0usize; 10]; 10];
@@ -134,21 +139,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     progress_bar.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos}/{len} ({percent}%)")
-            .unwrap()
+            .map_err(|e| Box::new(e))?
             .progress_chars("#>-")
     );
 
     standardised_test_data
         .iter()
         .zip(test_data.labels().iter())
-        .for_each(|(image, label)| {
+        .try_for_each(|(image, label)| -> Result<(), &'static str> {
             let output = network.predict(image.clone());
-            let predicted = get_actual_digit(&output);
-            let actual = get_actual_digit(label);
-
+            let predicted = get_actual_digit(&output)?;
+            let actual = get_actual_digit(label)?;
             confusion_matrix[actual][predicted] += 1;
             progress_bar.inc(1);
-        });
+            Ok(())
+        })?;
 
     progress_bar.finish_with_message("Testing complete");
 

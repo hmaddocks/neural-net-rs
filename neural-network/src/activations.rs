@@ -45,7 +45,7 @@ pub trait ActivationFunction: Send + Sync {
     fn apply_vector(&self, input: &Matrix) -> Matrix;
 
     /// Applies the derivative of the activation function to a matrix
-    fn derivative_vector(&self, input: &Matrix) -> Matrix;
+    fn apply_derivative_vector(&self, input: &Matrix) -> Matrix;
 
     /// Returns the type of activation function
     fn activation_type(&self) -> ActivationType;
@@ -71,7 +71,7 @@ impl ActivationFunction for Sigmoid {
         input.map(|x| 1.0 / (1.0 + E.powf(-x)))
     }
 
-    fn derivative_vector(&self, input: &Matrix) -> Matrix {
+    fn apply_derivative_vector(&self, input: &Matrix) -> Matrix {
         input.map(|x| x * (1.0 - x))
     }
 
@@ -118,13 +118,15 @@ impl ActivationFunction for Softmax {
         }
     }
 
-    fn derivative_vector(&self, input: &Matrix) -> Matrix {
+    fn apply_derivative_vector(&self, input: &Matrix) -> Matrix {
         if input.cols() == 1 {
             let softmax_output = self.apply_vector(input);
             let rows = input.rows();
-            let probs = softmax_output.data.as_slice().unwrap();
+            let probs = softmax_output
+                .data
+                .as_slice()
+                .expect("Failed to get softmax output data");
 
-            // Create Jacobian matrix using Matrix operations
             let mut result = Matrix::zeros(rows, rows);
 
             for i in 0..rows {
@@ -165,15 +167,16 @@ pub trait ActivationFunctionSerialize: ActivationFunction {
         serde_json::to_string(&ActivationWrapper {
             activation_type: self.activation_type(),
         })
-        .unwrap()
+        .expect("Failed to serialize activation function")
     }
 
     /// Deserializes an activation function from a JSON string
-    fn from_json(json: &str) -> Box<dyn ActivationFunction> {
-        let wrapper: ActivationWrapper = serde_json::from_str(json).unwrap();
+    fn from_json(json: &str) -> Result<Box<dyn ActivationFunction>, serde_json::Error> {
+        let wrapper: ActivationWrapper =
+            serde_json::from_str(json).expect("Failed to deserialize activation function");
         match wrapper.activation_type {
-            ActivationType::Sigmoid => Box::new(SIGMOID),
-            ActivationType::Softmax => Box::new(SOFTMAX),
+            ActivationType::Sigmoid => Ok(Box::new(SIGMOID)),
+            ActivationType::Softmax => Ok(Box::new(SOFTMAX)),
         }
     }
 }
@@ -219,7 +222,7 @@ mod tests {
     #[test]
     fn test_sigmoid_vector_derivative() {
         let output = vec![0.5, 0.7, 0.3, 0.8].into_matrix(2, 2);
-        let derivative = SIGMOID.derivative_vector(&output);
+        let derivative = SIGMOID.apply_derivative_vector(&output);
         assert_relative_eq!(derivative.get(0, 0), 0.25, epsilon = 1e-10);
         assert_relative_eq!(derivative.get(0, 1), 0.7 * (1.0 - 0.7), epsilon = 1e-10);
     }
@@ -249,7 +252,7 @@ mod tests {
     fn test_softmax_derivative() {
         // Test with input [0.0, 1.0]
         let input = vec![0.0, 1.0].into_matrix(2, 1);
-        let derivative = SOFTMAX.derivative_vector(&input);
+        let derivative = SOFTMAX.apply_derivative_vector(&input);
 
         // For input [0.0, 1.0]:
         // softmax(0) ≈ 0.269
@@ -289,7 +292,10 @@ mod tests {
         // Test deserialization
         let json = r#"{"activation_type":"Sigmoid"}"#;
         let activation = <Sigmoid as ActivationFunctionSerialize>::from_json(json);
-        assert_eq!(activation.activation_type(), ActivationType::Sigmoid);
+        assert_eq!(
+            activation.unwrap().activation_type(),
+            ActivationType::Sigmoid
+        );
     }
 
     #[test]

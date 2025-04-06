@@ -38,9 +38,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("Standardizing MNIST data...");
-    let standardized_params = StandardizationParams::build(&mnist_data.images());
+    let standardized_params = StandardizationParams::build(&mnist_data.images())?;
     let standardized_data =
-        StandardizedMnistData::new(standardized_params).standardize(&mnist_data.images());
+        StandardizedMnistData::new(standardized_params).standardize(&mnist_data.images())?;
 
     println!("Loading network configuration...");
     // Get the path to config.json in the consumer_binary root

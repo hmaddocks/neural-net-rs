@@ -41,20 +41,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model_path = std::env::current_dir()?
         .join("models")
         .join("trained_network.json");
-    let network: Network =
-        Network::load(model_path.to_str().unwrap()).expect("Failed to load network");
+    let network: Network = Network::load(model_path.to_str().ok_or("Invalid path to model")?)?;
 
-    let standardized_params =
-        StandardizationParams::new(network.mean.unwrap(), network.std_dev.unwrap());
+    let mean = network.mean.ok_or("Network missing mean parameter")?;
+    let std_dev = network
+        .std_dev
+        .ok_or("Network missing standard deviation parameter")?;
+    let standardized_params = StandardizationParams::new(mean, std_dev);
     let standardized_input =
-        StandardizedMnistData::new(standardized_params).standardize_matrix(&input_matrix);
+        StandardizedMnistData::new(standardized_params).standardize_matrix(&input_matrix)?;
 
     // Make prediction
     println!("Making prediction...");
     let output = network.predict(standardized_input);
-    let predicted_digit = get_actual_digit(&output);
+    let predicted_digit = get_actual_digit(&output)?;
 
     println!("\nPredicted digit: {}", predicted_digit);
-
     Ok(())
 }

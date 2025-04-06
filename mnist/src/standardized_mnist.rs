@@ -1,3 +1,4 @@
+use crate::MnistError;
 use matrix::matrix::Matrix;
 
 #[derive(Debug)]
@@ -26,12 +27,23 @@ impl StandardizationParams {
     ///
     /// # Returns
     /// * `StandardizationParams` - A new StandardizationParams with the computed mean and standard deviation
-    pub fn build(mnist_data: &[Matrix]) -> StandardizationParams {
+    pub fn build(mnist_data: &[Matrix]) -> Result<StandardizationParams, &'static str> {
         let total_pixels: Vec<f64> = mnist_data
             .iter()
-            .flat_map(|matrix| matrix.data.as_slice().unwrap())
-            .copied()
+            .map(|matrix| {
+                matrix
+                    .data
+                    .as_slice()
+                    .ok_or("Failed to get data slice from matrix")
+            })
+            .collect::<Result<Vec<&[f64]>, _>>()? // Collect results first
+            .into_iter()
+            .flat_map(|slice| slice.iter().copied())
             .collect();
+
+        if total_pixels.is_empty() {
+            return Err("No data available for standardization");
+        }
 
         let mean = total_pixels.iter().sum::<f64>() / total_pixels.len() as f64;
         let variance = total_pixels
@@ -41,7 +53,7 @@ impl StandardizationParams {
             / total_pixels.len() as f64;
         let std_dev = variance.sqrt();
 
-        StandardizationParams { mean, std_dev }
+        Ok(StandardizationParams { mean, std_dev })
     }
 
     /// Returns the mean of the data.
@@ -78,7 +90,7 @@ impl StandardizedMnistData {
     ///
     /// # Returns
     /// * `Vec<Matrix>` - A vector of standardized matrices
-    pub fn standardize(&self, mnist_data: &[Matrix]) -> Vec<Matrix> {
+    pub fn standardize(&self, mnist_data: &[Matrix]) -> Result<Vec<Matrix>, MnistError> {
         mnist_data
             .iter()
             .map(|matrix| self.standardize_matrix(matrix))
@@ -92,16 +104,22 @@ impl StandardizedMnistData {
     ///
     /// # Returns
     /// * `Matrix` - A standardized matrix
-    pub fn standardize_matrix(&self, matrix: &Matrix) -> Matrix {
+    ///
+    /// # Errors
+    /// * `MnistError::Io` - If the matrix data cannot be accessed
+    pub fn standardize_matrix(&self, matrix: &Matrix) -> Result<Matrix, MnistError> {
         let standardized_data: Vec<f64> = matrix
             .data
             .as_slice()
-            .unwrap()
+            .ok_or(MnistError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Failed to access matrix data",
+            )))?
             .iter()
             .map(|&x| (x - self.params.mean) / self.params.std_dev)
             .collect();
 
-        Matrix::new(matrix.rows(), matrix.cols(), standardized_data)
+        Ok(Matrix::new(matrix.rows(), matrix.cols(), standardized_data))
     }
 }
 #[cfg(test)]
@@ -117,6 +135,7 @@ mod tests {
         ];
         let params = StandardizationParams::build(&data);
 
+        let params = params.expect("Failed to build standardization params");
         assert_relative_eq!(params.mean, 2.5, epsilon = 1e-10);
         assert_relative_eq!(params.std_dev, 1.118033988749895, epsilon = 1e-10);
     }
@@ -128,7 +147,10 @@ mod tests {
             Matrix::new(2, 1, vec![3.0, 4.0]),
         ];
         let params = StandardizationParams::build(&data);
-        let standardized_data = StandardizedMnistData::new(params).standardize(&data);
+        let params = params.expect("Failed to build standardization params");
+        let standardized_data = StandardizedMnistData::new(params)
+            .standardize(&data)
+            .unwrap();
 
         assert_relative_eq!(
             standardized_data[0].get(0, 0),

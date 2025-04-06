@@ -207,7 +207,7 @@ impl Network {
             .scan(None, |prev_delta, i| {
                 let activation_output = &self.data[i + 1];
                 let activation_derivative =
-                    self.activations[i].derivative_vector(activation_output);
+                    self.activations[i].apply_derivative_vector(activation_output);
 
                 let delta = if i == self.weights.len() - 1 {
                     // Output layer
@@ -363,7 +363,8 @@ impl Network {
         let progress_bar = ProgressBar::new(epochs as u64);
         let style = ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos}/{len} epochs | Accuracy: {msg}")
-            .unwrap()
+            .map_err(|e| Box::new(e))
+            .expect("Failed to set progress bar style")
             .progress_chars("#>-");
         progress_bar.set_style(style);
 

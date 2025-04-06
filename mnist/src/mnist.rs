@@ -4,6 +4,7 @@
 //! It includes utilities for reading both images and labels from the IDX file format used by MNIST.
 //! The data is normalized and converted into matrix format suitable for neural network training.
 
+use indicatif::style::TemplateError;
 use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use std::fs::File;
@@ -42,6 +43,9 @@ pub enum MnistError {
         rows: usize,
         cols: usize,
     },
+    /// Error for invalid progress bar styles
+    #[error("Failed to set progress bar style: {0}")]
+    ProgressStyleError(#[from] TemplateError),
 }
 
 /// Container for MNIST dataset pairs (images and their corresponding labels)
@@ -100,7 +104,7 @@ impl MnistData {
             .template(
                 "{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos:>7}/{len:7} {msg}",
             )
-            .unwrap()
+            .map_err(|e| e)?
             .progress_chars("##-");
 
         let images_progress = multi_progress.add(ProgressBar::new(0));
@@ -296,16 +300,23 @@ pub fn load_test_data() -> Result<MnistData, MnistError> {
 /// # Example
 /// ```
 /// let label = matrix::Matrix::new(10, 1, vec![0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.9, 0.1]);
-/// assert_eq!(mnist::get_actual_digit(&label), 8);
+/// assert_eq!(mnist::get_actual_digit(&label), Ok(8));
 /// ```
-pub fn get_actual_digit(label: &Matrix) -> usize {
+pub fn get_actual_digit(label: &Matrix) -> Result<usize, &'static str> {
+    if label.data.is_empty() {
+        return Err("Empty matrix provided");
+    }
     label
         .data
         .iter()
         .enumerate()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+        .max_by(|(_, a), (_, b)| {
+            a.partial_cmp(b)
+                .ok_or("Cannot compare values (possible NaN)")
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
         .map(|(i, _)| i)
-        .unwrap()
+        .ok_or("Failed to find maximum value")
 }
 
 #[cfg(test)]
@@ -323,7 +334,7 @@ mod tests {
             1,
             vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         );
-        assert_eq!(get_actual_digit(&digit_0), 0);
+        assert_eq!(get_actual_digit(&digit_0), Ok(0));
 
         // Test case 2: One-hot encoded vector for digit 5
         let digit_5 = Matrix::new(
@@ -331,7 +342,7 @@ mod tests {
             1,
             vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
         );
-        assert_eq!(get_actual_digit(&digit_5), 5);
+        assert_eq!(get_actual_digit(&digit_5), Ok(5));
 
         // Test case 4: Non-binary values (softmax output)
         let softmax_output = Matrix::new(
@@ -339,7 +350,7 @@ mod tests {
             1,
             vec![0.1, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.5, 0.05, 0.05],
         );
-        assert_eq!(get_actual_digit(&softmax_output), 7);
+        assert_eq!(get_actual_digit(&softmax_output), Ok(7));
 
         // Test case 5: Very close values
         let close_values = Matrix::new(
@@ -347,7 +358,7 @@ mod tests {
             1,
             vec![0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1001, 0.1],
         );
-        assert_eq!(get_actual_digit(&close_values), 8);
+        assert_eq!(get_actual_digit(&close_values), Ok(8));
     }
 
     fn create_test_mnist_file(
