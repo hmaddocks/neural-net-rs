@@ -1,6 +1,7 @@
+use anyhow::{anyhow, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 use mnist::mnist::{get_actual_digit, load_test_data};
-use mnist::standardized_mnist::{StandardizationParams, StandardizedMnistData};
+use mnist::{StandardizationParams, StandardizedMnistData};
 use neural_network::network::Network;
 
 /// Calculates metrics for a digit from the confusion matrix
@@ -100,36 +101,26 @@ fn print_confusion_matrix(confusion_matrix: [[usize; 10]; 10]) {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     println!("Loading test data...");
-    let test_data = match load_test_data() {
-        Ok(data) => data,
-        Err(e) => {
-            eprintln!("Failed to load test data: {}", e);
-            return Err(e.into());
-        }
-    };
+    let test_data = load_test_data().map_err(|e| anyhow!("Failed to load test data: {}", e))?;
 
     println!("Standardizing test data...");
-    let standardized_params = StandardizationParams::build(&test_data.images())?;
-    let standardised_test_data =
-        StandardizedMnistData::new(standardized_params).standardize(&test_data.images())?;
+    let standardized_params = StandardizationParams::build(&test_data.images())
+        .map_err(|e| anyhow!("Failed to build standardization parameters: {}", e))?;
+    let standardised_test_data = StandardizedMnistData::new(standardized_params)
+        .standardize(&test_data.images())
+        .map_err(|e| anyhow!("Failed to standardize test data: {}", e))?;
 
     println!("Loading trained network...");
-    let model_path = match std::env::current_dir() {
-        Ok(path) => path.join("models").join("trained_network.json"),
-        Err(e) => {
-            eprintln!("Failed to get current directory: {}", e);
-            return Err(e.into());
-        }
-    };
-    let model_path = match model_path.to_str() {
-        Some(path) => path,
-        None => {
-            return Err("Failed to get model path".into());
-        }
-    };
-    let network = Network::load(model_path)?;
+    let model_path =
+        std::env::current_dir().map_err(|e| anyhow!("Failed to get current directory: {}", e))?;
+    let model_path = model_path.join("models").join("trained_network.json");
+    let model_path = model_path
+        .to_str()
+        .ok_or(anyhow!("Failed to convert model path to string"))?;
+    let network =
+        Network::load(model_path).map_err(|e| anyhow!("Failed to load trained network: {}", e))?;
 
     println!("\nTesting network predictions...");
     let mut confusion_matrix = [[0usize; 10]; 10];
@@ -139,17 +130,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     progress_bar.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos}/{len} ({percent}%)")
-            .map_err(|e| Box::new(e))?
+            .map_err(|e| anyhow!("Failed to set progress bar template: {}", e))?
             .progress_chars("#>-")
     );
 
     standardised_test_data
         .iter()
         .zip(test_data.labels().iter())
-        .try_for_each(|(image, label)| -> Result<(), &'static str> {
+        .try_for_each(|(image, label)| -> Result<()> {
             let output = network.predict(image.clone());
-            let predicted = get_actual_digit(&output)?;
-            let actual = get_actual_digit(label)?;
+            let predicted = get_actual_digit(&output)
+                .map_err(|e| anyhow!("Failed to get predicted digit: {}", e))?;
+            let actual = get_actual_digit(label)
+                .map_err(|e| anyhow!("Failed to get actual digit: {}", e))?;
             confusion_matrix[actual][predicted] += 1;
             progress_bar.inc(1);
             Ok(())

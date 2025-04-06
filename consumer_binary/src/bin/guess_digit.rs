@@ -1,10 +1,11 @@
+use anyhow::{anyhow, Result};
 use image::DynamicImage;
 use matrix::matrix::Matrix;
 use mnist::mnist::get_actual_digit;
-use mnist::standardized_mnist::{StandardizationParams, StandardizedMnistData};
+use mnist::{StandardizationParams, StandardizedMnistData};
 use neural_network::network::Network;
 
-fn process_image(img: DynamicImage) -> Result<Matrix, Box<dyn std::error::Error>> {
+fn process_image(img: DynamicImage) -> Result<Matrix, anyhow::Error> {
     // Resize to 28x28 if needed
     let img = img.resize_exact(28, 28, image::imageops::FilterType::Lanczos3);
 
@@ -18,7 +19,7 @@ fn process_image(img: DynamicImage) -> Result<Matrix, Box<dyn std::error::Error>
     Ok(Matrix::new(784, 1, data))
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     // Get command line argument
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 2 {
@@ -41,12 +42,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model_path = std::env::current_dir()?
         .join("models")
         .join("trained_network.json");
-    let network: Network = Network::load(model_path.to_str().ok_or("Invalid path to model")?)?;
+    let network: Network = Network::load(
+        model_path
+            .to_str()
+            .ok_or(anyhow!("Failed to get model path"))?,
+    )?;
 
-    let mean = network.mean.ok_or("Network missing mean parameter")?;
+    let mean = network
+        .mean
+        .ok_or(anyhow!("Network missing mean parameter"))?;
     let std_dev = network
         .std_dev
-        .ok_or("Network missing standard deviation parameter")?;
+        .ok_or(anyhow!("Network missing standard deviation parameter"))?;
     let standardized_params = StandardizationParams::new(mean, std_dev);
     let standardized_input =
         StandardizedMnistData::new(standardized_params).standardize_matrix(&input_matrix)?;

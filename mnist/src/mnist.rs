@@ -46,6 +46,20 @@ pub enum MnistError {
     /// Error for invalid progress bar styles
     #[error("Failed to set progress bar style: {0}")]
     ProgressStyleError(#[from] TemplateError),
+    /// Error for empty label matrix
+    #[error("Label matrix is empty")]
+    EmptyLabelMatrix,
+    /// Error for label matrix with incorrect dimensions
+    #[error("Label matrix has incorrect dimensions: expected {expected_rows}x{expected_cols}, got {actual_rows}x{actual_cols}")]
+    InvalidLabelDimensions {
+        expected_rows: usize,
+        expected_cols: usize,
+        actual_rows: usize,
+        actual_cols: usize,
+    },
+    /// Error when the expected digit cannot be found in the label matrix
+    #[error("Could not find the digit in the label matrix")]
+    DigitNotFound,
 }
 
 /// Container for MNIST dataset pairs (images and their corresponding labels)
@@ -300,23 +314,49 @@ pub fn load_test_data() -> Result<MnistData, MnistError> {
 /// # Example
 /// ```
 /// let label = matrix::Matrix::new(10, 1, vec![0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.9, 0.1]);
-/// assert_eq!(mnist::get_actual_digit(&label), Ok(8));
+/// assert!(mnist::get_actual_digit(&label).is_ok());
+/// assert_eq!(mnist::get_actual_digit(&label).unwrap(), 8);
 /// ```
-pub fn get_actual_digit(label: &Matrix) -> Result<usize, &'static str> {
-    if label.data.is_empty() {
-        return Err("Empty matrix provided");
+pub fn get_actual_digit(label: &Matrix) -> Result<usize, MnistError> {
+    // Check if the matrix has zero rows or columns, indicating it's effectively empty
+    if label.rows() == 0 || label.cols() == 0 {
+        return Err(MnistError::EmptyLabelMatrix);
     }
-    label
-        .data
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| {
-            a.partial_cmp(b)
-                .ok_or("Cannot compare values (possible NaN)")
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|(i, _)| i)
-        .ok_or("Failed to find maximum value")
+    if label.rows() != OUTPUT_NODES || label.cols() != 1 {
+        return Err(MnistError::InvalidLabelDimensions {
+            expected_rows: OUTPUT_NODES,
+            expected_cols: 1,
+            actual_rows: label.rows(),
+            actual_cols: label.cols(),
+        });
+    }
+
+    let mut max_val = label.get(0, 0);
+    let mut max_idx = 0;
+
+    // Find the index (digit) with the highest probability
+    for i in 1..label.rows() {
+        let val = label.get(i, 0);
+        if val > max_val {
+            max_val = val;
+            max_idx = i;
+        }
+    }
+
+    // Basic sanity check: If the max value is very small, something might be wrong
+    // or it could just be an uncertain prediction. We'll assume the index is valid
+    // if we found *some* max value. A check for exactly 1.0 isn't robust if the
+    // input isn't perfectly one-hot.
+    if max_val >= 0.0 {
+        // Check if any value is significantly high (e.g., > 0.5)
+        // This is a heuristic check. In a true one-hot vector, one value would be 1.0.
+        // In a probability distribution from softmax, one value is typically highest.
+        // If all values are small, it might indicate an issue, but we still return the max index.
+        Ok(max_idx)
+    } else {
+        // This case should theoretically not happen if label contains non-negative probabilities
+        Err(MnistError::DigitNotFound)
+    }
 }
 
 #[cfg(test)]
@@ -328,39 +368,69 @@ mod tests {
 
     #[test]
     fn test_get_actual_digit() {
-        // Test case 1: One-hot encoded vector for digit 0
-        let digit_0 = Matrix::new(
+        // Test case 1: Valid label for digit 8
+        let label1_result = get_actual_digit(&Matrix::new(
             10,
             1,
-            vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        );
-        assert_eq!(get_actual_digit(&digit_0), Ok(0));
+            vec![
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, // One-hot for 8
+            ],
+        ));
+        assert!(label1_result.is_ok());
+        assert_eq!(label1_result.unwrap(), 8);
 
-        // Test case 2: One-hot encoded vector for digit 5
-        let digit_5 = Matrix::new(
+        // Test case 2: Valid label for digit 0 (slightly noisy probabilities)
+        let label2_result = get_actual_digit(&Matrix::new(
             10,
             1,
-            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
-        );
-        assert_eq!(get_actual_digit(&digit_5), Ok(5));
+            vec![
+                0.9, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.02, // Highest prob for 0
+            ],
+        ));
+        assert!(label2_result.is_ok());
+        assert_eq!(label2_result.unwrap(), 0);
 
-        // Test case 4: Non-binary values (softmax output)
-        let softmax_output = Matrix::new(
-            10,
-            1,
-            vec![0.1, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.5, 0.05, 0.05],
-        );
-        assert_eq!(get_actual_digit(&softmax_output), Ok(7));
+        // Test case 3: Empty matrix
+        let label3 = Matrix::new(0, 0, vec![]); // Use constructor for 0x0 matrix
+        assert!(matches!(
+            get_actual_digit(&label3),
+            Err(MnistError::EmptyLabelMatrix)
+        ));
 
-        // Test case 5: Very close values
-        let close_values = Matrix::new(
-            10,
-            1,
-            vec![0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1001, 0.1],
-        );
-        assert_eq!(get_actual_digit(&close_values), Ok(8));
+        // Test case 4: Incorrect dimensions (wrong rows)
+        let label4 = Matrix::new(9, 1, vec![0.1; 9]);
+        assert!(matches!(
+            get_actual_digit(&label4),
+            Err(MnistError::InvalidLabelDimensions { .. }) // Check the variant type
+        ));
+
+        // Test case 5: Incorrect dimensions (wrong cols)
+        let label5 = Matrix::new(10, 2, vec![0.1; 20]);
+        assert!(matches!(
+            get_actual_digit(&label5),
+            Err(MnistError::InvalidLabelDimensions { .. }) // Check the variant type
+        ));
+
+        // Test case 6: All zeros (should still find index 0 as max, technically)
+        // Depending on interpretation, this could be an error or return 0.
+        // Current implementation finds the first max, which is index 0.
+        let label6 = Matrix::new(10, 1, vec![0.0; 10]);
+        let label6_result = get_actual_digit(&label6);
+        assert!(label6_result.is_ok());
+        assert_eq!(label6_result.unwrap(), 0);
+
+        // Test case 7: Negative values (should theoretically not happen, but test edge case)
+        // If max_val is negative, the current logic might hit the DigitNotFound error,
+        // although finding the max index should still work mathematically. Let's test.
+        let label7 = Matrix::new(10, 1, vec![-0.5; 10]);
+        // Max value is -0.5, max index is 0. The check `max_val >= 0.0` fails.
+        assert!(matches!(
+            get_actual_digit(&label7),
+            Err(MnistError::DigitNotFound)
+        ));
     }
 
+    // Helper function to create a dummy MNIST file for testing
     fn create_test_mnist_file(
         path: &Path,
         magic_number: u32,

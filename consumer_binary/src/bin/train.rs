@@ -1,5 +1,6 @@
+use anyhow::{anyhow, Result};
 use mnist::mnist::load_training_data;
-use mnist::standardized_mnist::{StandardizationParams, StandardizedMnistData};
+use mnist::{StandardizationParams, StandardizedMnistData};
 use neural_network::network::Network;
 use neural_network::network_config::NetworkConfig;
 use std::fs::File;
@@ -27,7 +28,7 @@ fn format_duration(duration: Duration) -> String {
     parts.join(" ")
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     println!("Loading MNIST training data...");
     let mnist_data = match load_training_data() {
         Ok(data) => data,
@@ -38,14 +39,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("Standardizing MNIST data...");
-    let standardized_params = StandardizationParams::build(&mnist_data.images())?;
+    let standardized_params = StandardizationParams::build(&mnist_data.images())
+        .map_err(|e| anyhow!("Failed to build standardization parameters: {}", e))?;
     let standardized_data =
         StandardizedMnistData::new(standardized_params).standardize(&mnist_data.images())?;
 
     println!("Loading network configuration...");
     // Get the path to config.json in the consumer_binary root
     let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config.json");
-    let network_config = NetworkConfig::load(&config_path)?;
+    let network_config = NetworkConfig::load(&config_path)
+        .map_err(|e| anyhow!("Failed to load network configuration: {}", e))?;
 
     println!("Creating network...");
     // Create network from configuration
