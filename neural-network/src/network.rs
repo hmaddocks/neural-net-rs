@@ -9,28 +9,31 @@
 ///
 /// # Example
 /// ```
-/// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig, layer::Layer};
+/// use neural_network::{network::Network, activations::ActivationType, network_config::{NetworkConfig, LearningRate, Momentum, Epochs, BatchSize}, layer::Layer};
 /// use tempfile::tempdir;
 ///
 /// let dir = tempdir().unwrap();
 /// let model_path = dir.path().join("model.json");
 ///
 /// // Create network configuration
-/// let mut config = NetworkConfig::default();
-/// config.layers = vec![
-///     Layer { nodes: 2, activation: Some(ActivationType::Sigmoid) },
-///     Layer { nodes: 3, activation: Some(ActivationType::Sigmoid) },
-///     Layer { nodes: 1, activation: None },
-/// ];
-/// config.learning_rate = 0.1;
-/// config.momentum = Some(0.8);
+/// let config = NetworkConfig::new(
+///     vec![
+///         Layer { nodes: 2, activation: Some(ActivationType::Sigmoid) },
+///         Layer { nodes: 3, activation: Some(ActivationType::Sigmoid) },
+///         Layer { nodes: 1, activation: None },
+///     ],
+///     0.1,
+///     Some(0.8),
+///     30,
+///     32,
+/// ).unwrap();
 ///
 /// // Create and save network
 /// let mut network = Network::new(&config);
 /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
 /// ```
 use crate::activations::{ActivationFunction, ActivationType};
-use crate::network_config::NetworkConfig;
+use crate::network_config::{BatchSize, Epochs, NetworkConfig};
 use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use rand::rng;
@@ -66,6 +69,10 @@ pub struct Network {
     pub mean: Option<f64>,
     /// Standard deviation of the dataset
     pub std_dev: Option<f64>,
+    /// Number of epochs for training
+    epochs: Epochs,
+    /// Batch size for training
+    batch_size: BatchSize,
 }
 
 impl Network {
@@ -93,17 +100,17 @@ impl Network {
     /// // Create network configuration for a simple XOR network
     /// let config = NetworkConfig::new(
     ///     vec![
-    ///         Layer { nodes: 2, activation: Some(ActivationType::Sigmoid) },
-    ///         Layer { nodes: 3, activation: Some(ActivationType::Sigmoid) },
-    ///         Layer { nodes: 1, activation: None },
+    ///         Layer::new(2, Some(ActivationType::Sigmoid)),
+    ///         Layer::new(3, Some(ActivationType::Sigmoid)),
+    ///         Layer::new(1, None),
     ///     ],
-    ///     0.1,                                                    // Learning rate
-    ///     Some(0.9),                                              // Momentum
-    ///     30,                                                     // Epochs
-    ///     32,                                                     // Batch size
+    ///     0.1,
+    ///     Some(0.9),
+    ///     30,
+    ///     32,
     /// );
     ///
-    /// let network = Network::new(&config);
+    /// let network = Network::new(&config.unwrap());
     /// ```
     pub fn new(network_config: &NetworkConfig) -> Self {
         assert!(
@@ -141,11 +148,13 @@ impl Network {
             data,
             activations: network_config.activations(),
             activation_types: network_config.activations_types(),
-            learning_rate: network_config.learning_rate,
-            momentum: network_config.momentum.unwrap_or(0.9),
+            learning_rate: network_config.learning_rate.value(),
+            momentum: network_config.momentum.map(|m| m.value()).unwrap_or(0.9),
             prev_weight_updates,
             mean: None,
             std_dev: None,
+            epochs: network_config.epochs,
+            batch_size: network_config.batch_size,
         }
     }
 
@@ -355,12 +364,11 @@ impl Network {
     /// # Arguments
     /// * `inputs` - Slice of input matrices
     /// * `targets` - Slice of target matrices
-    /// * `epochs` - Number of training epochs
-    pub fn train(&mut self, inputs: &[Matrix], targets: &[Matrix], epochs: u32) {
+    pub fn train(&mut self, inputs: &[Matrix], targets: &[Matrix]) {
         let total_samples = inputs.len();
 
         // Create progress bar
-        let progress_bar = ProgressBar::new(epochs as u64);
+        let progress_bar = ProgressBar::new(self.epochs.value() as u64);
         let style = ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos}/{len} epochs | Accuracy: {msg}")
             .map_err(|e| Box::new(e))
@@ -370,7 +378,7 @@ impl Network {
 
         let start_time = Instant::now();
 
-        for _ in 1..=epochs {
+        for _ in 1..=self.epochs.value() {
             let (_, correct_predictions) = self.train_epoch(&inputs, &targets, 32);
             let accuracy = (correct_predictions as f64 / total_samples as f64) * 100.0;
 
@@ -479,7 +487,7 @@ impl Network {
     ///
     /// # Example
     /// ```
-    /// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig, layer::Layer};
+    /// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig, layer::Layer, network_config::{LearningRate, Momentum}};
     /// use tempfile::tempdir;
     ///
     /// let dir = tempdir().unwrap();
@@ -492,8 +500,8 @@ impl Network {
     ///     Layer { nodes: 3, activation: Some(ActivationType::Sigmoid) },
     ///     Layer { nodes: 1, activation: None },
     /// ];
-    /// config.learning_rate = 0.1;
-    /// config.momentum = Some(0.8);
+    /// config.learning_rate = LearningRate::new(0.1).unwrap();
+    /// config.momentum = Some(Momentum::new(0.8).unwrap());
     ///
     /// // Create and save network
     /// let mut network = Network::new(&config);
@@ -566,16 +574,45 @@ mod tests {
     use approx::assert_relative_eq;
     use tempfile::tempdir;
 
-    #[test]
-    fn test_network_creation() {
+    fn create_test_network() -> Network {
         let config = NetworkConfig::new(
             vec![
                 Layer {
-                    nodes: 3,
+                    nodes: 1,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 1,
+                    activation: None,
+                },
+            ],
+            0.1,
+            Some(0.9),
+            30,
+            32,
+        )
+        .unwrap();
+
+        Network::new(&config)
+    }
+
+    fn create_deep_network() -> Network {
+        let config = NetworkConfig::new(
+            vec![
+                Layer {
+                    nodes: 2,
                     activation: Some(ActivationType::Sigmoid),
                 },
                 Layer {
                     nodes: 4,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 3,
                     activation: Some(ActivationType::Sigmoid),
                 },
                 Layer {
@@ -587,14 +624,42 @@ mod tests {
             Some(0.9),
             30,
             32,
-        );
+        )
+        .unwrap();
+
+        Network::new(&config)
+    }
+
+    #[test]
+    fn test_network_creation() {
+        let config = NetworkConfig::new(
+            vec![
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 4,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 1,
+                    activation: None,
+                },
+            ],
+            0.1,
+            Some(0.9),
+            30,
+            32,
+        )
+        .unwrap();
 
         let network = Network::new(&config);
 
-        assert_eq!(network.layers, vec![3, 4, 2]);
+        assert_eq!(network.layers, vec![2, 4, 1]);
         assert_eq!(network.weights[0].rows(), 4);
-        assert_eq!(network.weights[0].cols(), 4); // 3 inputs + 1 bias
-        assert_eq!(network.weights[1].rows(), 2);
+        assert_eq!(network.weights[0].cols(), 3); // 2 inputs + 1 bias
+        assert_eq!(network.weights[1].rows(), 1);
         assert_eq!(network.weights[1].cols(), 5); // 4 inputs + 1 bias
     }
 
@@ -650,7 +715,8 @@ mod tests {
             Some(0.9),
             2000,
             2, // Small batch size for XOR
-        );
+        )
+        .unwrap();
 
         let mut network = Network::new(&config);
 
@@ -668,7 +734,7 @@ mod tests {
             Matrix::from(vec![0.0]),
         ];
 
-        network.train(&inputs, &targets, 2000);
+        network.train(&inputs, &targets);
 
         // Test the network
         let test_inputs = vec![
@@ -770,9 +836,10 @@ mod tests {
             ],
             0.1,
             Some(0.9),
-            30,
+            1,
             32,
-        );
+        )
+        .unwrap();
 
         let mut network = Network::new(&config);
 
@@ -790,7 +857,7 @@ mod tests {
         ];
 
         // This should not panic with dimension mismatch
-        network.train(&inputs, &targets, 1);
+        network.train(&inputs, &targets);
 
         // Test forward pass dimensions
         let output = network.predict(Matrix::from(inputs[0].clone()));
@@ -831,7 +898,8 @@ mod tests {
             Some(0.9), // High momentum
             1000,      // Number of epochs
             2,         // Small batch size for testing
-        );
+        )
+        .unwrap();
 
         let mut network = Network::new(&config);
 
@@ -865,7 +933,7 @@ mod tests {
         }
 
         // Train the network
-        network.train(&inputs, &targets, 1000);
+        network.train(&inputs, &targets);
 
         // Test predictions with a more lenient error threshold
         let mut total_error = 0.0;
@@ -904,7 +972,8 @@ mod tests {
             Some(0.9),
             1000,
             32,
-        );
+        )
+        .unwrap();
 
         // XOR training data
         let inputs = vec![
@@ -922,9 +991,16 @@ mod tests {
 
         // Test different batch sizes
         for &batch_size in &[1, 2, 4] {
-            config.batch_size = batch_size;
+            config = NetworkConfig::new(
+                config.layers,
+                config.learning_rate.value(),
+                Some(config.momentum.unwrap().value()),
+                config.epochs.value(),
+                batch_size,
+            )
+            .unwrap();
             let mut network = Network::new(&config);
-            network.train(&inputs, &targets, 1000);
+            network.train(&inputs, &targets);
 
             // Test predictions
             let mut total_error = 0.0;
@@ -967,7 +1043,7 @@ mod tests {
         let targets = vec![Matrix::from(vec![1.0]), Matrix::from(vec![0.0])];
 
         let initial_error = compute_error(&network, &inputs, &targets);
-        network.train(&inputs, &targets, 1000);
+        network.train(&inputs, &targets);
         let final_error = compute_error(&network, &inputs, &targets);
 
         assert!(final_error < initial_error, "Training should reduce error");
@@ -1037,7 +1113,9 @@ mod tests {
             Some(0.9),
             30,
             32,
-        );
+        )
+        .unwrap();
+
         let mut network = Network::new(&config);
 
         let input = Matrix::from(vec![0.5, 0.3]);
@@ -1093,8 +1171,8 @@ mod tests {
             Matrix::from(vec![0.7]),
         ];
         let targets = vec![
-            Matrix::from(vec![1.0]),
             Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
             Matrix::from(vec![0.5]),
             Matrix::from(vec![0.3]),
         ];
@@ -1135,7 +1213,7 @@ mod tests {
         let initial_weights: Vec<Matrix> = network.weights.iter().cloned().collect();
 
         // Train for a few epochs
-        network.train(&inputs, &targets, 5);
+        network.train(&inputs, &targets);
 
         // Verify weights have been updated
         for (initial, current) in initial_weights.iter().zip(network.weights.iter()) {
@@ -1163,7 +1241,7 @@ mod tests {
         let targets = vec![Matrix::from(vec![1.0]), Matrix::from(vec![0.0])];
 
         // Training should complete without errors and show progress
-        network.train(&inputs, &targets, 5);
+        network.train(&inputs, &targets);
 
         // Since progress bar is just for display, we only test that training completes
         assert!(true, "Training with progress bar completed successfully");
@@ -1181,59 +1259,5 @@ mod tests {
             })
             .sum::<f64>()
             / inputs.len() as f64
-    }
-
-    fn create_test_network() -> Network {
-        let config = NetworkConfig::new(
-            vec![
-                Layer {
-                    nodes: 1,
-                    activation: Some(ActivationType::Sigmoid),
-                },
-                Layer {
-                    nodes: 2,
-                    activation: Some(ActivationType::Sigmoid),
-                },
-                Layer {
-                    nodes: 1,
-                    activation: None,
-                },
-            ],
-            0.1,
-            Some(0.9),
-            30,
-            32,
-        );
-
-        Network::new(&config)
-    }
-
-    fn create_deep_network() -> Network {
-        let config = NetworkConfig::new(
-            vec![
-                Layer {
-                    nodes: 2,
-                    activation: Some(ActivationType::Sigmoid),
-                },
-                Layer {
-                    nodes: 4,
-                    activation: Some(ActivationType::Sigmoid),
-                },
-                Layer {
-                    nodes: 3,
-                    activation: Some(ActivationType::Sigmoid),
-                },
-                Layer {
-                    nodes: 2,
-                    activation: None,
-                },
-            ],
-            0.1,
-            Some(0.9),
-            30,
-            32,
-        );
-
-        Network::new(&config)
     }
 }

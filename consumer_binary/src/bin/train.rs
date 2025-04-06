@@ -56,11 +56,7 @@ fn main() -> Result<()> {
 
     println!("Training network...");
     let start_time = Instant::now();
-    network.train(
-        &standardized_data,
-        &mnist_data.labels(),
-        network_config.epochs as u32,
-    );
+    network.train(&standardized_data, &mnist_data.labels());
 
     let total_duration = start_time.elapsed();
     println!(

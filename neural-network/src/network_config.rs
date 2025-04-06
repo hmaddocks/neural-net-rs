@@ -4,6 +4,74 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct LearningRate(f64);
+
+impl LearningRate {
+    pub fn new(value: f64) -> Option<Self> {
+        if value > 0.0 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    pub fn value(&self) -> f64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Momentum(f64);
+
+impl Momentum {
+    pub fn new(value: f64) -> Option<Self> {
+        if (0.0..1.0).contains(&value) {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    pub fn value(&self) -> f64 {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Epochs(usize);
+
+impl Epochs {
+    pub fn new(value: usize) -> Option<Self> {
+        if value > 0 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    pub fn value(&self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BatchSize(usize);
+
+impl BatchSize {
+    pub fn new(value: usize) -> Option<Self> {
+        if value > 0 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    pub fn value(&self) -> usize {
+        self.0
+    }
+}
+
 /// Configuration for a neural network.
 ///
 /// This struct holds all the parameters needed to define and train a neural network,
@@ -28,20 +96,20 @@ pub struct NetworkConfig {
 
     /// Learning rate for gradient descent.
     /// Controls how much the weights are adjusted during training.
-    pub learning_rate: f64,
+    pub learning_rate: LearningRate,
 
     /// Optional momentum coefficient for gradient descent.
     /// When specified, helps accelerate training and avoid local minima.
-    pub momentum: Option<f64>,
+    pub momentum: Option<Momentum>,
 
     /// Number of training epochs.
     /// One epoch represents one complete pass through the training dataset.
-    pub epochs: usize,
+    pub epochs: Epochs,
 
     /// Size of mini-batches for gradient descent.
     /// Larger batches provide more stable gradients but slower training.
     /// Default is 32.
-    pub batch_size: usize,
+    pub batch_size: BatchSize,
 }
 
 impl NetworkConfig {
@@ -64,14 +132,14 @@ impl NetworkConfig {
         momentum: Option<f64>,
         epochs: usize,
         batch_size: usize,
-    ) -> Self {
-        Self {
+    ) -> Option<Self> {
+        Some(Self {
             layers,
-            learning_rate,
-            momentum,
-            epochs,
-            batch_size,
-        }
+            learning_rate: LearningRate::new(learning_rate)?,
+            momentum: momentum.and_then(Momentum::new),
+            epochs: Epochs::new(epochs)?,
+            batch_size: BatchSize::new(batch_size)?,
+        })
     }
 
     /// Loads a network configuration from a JSON file.
@@ -149,10 +217,10 @@ impl Default for NetworkConfig {
                     activation: None,
                 },
             ], // Common MNIST-like default architecture
-            learning_rate: 0.1,
-            momentum: Some(0.9),
-            epochs: 30,
-            batch_size: 32,
+            learning_rate: LearningRate::new(0.1).unwrap(),
+            momentum: Some(Momentum::new(0.9).unwrap()),
+            epochs: Epochs::new(30).unwrap(),
+            batch_size: BatchSize::new(32).unwrap(),
         }
     }
 }
@@ -163,6 +231,91 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_learning_rate_validation() {
+        // Valid cases
+        assert!(LearningRate::new(0.1).is_some());
+        assert!(LearningRate::new(1.0).is_some());
+        assert!(LearningRate::new(0.001).is_some());
+
+        // Invalid cases
+        assert!(LearningRate::new(0.0).is_none());
+        assert!(LearningRate::new(-0.1).is_none());
+    }
+
+    #[test]
+    fn test_momentum_validation() {
+        // Valid cases
+        assert!(Momentum::new(0.0).is_some());
+        assert!(Momentum::new(0.5).is_some());
+        assert!(Momentum::new(0.9).is_some());
+
+        // Invalid cases
+        assert!(Momentum::new(-0.1).is_none());
+        assert!(Momentum::new(1.0).is_none());
+        assert!(Momentum::new(1.1).is_none());
+    }
+
+    #[test]
+    fn test_epochs_validation() {
+        // Valid cases
+        assert!(Epochs::new(1).is_some());
+        assert!(Epochs::new(30).is_some());
+        assert!(Epochs::new(usize::MAX).is_some());
+
+        // Invalid cases
+        assert!(Epochs::new(0).is_none());
+    }
+
+    #[test]
+    fn test_batch_size_validation() {
+        // Valid cases
+        assert!(BatchSize::new(1).is_some());
+        assert!(BatchSize::new(32).is_some());
+        assert!(BatchSize::new(usize::MAX).is_some());
+
+        // Invalid cases
+        assert!(BatchSize::new(0).is_none());
+    }
+
+    #[test]
+    fn test_newtype_value_access() {
+        let learning_rate = LearningRate::new(0.1).unwrap();
+        assert_eq!(learning_rate.value(), 0.1);
+
+        let momentum = Momentum::new(0.9).unwrap();
+        assert_eq!(momentum.value(), 0.9);
+
+        let epochs = Epochs::new(30).unwrap();
+        assert_eq!(epochs.value(), 30);
+
+        let batch_size = BatchSize::new(32).unwrap();
+        assert_eq!(batch_size.value(), 32);
+    }
+
+    #[test]
+    fn test_newtype_serde() {
+        let learning_rate = LearningRate::new(0.1).unwrap();
+        let serialized = serde_json::to_string(&learning_rate).unwrap();
+        let deserialized: LearningRate = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(learning_rate, deserialized);
+
+        let momentum = Momentum::new(0.9).unwrap();
+        let serialized = serde_json::to_string(&momentum).unwrap();
+        let deserialized: Momentum = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(momentum, deserialized);
+
+        let epochs = Epochs::new(30).unwrap();
+        let serialized = serde_json::to_string(&epochs).unwrap();
+        let deserialized: Epochs = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(epochs, deserialized);
+
+        let batch_size = BatchSize::new(32).unwrap();
+        let serialized = serde_json::to_string(&batch_size).unwrap();
+        let deserialized: BatchSize = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(batch_size, deserialized);
+    }
 
     #[test]
     fn test_load_config() {
@@ -198,10 +351,10 @@ mod tests {
                 }
             ]
         );
-        assert_eq!(config.learning_rate, 0.01);
-        assert_eq!(config.momentum, Some(0.5));
-        assert_eq!(config.epochs, 30);
-        assert_eq!(config.batch_size, 32);
+        assert_eq!(config.learning_rate, LearningRate::new(0.01).unwrap());
+        assert_eq!(config.momentum, Some(Momentum::new(0.5).unwrap()));
+        assert_eq!(config.epochs, Epochs::new(30).unwrap());
+        assert_eq!(config.batch_size, BatchSize::new(32).unwrap());
     }
 
     #[test]
@@ -224,8 +377,9 @@ mod tests {
                 }
             ]
         );
-        assert_eq!(config.learning_rate, 0.1);
-        assert_eq!(config.momentum, Some(0.9));
-        assert_eq!(config.epochs, 30);
+        assert_eq!(config.learning_rate, LearningRate::new(0.1).unwrap());
+        assert_eq!(config.momentum, Some(Momentum::new(0.9).unwrap()));
+        assert_eq!(config.epochs, Epochs::new(30).unwrap());
+        assert_eq!(config.batch_size, BatchSize::new(32).unwrap());
     }
 }
