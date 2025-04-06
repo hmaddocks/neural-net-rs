@@ -33,8 +33,8 @@ use crate::activations::{ActivationFunction, ActivationType};
 use crate::network_config::NetworkConfig;
 use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
+use rand::rng;
 use rand::seq::SliceRandom;
-use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::time::Instant;
@@ -171,7 +171,7 @@ impl Network {
 
         let total_samples = inputs.len();
         let mut indices: Vec<_> = (0..total_samples).collect();
-        indices.shuffle(&mut thread_rng());
+        indices.shuffle(&mut rng());
 
         indices
             .chunks(batch_size)

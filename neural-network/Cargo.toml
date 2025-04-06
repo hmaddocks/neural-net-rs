@@ -11,10 +11,22 @@ matrix = { path = "../matrix" }
 approx = "0.5.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-ndarray = { version = "0.15", features = ["serde", "rayon"] }
+ndarray = { version = "0.16", features = ["serde", "rayon"] }
 rayon = "1.8"
-rand = "0.8"
+rand = "0.9.0"
 indicatif = "0.17.11"
 
 [dev-dependencies]
 tempfile = "3.10.1"
+
+[lints.clippy]
+all = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
+unhandled_errors = "deny"
+unreachable = "deny"
+undocumented_unsafe_blocks = "deny"
+unwrap_in_result = "deny"
+ok_expect = "deny"
