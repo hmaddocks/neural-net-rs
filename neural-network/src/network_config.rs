@@ -119,6 +119,7 @@ impl From<BatchSize> for usize {
 /// assert_eq!(config.layers, vec![Layer { nodes: 784, activation: Some(ActivationType::Sigmoid) }, Layer { nodes: 128, activation: Some(ActivationType::Sigmoid) }, Layer { nodes: 10, activation: None }]); // MNIST-like architecture
 /// ```
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(default)]
 pub struct NetworkConfig {
     /// A collection of [`Layer`]s in the network, including input and output layers.
     /// For example, `vec![Layer { nodes: 784, activation: Some(ActivationType::Sigmoid) }, Layer { nodes: 128, activation: Some(ActivationType::Sigmoid) }, Layer { nodes: 10, activation: None }]` represents a network with:
@@ -264,7 +265,7 @@ impl Default for NetworkConfig {
                 },
             ], // Common MNIST-like default architecture
             learning_rate: LearningRate::try_from(0.01).unwrap(),
-            momentum: Momentum::try_from(0.9).unwrap(),
+            momentum: Momentum::try_from(0.5).unwrap(),
             epochs: Epochs::try_from(30).unwrap(),
             batch_size: BatchSize::try_from(32).unwrap(),
         }
@@ -463,7 +464,7 @@ mod tests {
             ]
         );
         assert_eq!(config.learning_rate, LearningRate::try_from(0.01).unwrap());
-        assert_eq!(config.momentum, Momentum::try_from(0.9).unwrap());
+        assert_eq!(config.momentum, Momentum::try_from(0.5).unwrap());
         assert_eq!(config.epochs, Epochs::try_from(30).unwrap());
         assert_eq!(config.batch_size, BatchSize::try_from(32).unwrap());
     }
