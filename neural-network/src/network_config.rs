@@ -182,10 +182,18 @@ impl NetworkConfig {
         Ok(config)
     }
 
+    /// Returns a vector containing the number of nodes in each layer of the network.
+    ///
+    /// This method iterates through all layers and collects their node counts into a vector,
+    /// preserving the layer order from input to output.
     pub fn nodes(&self) -> Vec<usize> {
         self.layers.iter().map(|layer| layer.nodes).collect()
     }
 
+    /// Returns a vector of activation types for all layers that have an activation function.
+    ///
+    /// Layers without an activation function are filtered out. The resulting vector
+    /// contains activation types in order from input to output layers.
     pub fn activations_types(&self) -> Vec<ActivationType> {
         self.layers
             .iter()
@@ -193,6 +201,11 @@ impl NetworkConfig {
             .collect()
     }
 
+    /// Creates a vector of boxed activation functions based on the network's configuration.
+    ///
+    /// This method converts each ActivationType into its corresponding activation function
+    /// implementation. The resulting vector contains trait objects that can be used
+    /// for forward and backward propagation in the network.
     pub fn activations(&self) -> Vec<Box<dyn ActivationFunction>> {
         self.activations_types()
             .iter()
