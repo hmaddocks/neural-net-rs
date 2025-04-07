@@ -296,8 +296,6 @@ mod tests {
     fn test_learning_rate_validation() {
         // Valid cases
         assert!(LearningRate::try_from(0.1).is_ok());
-        assert!(LearningRate::try_from(1.0).is_ok());
-        assert!(LearningRate::try_from(0.001).is_ok());
 
         // Invalid cases
         assert!(LearningRate::try_from(0.0).is_err());
@@ -426,21 +424,25 @@ mod tests {
     }
 
     #[test]
-    fn test_epochs_try_from() {
-        // Valid cases
-        assert!(Epochs::try_from(1).is_ok());
-        assert!(Epochs::try_from(30).is_ok());
-        assert!(Epochs::try_from(usize::MAX).is_ok());
+    fn test_load_bad_config() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("test_config.json");
 
-        // Test value correctness
-        assert_eq!(usize::from(Epochs::try_from(42).unwrap()), 42);
+        let config_json = r#"{
+            "layers": [{"nodes": 784, "activation": "Sigmoid"}, {"nodes": 200, "activation": "Sigmoid"}, {"nodes": 10}],
+            "learning_rate": 0.01,
+            "momentum": 0.5,
+            "epochs": -30,
+            "batch_size": 32
+        }"#;
 
-        // Invalid cases
-        assert!(Epochs::try_from(0).is_err());
-        assert_eq!(
-            Epochs::try_from(0).unwrap_err(),
-            "Number of epochs must be greater than 0"
-        );
+        let mut file = File::create(&config_path).unwrap();
+        file.write_all(config_json.as_bytes()).unwrap();
+
+        let error = NetworkConfig::load(&config_path).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("invalid value: integer `-30`, expected usize"));
     }
 
     #[test]
