@@ -3,6 +3,7 @@ use crate::layer::Layer;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs;
+use std::ops::Mul;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -26,6 +27,14 @@ impl From<LearningRate> for f64 {
     }
 }
 
+impl Mul<LearningRate> for f64 {
+    type Output = f64;
+
+    fn mul(self, lr: LearningRate) -> Self::Output {
+        self * lr.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Momentum(f64);
 
@@ -44,6 +53,14 @@ impl TryFrom<f64> for Momentum {
 impl From<Momentum> for f64 {
     fn from(momentum: Momentum) -> Self {
         momentum.0
+    }
+}
+
+impl Mul<Momentum> for f64 {
+    type Output = f64;
+
+    fn mul(self, momentum: Momentum) -> Self::Output {
+        self * momentum.0
     }
 }
 
@@ -114,9 +131,9 @@ pub struct NetworkConfig {
     /// Controls how much the weights are adjusted during training.
     pub learning_rate: LearningRate,
 
-    /// Optional momentum coefficient for gradient descent.
+    /// Momentum coefficient for gradient descent.
     /// When specified, helps accelerate training and avoid local minima.
-    pub momentum: Option<Momentum>,
+    pub momentum: Momentum,
 
     /// Number of training epochs.
     /// One epoch represents one complete pass through the training dataset.
@@ -135,7 +152,7 @@ impl NetworkConfig {
     ///
     /// * `layers` - A vector of [`Layer`]s
     /// * `learning_rate` - Learning rate for gradient descent
-    /// * `momentum` - Optional momentum coefficient
+    /// * `momentum` - Momentum coefficient for gradient descent
     /// * `epochs` - Number of training epochs
     /// * `batch_size` - Size of mini-batches for gradient descent
     ///
@@ -145,14 +162,14 @@ impl NetworkConfig {
     pub fn new(
         layers: Vec<Layer>,
         learning_rate: f64,
-        momentum: Option<f64>,
+        momentum: f64,
         epochs: usize,
         batch_size: usize,
     ) -> Option<Self> {
         Some(Self {
             layers: layers,
             learning_rate: LearningRate::try_from(learning_rate).ok()?,
-            momentum: momentum.and_then(|m| Momentum::try_from(m).ok()),
+            momentum: Momentum::try_from(momentum).ok()?,
             epochs: Epochs::try_from(epochs).ok()?,
             batch_size: BatchSize::try_from(batch_size).ok()?,
         })
@@ -225,7 +242,7 @@ impl NetworkConfig {
 /// - Hidden layer: 128 neurons
 /// - Output layer: 10 neurons (digits 0-9)
 /// - Sigmoid activation for both layer transitions
-/// - Learning rate: 0.1
+/// - Learning rate: 0.01
 /// - Momentum: 0.9
 /// - 30 training epochs
 /// - Batch size: 32
@@ -246,8 +263,8 @@ impl Default for NetworkConfig {
                     activation: None,
                 },
             ], // Common MNIST-like default architecture
-            learning_rate: LearningRate::try_from(0.1).unwrap(),
-            momentum: Some(Momentum::try_from(0.9).unwrap()),
+            learning_rate: LearningRate::try_from(0.01).unwrap(),
+            momentum: Momentum::try_from(0.9).unwrap(),
             epochs: Epochs::try_from(30).unwrap(),
             batch_size: BatchSize::try_from(32).unwrap(),
         }
@@ -261,11 +278,7 @@ impl fmt::Display for NetworkConfig {
             writeln!(f, "  Layer {}: {}", i, layer)?;
         }
         writeln!(f, "  Learning Rate: {:.4}", f64::from(self.learning_rate))?;
-        writeln!(
-            f,
-            "  Momentum:      {:.4}",
-            self.momentum.map_or(0.0, f64::from)
-        )?;
+        writeln!(f, "  Momentum:      {:.4}", f64::from(self.momentum))?;
         writeln!(f, "  Epochs:        {}", usize::from(self.epochs))?;
         write!(f, "  Batch Size:    {}", usize::from(self.batch_size))
     }
@@ -406,7 +419,7 @@ mod tests {
             ]
         );
         assert_eq!(config.learning_rate, LearningRate::try_from(0.01).unwrap());
-        assert_eq!(config.momentum, Some(Momentum::try_from(0.5).unwrap()));
+        assert_eq!(config.momentum, Momentum::try_from(0.5).unwrap());
         assert_eq!(config.epochs, Epochs::try_from(30).unwrap());
         assert_eq!(config.batch_size, BatchSize::try_from(32).unwrap());
     }
@@ -449,8 +462,8 @@ mod tests {
                 }
             ]
         );
-        assert_eq!(config.learning_rate, LearningRate::try_from(0.1).unwrap());
-        assert_eq!(config.momentum, Some(Momentum::try_from(0.9).unwrap()));
+        assert_eq!(config.learning_rate, LearningRate::try_from(0.01).unwrap());
+        assert_eq!(config.momentum, Momentum::try_from(0.9).unwrap());
         assert_eq!(config.epochs, Epochs::try_from(30).unwrap());
         assert_eq!(config.batch_size, BatchSize::try_from(32).unwrap());
     }

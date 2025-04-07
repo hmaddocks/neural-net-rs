@@ -23,7 +23,7 @@
 ///         Layer { nodes: 1, activation: None },
 ///     ],
 ///     0.1,
-///     Some(0.8),
+///     0.8,
 ///     30,
 ///     32,
 /// ).unwrap();
@@ -33,7 +33,7 @@
 /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
 /// ```
 use crate::activations::{ActivationFunction, ActivationType};
-use crate::network_config::{BatchSize, Epochs, NetworkConfig};
+use crate::network_config::{BatchSize, Epochs, LearningRate, Momentum, NetworkConfig};
 use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use rand::rng;
@@ -59,9 +59,9 @@ pub struct Network {
     /// Types of activation functions for serialization
     activation_types: Vec<ActivationType>,
     /// Learning rate for weight updates
-    learning_rate: f64,
+    learning_rate: LearningRate,
     /// Momentum coefficient for weight updates
-    momentum: f64,
+    momentum: Momentum,
     /// Previous weight updates for momentum calculation
     #[serde(skip)]
     prev_weight_updates: Vec<Matrix>,
@@ -105,7 +105,7 @@ impl Network {
     ///         Layer::new(1, None),
     ///     ],
     ///     0.1,
-    ///     Some(0.9),
+    ///     0.9,
     ///     30,
     ///     32,
     /// );
@@ -148,8 +148,8 @@ impl Network {
             data,
             activations: network_config.activations(),
             activation_types: network_config.activations_types(),
-            learning_rate: f64::from(network_config.learning_rate),
-            momentum: network_config.momentum.map(|m| f64::from(m)).unwrap_or(0.9),
+            learning_rate: network_config.learning_rate,
+            momentum: network_config.momentum,
             prev_weight_updates,
             mean: None,
             std_dev: None,
@@ -501,7 +501,7 @@ impl Network {
     ///     Layer { nodes: 1, activation: None },
     /// ];
     /// config.learning_rate = LearningRate::try_from(0.1).unwrap();
-    /// config.momentum = Some(Momentum::try_from(0.8).unwrap());
+    /// config.momentum = Momentum::try_from(0.8).unwrap();
     ///
     /// // Create and save network
     /// let mut network = Network::new(&config);
@@ -591,7 +591,7 @@ mod tests {
                 },
             ],
             0.1,
-            Some(0.9),
+            0.9,
             30,
             32,
         )
@@ -621,7 +621,7 @@ mod tests {
                 },
             ],
             0.1,
-            Some(0.9),
+            0.9,
             30,
             32,
         )
@@ -648,7 +648,7 @@ mod tests {
                 },
             ],
             0.1,
-            Some(0.9),
+            0.9,
             30,
             32,
         )
@@ -712,7 +712,7 @@ mod tests {
                 },
             ],
             0.5, // Higher learning rate
-            Some(0.9),
+            0.9,
             2000,
             2, // Small batch size for XOR
         )
@@ -835,7 +835,7 @@ mod tests {
                 },
             ],
             0.1,
-            Some(0.9),
+            0.9,
             1,
             32,
         )
@@ -894,10 +894,10 @@ mod tests {
                     activation: None,
                 },
             ],
-            1.0,       // Higher learning rate
-            Some(0.9), // High momentum
-            1000,      // Number of epochs
-            2,         // Small batch size for testing
+            1.0,  // Higher learning rate
+            0.9,  // High momentum
+            1000, // Number of epochs
+            2,    // Small batch size for testing
         )
         .unwrap();
 
@@ -969,7 +969,7 @@ mod tests {
                 },
             ],
             0.8, // Higher learning rate
-            Some(0.9),
+            0.9,
             1000,
             32,
         )
@@ -994,7 +994,7 @@ mod tests {
             config = NetworkConfig::new(
                 config.layers,
                 f64::from(config.learning_rate),
-                config.momentum.map(|m| f64::from(m)),
+                f64::from(config.momentum),
                 usize::from(config.epochs),
                 batch_size,
             )
@@ -1110,7 +1110,7 @@ mod tests {
                 },
             ],
             0.1,
-            Some(0.9),
+            0.9,
             30,
             32,
         )
