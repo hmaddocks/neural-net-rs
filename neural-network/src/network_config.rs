@@ -7,71 +7,86 @@ use std::path::Path;
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LearningRate(f64);
 
-impl LearningRate {
-    pub fn new(value: f64) -> Option<Self> {
+impl TryFrom<f64> for LearningRate {
+    type Error = &'static str;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
         if value > 0.0 {
-            Some(Self(value))
+            Ok(Self(value))
         } else {
-            None
+            Err("Learning rate must be greater than 0.0")
         }
     }
+}
 
-    pub fn value(&self) -> f64 {
-        self.0
+impl From<LearningRate> for f64 {
+    fn from(lr: LearningRate) -> Self {
+        lr.0
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Momentum(f64);
 
-impl Momentum {
-    pub fn new(value: f64) -> Option<Self> {
+impl TryFrom<f64> for Momentum {
+    type Error = &'static str;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
         if (0.0..1.0).contains(&value) {
-            Some(Self(value))
+            Ok(Self(value))
         } else {
-            None
+            Err("Momentum must be between 0.0 and 1.0")
         }
     }
+}
 
-    pub fn value(&self) -> f64 {
-        self.0
+impl From<Momentum> for f64 {
+    fn from(momentum: Momentum) -> Self {
+        momentum.0
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Epochs(usize);
 
-impl Epochs {
-    pub fn new(value: usize) -> Option<Self> {
+impl TryFrom<usize> for Epochs {
+    type Error = &'static str;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
         if value > 0 {
-            Some(Self(value))
+            Ok(Self(value))
         } else {
-            None
+            Err("Number of epochs must be greater than 0")
         }
     }
+}
 
-    pub fn value(&self) -> usize {
-        self.0
+impl From<Epochs> for usize {
+    fn from(epochs: Epochs) -> Self {
+        epochs.0
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BatchSize(usize);
 
-impl BatchSize {
-    pub fn new(value: usize) -> Option<Self> {
-        if value > 0 {
-            Some(Self(value))
-        } else {
-            None
-        }
-    }
+impl TryFrom<usize> for BatchSize {
+    type Error = &'static str;
 
-    pub fn value(&self) -> usize {
-        self.0
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        if value > 0 {
+            Ok(Self(value))
+        } else {
+            Err("Batch size must be greater than 0")
+        }
     }
 }
 
+impl From<BatchSize> for usize {
+    fn from(batch_size: BatchSize) -> Self {
+        batch_size.0
+    }
+}
 /// Configuration for a neural network.
 ///
 /// This struct holds all the parameters needed to define and train a neural network,
@@ -134,11 +149,11 @@ impl NetworkConfig {
         batch_size: usize,
     ) -> Option<Self> {
         Some(Self {
-            layers,
-            learning_rate: LearningRate::new(learning_rate)?,
-            momentum: momentum.and_then(Momentum::new),
-            epochs: Epochs::new(epochs)?,
-            batch_size: BatchSize::new(batch_size)?,
+            layers: layers,
+            learning_rate: LearningRate::try_from(learning_rate).ok()?,
+            momentum: momentum.and_then(|m| Momentum::try_from(m).ok()),
+            epochs: Epochs::try_from(epochs).ok()?,
+            batch_size: BatchSize::try_from(batch_size).ok()?,
         })
     }
 
@@ -217,10 +232,10 @@ impl Default for NetworkConfig {
                     activation: None,
                 },
             ], // Common MNIST-like default architecture
-            learning_rate: LearningRate::new(0.1).unwrap(),
-            momentum: Some(Momentum::new(0.9).unwrap()),
-            epochs: Epochs::new(30).unwrap(),
-            batch_size: BatchSize::new(32).unwrap(),
+            learning_rate: LearningRate::try_from(0.1).unwrap(),
+            momentum: Some(Momentum::try_from(0.9).unwrap()),
+            epochs: Epochs::try_from(30).unwrap(),
+            batch_size: BatchSize::try_from(32).unwrap(),
         }
     }
 }
@@ -235,83 +250,91 @@ mod tests {
     #[test]
     fn test_learning_rate_validation() {
         // Valid cases
-        assert!(LearningRate::new(0.1).is_some());
-        assert!(LearningRate::new(1.0).is_some());
-        assert!(LearningRate::new(0.001).is_some());
+        assert!(LearningRate::try_from(0.1).is_ok());
+        assert!(LearningRate::try_from(1.0).is_ok());
+        assert!(LearningRate::try_from(0.001).is_ok());
 
         // Invalid cases
-        assert!(LearningRate::new(0.0).is_none());
-        assert!(LearningRate::new(-0.1).is_none());
+        assert!(LearningRate::try_from(0.0).is_err());
+        assert!(LearningRate::try_from(-0.1).is_err());
     }
 
     #[test]
     fn test_momentum_validation() {
         // Valid cases
-        assert!(Momentum::new(0.0).is_some());
-        assert!(Momentum::new(0.5).is_some());
-        assert!(Momentum::new(0.9).is_some());
+        assert!(Momentum::try_from(0.0).is_ok());
+        assert!(Momentum::try_from(0.5).is_ok());
+        assert!(Momentum::try_from(0.9).is_ok());
 
         // Invalid cases
-        assert!(Momentum::new(-0.1).is_none());
-        assert!(Momentum::new(1.0).is_none());
-        assert!(Momentum::new(1.1).is_none());
+        assert!(Momentum::try_from(-0.1).is_err());
+        assert!(Momentum::try_from(1.0).is_err());
+        assert!(Momentum::try_from(1.1).is_err());
     }
 
     #[test]
-    fn test_epochs_validation() {
-        // Valid cases
-        assert!(Epochs::new(1).is_some());
-        assert!(Epochs::new(30).is_some());
-        assert!(Epochs::new(usize::MAX).is_some());
+    fn test_epochs_conversion() {
+        // Valid cases using TryFrom
+        assert!(Epochs::try_from(1).is_ok());
+        assert!(Epochs::try_from(30).is_ok());
+        assert!(Epochs::try_from(usize::MAX).is_ok());
 
-        // Invalid cases
-        assert!(Epochs::new(0).is_none());
+        // Invalid cases using TryFrom
+        assert!(Epochs::try_from(0).is_err());
+        assert_eq!(
+            Epochs::try_from(0).unwrap_err(),
+            "Number of epochs must be greater than 0"
+        );
+
+        // Test From<Epochs> for usize
+        let epochs = Epochs::try_from(42).unwrap();
+        assert_eq!(usize::from(epochs), 42);
     }
 
     #[test]
     fn test_batch_size_validation() {
         // Valid cases
-        assert!(BatchSize::new(1).is_some());
-        assert!(BatchSize::new(32).is_some());
-        assert!(BatchSize::new(usize::MAX).is_some());
+        assert!(BatchSize::try_from(1).is_ok());
+        assert!(BatchSize::try_from(32).is_ok());
+        assert!(BatchSize::try_from(usize::MAX).is_ok());
 
         // Invalid cases
-        assert!(BatchSize::new(0).is_none());
+        assert!(BatchSize::try_from(0).is_err());
     }
 
     #[test]
     fn test_newtype_value_access() {
-        let learning_rate = LearningRate::new(0.1).unwrap();
-        assert_eq!(learning_rate.value(), 0.1);
+        let learning_rate = LearningRate::try_from(0.1).unwrap();
+        assert_eq!(f64::from(learning_rate), 0.1);
 
-        let momentum = Momentum::new(0.9).unwrap();
-        assert_eq!(momentum.value(), 0.9);
+        let momentum = Momentum::try_from(0.9).unwrap();
+        assert_eq!(f64::from(momentum), 0.9);
 
-        let epochs = Epochs::new(30).unwrap();
-        assert_eq!(epochs.value(), 30);
+        let epochs = Epochs::try_from(30).unwrap();
+        assert_eq!(usize::from(epochs), 30);
 
-        let batch_size = BatchSize::new(32).unwrap();
-        assert_eq!(batch_size.value(), 32);
+        let batch_size = BatchSize::try_from(32).unwrap();
+        assert_eq!(usize::from(batch_size), 32);
     }
 
     #[test]
     fn test_newtype_serde() {
-        let learning_rate = LearningRate::new(0.1).unwrap();
+        let learning_rate = LearningRate::try_from(0.1).unwrap();
         let serialized = serde_json::to_string(&learning_rate).unwrap();
         let deserialized: LearningRate = serde_json::from_str(&serialized).unwrap();
         assert_eq!(learning_rate, deserialized);
 
-        let momentum = Momentum::new(0.9).unwrap();
+        let momentum = Momentum::try_from(0.9).unwrap();
         let serialized = serde_json::to_string(&momentum).unwrap();
         let deserialized: Momentum = serde_json::from_str(&serialized).unwrap();
         assert_eq!(momentum, deserialized);
 
-        let epochs = Epochs::new(30).unwrap();
+        let epochs = Epochs::try_from(30).unwrap();
         let serialized = serde_json::to_string(&epochs).unwrap();
         let deserialized: Epochs = serde_json::from_str(&serialized).unwrap();
         assert_eq!(epochs, deserialized);
 
-        let batch_size = BatchSize::new(32).unwrap();
+        let batch_size = BatchSize::try_from(32).unwrap();
         let serialized = serde_json::to_string(&batch_size).unwrap();
         let deserialized: BatchSize = serde_json::from_str(&serialized).unwrap();
         assert_eq!(batch_size, deserialized);
@@ -351,10 +374,28 @@ mod tests {
                 }
             ]
         );
-        assert_eq!(config.learning_rate, LearningRate::new(0.01).unwrap());
-        assert_eq!(config.momentum, Some(Momentum::new(0.5).unwrap()));
-        assert_eq!(config.epochs, Epochs::new(30).unwrap());
-        assert_eq!(config.batch_size, BatchSize::new(32).unwrap());
+        assert_eq!(config.learning_rate, LearningRate::try_from(0.01).unwrap());
+        assert_eq!(config.momentum, Some(Momentum::try_from(0.5).unwrap()));
+        assert_eq!(config.epochs, Epochs::try_from(30).unwrap());
+        assert_eq!(config.batch_size, BatchSize::try_from(32).unwrap());
+    }
+
+    #[test]
+    fn test_epochs_try_from() {
+        // Valid cases
+        assert!(Epochs::try_from(1).is_ok());
+        assert!(Epochs::try_from(30).is_ok());
+        assert!(Epochs::try_from(usize::MAX).is_ok());
+
+        // Test value correctness
+        assert_eq!(usize::from(Epochs::try_from(42).unwrap()), 42);
+
+        // Invalid cases
+        assert!(Epochs::try_from(0).is_err());
+        assert_eq!(
+            Epochs::try_from(0).unwrap_err(),
+            "Number of epochs must be greater than 0"
+        );
     }
 
     #[test]
@@ -377,9 +418,9 @@ mod tests {
                 }
             ]
         );
-        assert_eq!(config.learning_rate, LearningRate::new(0.1).unwrap());
-        assert_eq!(config.momentum, Some(Momentum::new(0.9).unwrap()));
-        assert_eq!(config.epochs, Epochs::new(30).unwrap());
-        assert_eq!(config.batch_size, BatchSize::new(32).unwrap());
+        assert_eq!(config.learning_rate, LearningRate::try_from(0.1).unwrap());
+        assert_eq!(config.momentum, Some(Momentum::try_from(0.9).unwrap()));
+        assert_eq!(config.epochs, Epochs::try_from(30).unwrap());
+        assert_eq!(config.batch_size, BatchSize::try_from(32).unwrap());
     }
 }

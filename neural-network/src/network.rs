@@ -148,8 +148,8 @@ impl Network {
             data,
             activations: network_config.activations(),
             activation_types: network_config.activations_types(),
-            learning_rate: network_config.learning_rate.value(),
-            momentum: network_config.momentum.map(|m| m.value()).unwrap_or(0.9),
+            learning_rate: f64::from(network_config.learning_rate),
+            momentum: network_config.momentum.map(|m| f64::from(m)).unwrap_or(0.9),
             prev_weight_updates,
             mean: None,
             std_dev: None,
@@ -368,7 +368,7 @@ impl Network {
         let total_samples = inputs.len();
 
         // Create progress bar
-        let progress_bar = ProgressBar::new(self.epochs.value() as u64);
+        let progress_bar = ProgressBar::new(usize::from(self.epochs) as u64);
         let style = ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos}/{len} epochs | Accuracy: {msg}")
             .map_err(|e| Box::new(e))
@@ -378,7 +378,7 @@ impl Network {
 
         let start_time = Instant::now();
 
-        for _ in 1..=self.epochs.value() {
+        for _ in 1..=usize::from(self.epochs) {
             let (_, correct_predictions) = self.train_epoch(&inputs, &targets, 32);
             let accuracy = (correct_predictions as f64 / total_samples as f64) * 100.0;
 
@@ -500,8 +500,8 @@ impl Network {
     ///     Layer { nodes: 3, activation: Some(ActivationType::Sigmoid) },
     ///     Layer { nodes: 1, activation: None },
     /// ];
-    /// config.learning_rate = LearningRate::new(0.1).unwrap();
-    /// config.momentum = Some(Momentum::new(0.8).unwrap());
+    /// config.learning_rate = LearningRate::try_from(0.1).unwrap();
+    /// config.momentum = Some(Momentum::try_from(0.8).unwrap());
     ///
     /// // Create and save network
     /// let mut network = Network::new(&config);
@@ -993,9 +993,9 @@ mod tests {
         for &batch_size in &[1, 2, 4] {
             config = NetworkConfig::new(
                 config.layers,
-                config.learning_rate.value(),
-                Some(config.momentum.unwrap().value()),
-                config.epochs.value(),
+                f64::from(config.learning_rate),
+                config.momentum.map(|m| f64::from(m)),
+                usize::from(config.epochs),
                 batch_size,
             )
             .unwrap();
