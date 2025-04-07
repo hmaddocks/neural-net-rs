@@ -54,6 +54,8 @@ fn main() -> Result<()> {
     // Create network from configuration
     let mut network = Network::new(&network_config);
 
+    println!("{network_config}");
+
     println!("Training network...");
     let start_time = Instant::now();
     network.train(&standardized_data, &mnist_data.labels());

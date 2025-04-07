@@ -1,6 +1,7 @@
 use crate::activations::{ActivationFunction, ActivationType, Sigmoid, Softmax};
 use crate::layer::Layer;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::fs;
 use std::path::Path;
 
@@ -250,6 +251,23 @@ impl Default for NetworkConfig {
             epochs: Epochs::try_from(30).unwrap(),
             batch_size: BatchSize::try_from(32).unwrap(),
         }
+    }
+}
+
+impl fmt::Display for NetworkConfig {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Network Configuration:")?;
+        for (i, layer) in self.layers.iter().enumerate() {
+            writeln!(f, "  Layer {}: {}", i, layer)?;
+        }
+        writeln!(f, "  Learning Rate: {:.4}", f64::from(self.learning_rate))?;
+        writeln!(
+            f,
+            "  Momentum:      {:.4}",
+            self.momentum.map_or(0.0, f64::from)
+        )?;
+        writeln!(f, "  Epochs:        {}", usize::from(self.epochs))?;
+        write!(f, "  Batch Size:    {}", usize::from(self.batch_size))
     }
 }
 
