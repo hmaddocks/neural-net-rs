@@ -81,12 +81,11 @@ impl Network {
     ///
     /// # Arguments
     /// * `network_config` - Configuration struct containing:
-    ///   - `layers`: Vector of layer sizes, including input and output layers (e.g., [784, 128, 10] for MNIST)
-    ///   - `activations`: Vector of activation types for each layer (must be one less than number of layers)
-    ///   - `learning_rate`: Learning rate for weight updates during training (e.g., 0.1)
-    ///   - `momentum`: Optional momentum coefficient for weight updates (defaults to 0.9)
-    ///   - `epochs`: Number of training epochs for the complete dataset
-    ///   - `batch_size`: Size of mini-batches for gradient descent (default 32)
+    ///   - `layers`: Vector of Layer structs defining the network architecture
+    ///   - `learning_rate`: Learning rate for weight updates during training
+    ///   - `momentum`: Momentum coefficient for weight updates
+    ///   - `epochs`: Number of training epochs
+    ///   - `batch_size`: Size of mini-batches for gradient descent
     ///
     /// # Returns
     /// A new `Network` instance with randomly initialized weights and configured parameters
@@ -101,17 +100,17 @@ impl Network {
     /// // Create network configuration for a simple XOR network
     /// let config = NetworkConfig::new(
     ///     vec![
-    ///         Layer::new(2, Some(ActivationType::Sigmoid)),
-    ///         Layer::new(3, Some(ActivationType::Sigmoid)),
-    ///         Layer::new(1, None),
+    ///         Layer { nodes: 2, activation: Some(ActivationType::Sigmoid) },
+    ///         Layer { nodes: 3, activation: Some(ActivationType::Sigmoid) },
+    ///         Layer { nodes: 1, activation: None },
     ///     ],
     ///     0.1,
-    ///     0.9,
+    ///     0.8,
     ///     30,
     ///     32,
-    /// );
+    /// ).unwrap();
     ///
-    /// let network = Network::new(&config.unwrap());
+    /// let network = Network::new(&config);
     /// ```
     pub fn new(network_config: &NetworkConfig) -> Self {
         assert!(
@@ -194,14 +193,16 @@ impl Network {
             .collect()
     }
 
-    /// Accumulates gradients for a batch of samples.
+    /// Accumulates gradients for a batch of samples using backpropagation.
     ///
     /// # Arguments
     /// * `outputs` - Output matrix where each column is a network output (output_size x batch_size)
     /// * `targets` - Target matrix where each column is a target (output_size x batch_size)
     ///
     /// # Returns
-    /// Vector of gradient matrices for each layer
+    /// Vector of gradient matrices for each layer, ordered from input to output layer.
+    /// Each gradient matrix has the same dimensions as its corresponding weight matrix,
+    /// including the bias weights.
     fn accumulate_gradients(&mut self, outputs: Matrix, targets: Matrix) -> Vec<Matrix> {
         let error = &targets - &outputs;
 
@@ -420,13 +421,15 @@ impl Network {
         activation.apply_vector(&output)
     }
 
-    /// Performs forward propagation for a batch of inputs.
+    /// Performs forward propagation for a batch of inputs, storing intermediate layer outputs.
     ///
     /// # Arguments
-    /// * `inputs` - Input matrix where each column is a sample (784 x batch_size)
+    /// * `inputs` - Input matrix where each column is a sample (input_size x batch_size)
     ///
     /// # Returns
     /// Output matrix where each column is the network's output for the corresponding input
+    /// (output_size x batch_size). Intermediate layer outputs are stored in self.data
+    /// for use in backpropagation.
     fn feed_forward(&mut self, inputs: Matrix) -> Matrix {
         assert!(
             self.layers[0] == inputs.rows(),
