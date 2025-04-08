@@ -202,7 +202,7 @@ impl Network {
     ///
     /// # Returns
     /// Vector of gradient matrices for each layer
-    fn accumulate_gradients_batch(&mut self, outputs: Matrix, targets: Matrix) -> Vec<Matrix> {
+    fn accumulate_gradients(&mut self, outputs: Matrix, targets: Matrix) -> Vec<Matrix> {
         let error = &targets - &outputs;
 
         // Calculate all deltas for the batch
@@ -309,6 +309,40 @@ impl Network {
     }
 
     /// Trains a single epoch and returns (total_error, correct_predictions, epoch_duration)
+    /// Process a single batch of training data.
+    ///
+    /// # Arguments
+    /// * `batch_inputs` - Vector of input matrices for the batch
+    /// * `batch_targets` - Vector of target matrices for the batch
+    ///
+    /// # Returns
+    /// Tuple containing (batch_error, number_of_correct_predictions)
+    fn process_batch(
+        &mut self,
+        batch_inputs: Vec<&Matrix>,
+        batch_targets: Vec<&Matrix>,
+    ) -> (f64, usize) {
+        // Combine batch inputs and targets into single matrices
+        let input_matrix = Matrix::concatenate(&batch_inputs, Axis(1));
+        let target_matrix = Matrix::concatenate(&batch_targets, Axis(1));
+
+        // Feed forward entire batch at once
+        let outputs = self.feed_forward(input_matrix);
+
+        // Evaluate batch results
+        let (batch_errors, batch_corrects) = self.evaluate_batch(&target_matrix, &outputs);
+        let batch_error = batch_errors.iter().sum::<f64>();
+        let batch_correct = batch_corrects.iter().sum::<usize>();
+
+        // Accumulate gradients for entire batch
+        let accumulated_gradients = self.accumulate_gradients(outputs, target_matrix);
+
+        // Update weights using accumulated gradients
+        self.update_weights(&accumulated_gradients);
+
+        (batch_error, batch_correct)
+    }
+
     fn train_epoch(
         &mut self,
         input_matrices: &[Matrix],
@@ -323,33 +357,7 @@ impl Network {
 
         // Process each mini-batch
         for (batch_inputs, batch_targets) in mini_batches {
-            // let mut accumulated_gradients = Vec::new();
-            let mut batch_error = 0.0;
-            let mut batch_correct = 0;
-
-            // Process each sample in the batch
-            // Combine batch inputs into a single matrix
-            // let batch_size = batch_inputs.len();
-            let input_refs: Vec<_> = batch_inputs.iter().map(|m| m as &Matrix).collect();
-            let target_refs: Vec<_> = batch_targets.iter().map(|m| m as &Matrix).collect();
-            let input_matrix = Matrix::concatenate(&input_refs, Axis(1));
-            let target_matrix = Matrix::concatenate(&target_refs, Axis(1));
-
-            // Feed forward entire batch at once
-            let outputs = self.feed_forward_batch(input_matrix);
-
-            // Evaluate batch results
-            let (batch_errors, batch_corrects) = self.evaluate_batch(&target_matrix, &outputs);
-            batch_error += batch_errors.iter().sum::<f64>();
-            batch_correct += batch_corrects.iter().sum::<usize>();
-
-            // Accumulate gradients for entire batch
-            let accumulated_gradients = self.accumulate_gradients_batch(outputs, target_matrix);
-
-            // Update weights using accumulated gradients
-            self.update_weights(&accumulated_gradients);
-
-            // Update statistics
+            let (batch_error, batch_correct) = self.process_batch(batch_inputs, batch_targets);
             total_error += batch_error;
             correct_predictions += batch_correct;
         }
@@ -417,7 +425,7 @@ impl Network {
     ///
     /// # Returns
     /// Output matrix where each column is the network's output for the corresponding input
-    fn feed_forward_batch(&mut self, inputs: Matrix) -> Matrix {
+    fn feed_forward(&mut self, inputs: Matrix) -> Matrix {
         assert!(
             self.layers[0] == inputs.rows(),
             "Invalid number of inputs. Expected {}, got {}",
@@ -661,7 +669,7 @@ mod tests {
         let mut network = create_test_network();
         let input = Matrix::from(vec![0.5]);
 
-        let output = network.feed_forward_batch(input);
+        let output = network.feed_forward(input);
 
         assert_eq!(output.rows(), 1);
         assert_eq!(output.cols(), 1);
@@ -674,7 +682,7 @@ mod tests {
         let mut network = create_test_network();
         let input = Matrix::from(vec![0.5]);
 
-        let output_ff = network.feed_forward_batch(input.clone());
+        let output_ff = network.feed_forward(input.clone());
         let output_predict = network.predict(input);
 
         assert_eq!(output_ff.rows(), output_predict.rows());
@@ -798,7 +806,7 @@ mod tests {
         let mut network = create_deep_network();
         let input = Matrix::from(vec![0.5, 0.3]);
 
-        let output = network.feed_forward_batch(input);
+        let output = network.feed_forward(input);
 
         assert_eq!(output.rows(), 2);
         assert_eq!(output.cols(), 1);
@@ -931,7 +939,7 @@ mod tests {
         // Test predictions with a more lenient error threshold
         let mut total_error = 0.0;
         for (input, target) in inputs.iter().zip(targets.iter()) {
-            let output = network.feed_forward_batch(input.clone());
+            let output = network.feed_forward(input.clone());
             let error = (target.get(0, 0) - output.get(0, 0)).abs();
             total_error += error;
         }
@@ -1019,8 +1027,8 @@ mod tests {
         let input = Matrix::from(vec![0.5]);
         let target = Matrix::from(vec![1.0]);
 
-        let output = network.feed_forward_batch(input);
-        let gradients = network.accumulate_gradients_batch(output, target);
+        let output = network.feed_forward(input);
+        let gradients = network.accumulate_gradients(output, target);
 
         assert_eq!(gradients.len(), network.weights.len());
         for (gradient, weight) in gradients.iter().zip(network.weights.iter()) {
@@ -1032,15 +1040,12 @@ mod tests {
     #[test]
     fn test_batch_processing() {
         let mut network = create_deep_network();
-        
+
         // Create a batch of inputs
-        let input = Matrix::new(2, 3, vec![
-            0.5, 0.3, 0.7,
-            0.2, 0.8, 0.4
-        ]);
+        let input = Matrix::new(2, 3, vec![0.5, 0.3, 0.7, 0.2, 0.8, 0.4]);
 
         // Process batch
-        let output = network.feed_forward_batch(input.clone());
+        let output = network.feed_forward(input.clone());
 
         // Check dimensions
         assert_eq!(output.rows(), 2); // Output layer size
@@ -1048,15 +1053,16 @@ mod tests {
 
         // Check all outputs are valid probabilities
         for val in output.data.iter() {
-            assert!(*val >= 0.0 && *val <= 1.0, "Output {} not between 0 and 1", val);
+            assert!(
+                *val >= 0.0 && *val <= 1.0,
+                "Output {} not between 0 and 1",
+                val
+            );
         }
 
         // Test gradient computation
-        let target = Matrix::new(2, 3, vec![
-            1.0, 0.0, 1.0,
-            0.0, 1.0, 0.0
-        ]);
-        let gradients = network.accumulate_gradients_batch(output, target);
+        let target = Matrix::new(2, 3, vec![1.0, 0.0, 1.0, 0.0, 1.0, 0.0]);
+        let gradients = network.accumulate_gradients(output, target);
 
         // Check gradient dimensions
         assert_eq!(gradients.len(), network.weights.len());
@@ -1116,7 +1122,7 @@ mod tests {
         let target = Matrix::from(vec![1.0]);
 
         // Separate feed_forward call to avoid multiple mutable borrows
-        let outputs = network.feed_forward_batch(input.clone());
+        let outputs = network.feed_forward(input.clone());
         let (error, _correct) = network.evaluate_sample(&target, &outputs);
 
         assert!(error >= 0.0, "Error should be non-negative");
@@ -1152,7 +1158,7 @@ mod tests {
         let target = Matrix::from(vec![1.0, 0.0, 0.0]); // One-hot encoded
 
         // Separate feed_forward call to avoid multiple mutable borrows
-        let outputs = network.feed_forward_batch(input.clone());
+        let outputs = network.feed_forward(input.clone());
         let (error, _correct) = network.evaluate_sample(&target, &outputs);
 
         assert!(error >= 0.0, "Error should be non-negative");
