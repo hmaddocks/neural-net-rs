@@ -123,6 +123,7 @@ impl Network {
         let nodes = network_config.nodes();
         let layer_pairs: Vec<_> = nodes.windows(2).collect();
 
+        // Fill weights with random values
         let weights = layer_pairs
             .iter()
             .map(|pair| {
@@ -131,6 +132,8 @@ impl Network {
             })
             .collect();
 
+        // Fill prev_weight_updates with zeros. There is one matrix for each weight matrix and it's dimensions
+        // are the input x output sizes of the corresponding weight matrix.
         let prev_weight_updates = layer_pairs
             .iter()
             .map(|pair| {
@@ -139,6 +142,7 @@ impl Network {
             })
             .collect();
 
+        // Fill data with empty matrices. There is one matrix for each layer.
         let mut data = Vec::with_capacity(network_config.layers.len());
         data.resize(network_config.layers.len(), Matrix::default());
 
@@ -180,7 +184,7 @@ impl Network {
 
         let total_samples = inputs.len();
         let mut indices: Vec<_> = (0..total_samples).collect();
-        indices.shuffle(&mut rng());
+        indices.shuffle(&mut rng()); // Not really needed, MNIST is already shuffled.
 
         indices
             .chunks(batch_size)
@@ -236,9 +240,13 @@ impl Network {
             .collect()
     }
 
-    /// Updates weights using accumulated gradients
+    /// Updates weights using accumulated gradients from a batch.
+    ///
+    /// Note: Gradients are applied as a sum rather than an average, meaning
+    /// the effective learning rate scales with batch size. Larger batches
+    /// will result in larger weight updates.
     fn update_weights(&mut self, accumulated_gradients: &[Matrix]) {
-        // Apply accumulated gradients without batch size scaling
+        // Apply summed gradients (not averaged by batch size)
         for i in 0..self.weights.len() {
             // Calculate weight updates with momentum
             let learning_term = accumulated_gradients[i].map(|x| x * self.learning_rate);
@@ -250,19 +258,29 @@ impl Network {
         }
     }
 
-    /// Evaluates a single sample and returns (error, is_correct)
+    /// Evaluates a single sample from a batch and returns its error and correctness.
+    ///
+    /// # Arguments
+    /// * `target` - Target matrix of shape (output_size x 1) for this sample
+    /// * `output` - Network output matrix of shape (output_size x 1) for this sample
+    ///
+    /// # Returns
+    /// Tuple containing (squared_error, is_prediction_correct)
     fn evaluate_sample(&self, target: &Matrix, output: &Matrix) -> (f64, bool) {
+        // Calculate squared error sum using fold
         let error = target - output;
-        let error_sum = error.data.iter().map(|x| x * x).sum();
+        let error_sum = error.data.iter().fold(0.0, |sum, &x| sum + x * x);
 
         // Determine if prediction is correct based on classification type
         let correct = if output.rows() == 1 {
-            // Binary classification
-            let predicted = output.get(0, 0) >= 0.5;
-            let actual = target.get(0, 0) >= 0.5;
-            predicted == actual
+            // Binary classification - compare thresholded values
+            (output.get(0, 0) >= 0.5) == (target.get(0, 0) >= 0.5)
         } else {
             // Multi-class classification - compare indices of maximum values
+            debug_assert!(!output.data.is_empty(), "Output vector should not be empty");
+            debug_assert!(!target.data.is_empty(), "Target vector should not be empty");
+
+            // Find index of maximum value for output and target
             let predicted = output
                 .data
                 .iter()
@@ -270,14 +288,16 @@ impl Network {
                 .filter(|(_, &val)| !val.is_nan())
                 .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
                 .map(|(idx, _)| idx)
-                .expect("No valid prediction found");
+                .unwrap(); // safe because output is not empty
+
             let actual = target
                 .data
                 .iter()
                 .enumerate()
                 .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
                 .map(|(idx, _)| idx)
-                .expect("No valid target found");
+                .unwrap(); // safe because target is not empty
+
             predicted == actual
         };
 
@@ -291,22 +311,16 @@ impl Network {
     /// * `outputs` - Output matrix where each column is a network output (output_size x batch_size)
     ///
     /// # Returns
-    /// (Vec of errors, Vec of correct predictions) for each sample in the batch
-    fn evaluate_batch(&self, targets: &Matrix, outputs: &Matrix) -> (Vec<f64>, Vec<usize>) {
-        let batch_size = targets.cols();
-        let mut errors = Vec::with_capacity(batch_size);
-        let mut corrects = Vec::with_capacity(batch_size);
-
-        // Calculate error and correctness for each sample in batch
-        for i in 0..batch_size {
+    /// (total_error, number_of_correct_predictions) for the batch
+    fn evaluate_batch(&self, targets: &Matrix, outputs: &Matrix) -> (f64, usize) {
+        // Calculate error and correctness for each sample in batch using iterators
+        (0..targets.cols()).fold((0.0, 0), |(total_error, total_correct), i| {
             let target_col = targets.slice(0..targets.rows(), i..i + 1);
             let output_col = outputs.slice(0..outputs.rows(), i..i + 1);
             let (error, correct) = self.evaluate_sample(&target_col, &output_col);
-            errors.push(error);
-            corrects.push(if correct { 1 } else { 0 });
-        }
 
-        (errors, corrects)
+            (total_error + error, total_correct + usize::from(correct))
+        })
     }
 
     /// Trains a single epoch and returns (total_error, correct_predictions, epoch_duration)
@@ -331,9 +345,7 @@ impl Network {
         let outputs = self.feed_forward(input_matrix);
 
         // Evaluate batch results
-        let (batch_errors, batch_corrects) = self.evaluate_batch(&target_matrix, &outputs);
-        let batch_error = batch_errors.iter().sum::<f64>();
-        let batch_correct = batch_corrects.iter().sum::<usize>();
+        let (batch_error, batch_correct) = self.evaluate_batch(&target_matrix, &outputs);
 
         // Accumulate gradients for entire batch
         let accumulated_gradients = self.accumulate_gradients(outputs, target_matrix);
@@ -344,6 +356,15 @@ impl Network {
         (batch_error, batch_correct)
     }
 
+    /// Trains the network for a single epoch.
+    ///
+    /// # Arguments
+    /// * `input_matrices` - Slice of input matrices
+    /// * `target_matrices` - Slice of target matrices
+    /// * `batch_size` - Size of each mini-batch
+    ///
+    /// # Returns
+    /// Tuple containing (total_error, number_of_correct_predictions)
     fn train_epoch(
         &mut self,
         input_matrices: &[Matrix],
