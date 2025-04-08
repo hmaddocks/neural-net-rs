@@ -205,13 +205,13 @@ impl Network {
     fn accumulate_gradients(&mut self, outputs: Matrix, targets: Matrix) -> Vec<Matrix> {
         let error = &targets - &outputs;
 
-        // Calculate all deltas for the batch
+        // Calculate deltas for all layers using iterator chain
         let mut deltas = Vec::with_capacity(self.weights.len());
-        let mut prev_delta = error.clone();
-        deltas.push(prev_delta.clone());
+        deltas.push(error.clone());
 
         // Calculate deltas for hidden layers
-        for i in (0..self.weights.len() - 1).rev() {
+        let mut prev_delta = error;
+        deltas.extend((0..self.weights.len() - 1).rev().map(|i| {
             let weight = &self.weights[i + 1];
             let activation_derivative =
                 self.activations[i].apply_derivative_vector(&self.data[i + 1]);
@@ -222,17 +222,17 @@ impl Network {
             let delta = propagated_error.elementwise_multiply(&activation_derivative);
 
             prev_delta = delta.clone();
-            deltas.push(delta);
-        }
+            delta
+        }));
 
-        // Calculate gradients for the batch
-        let mut gradients = Vec::with_capacity(self.weights.len());
-        for i in 0..self.weights.len() {
-            let input_with_bias = self.data[i].augment_with_bias();
-            let delta = &deltas[self.weights.len() - 1 - i];
-            gradients.push(delta.dot_multiply(&input_with_bias.transpose()));
-        }
-        gradients
+        // Calculate gradients
+        (0..self.weights.len())
+            .map(|i| {
+                let input_with_bias = self.data[i].augment_with_bias();
+                let delta = &deltas[self.weights.len() - 1 - i];
+                delta.dot_multiply(&input_with_bias.transpose())
+            })
+            .collect()
     }
 
     /// Updates weights using accumulated gradients
@@ -383,10 +383,11 @@ impl Network {
         progress_bar.set_style(style);
 
         let start_time = Instant::now();
+        let mut accuracy = 0.0;
 
         for _ in 1..=usize::from(self.epochs) {
             let (_, correct_predictions) = self.train_epoch(&inputs, &targets, 32);
-            let accuracy = (correct_predictions as f64 / total_samples as f64) * 100.0;
+            accuracy = (correct_predictions as f64 / total_samples as f64) * 100.0;
 
             progress_bar.set_message(format!("{:.2}%", accuracy));
             progress_bar.inc(1);
@@ -394,6 +395,7 @@ impl Network {
 
         progress_bar
             .finish_with_message(format!("Training completed in {:?}", start_time.elapsed()));
+        println!("Final accuracy: {:.2}%", accuracy);
     }
 
     /// Processes a single layer in the neural network.
@@ -436,17 +438,15 @@ impl Network {
         // Store original input
         self.data = vec![inputs.clone()];
 
-        // Process through layers
-        let mut current = inputs;
-        for (i, weight) in self.weights.iter().enumerate() {
-            let with_bias = current.augment_with_bias();
-            let output = Self::process_layer(weight, &with_bias, self.activations[i].as_ref());
-            self.data.push(output.clone());
-            current = output;
-        }
-        let result = current;
-
-        result
+        self.weights
+            .iter()
+            .enumerate()
+            .fold(inputs, |current, (i, weight)| {
+                let with_bias = current.augment_with_bias();
+                let output = Self::process_layer(weight, &with_bias, self.activations[i].as_ref());
+                self.data.push(output.clone());
+                output
+            })
     }
 
     /// Performs prediction without storing intermediate outputs.
