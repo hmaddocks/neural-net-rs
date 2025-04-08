@@ -12,3 +12,5 @@ assert_fs = "1.1.2"
 tempfile = "3.10.1"
 serde = { version = "1.0", features = ["derive"] }
 approx = "0.5"
+ndarray = { version = "0.16", features = ["serde"] }
+ndarray-stats = "0.5"

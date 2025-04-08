@@ -1,10 +1,47 @@
 use crate::MnistError;
 use matrix::matrix::Matrix;
+use ndarray::prelude::*;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Mean(f64);
+
+impl From<Mean> for f64 {
+    fn from(mean: Mean) -> Self {
+        mean.0
+    }
+}
+
+impl From<f64> for Mean {
+    fn from(value: f64) -> Self {
+        Mean(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StdDev(f64);
+
+impl TryFrom<f64> for StdDev {
+    type Error = &'static str;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        if value <= 0.0 {
+            Err("Standard deviation must be positive")
+        } else {
+            Ok(StdDev(value))
+        }
+    }
+}
+
+impl From<StdDev> for f64 {
+    fn from(std_dev: StdDev) -> Self {
+        std_dev.0
+    }
+}
 
 #[derive(Debug)]
 pub struct StandardizationParams {
-    mean: f64,
-    std_dev: f64,
+    mean: Mean,
+    std_dev: StdDev,
 }
 
 impl StandardizationParams {
@@ -17,7 +54,10 @@ impl StandardizationParams {
     /// # Returns
     /// * `StandardizationParams` - A new StandardizationParams with the given mean and standard deviation
     pub fn new(mean: f64, std_dev: f64) -> StandardizationParams {
-        StandardizationParams { mean, std_dev }
+        StandardizationParams {
+            mean: Mean::from(mean),
+            std_dev: StdDev::try_from(std_dev).unwrap(),
+        }
     }
 
     /// Builds a new StandardizationParams from a set of matrices.
@@ -28,42 +68,39 @@ impl StandardizationParams {
     /// # Returns
     /// * `StandardizationParams` - A new StandardizationParams with the computed mean and standard deviation
     pub fn build(mnist_data: &[Matrix]) -> Result<StandardizationParams, &'static str> {
-        let total_pixels: Vec<f64> = mnist_data
+        if mnist_data.is_empty() {
+            return Err("No data available for standardization");
+        }
+
+        // Concatenate all matrices into a single ndarray
+        let total_pixels: Array1<f64> = mnist_data
             .iter()
-            .map(|matrix| {
-                matrix
-                    .data
-                    .as_slice()
-                    .ok_or("Failed to get data slice from matrix")
-            })
-            .collect::<Result<Vec<&[f64]>, _>>()? // Collect results first
-            .into_iter()
+            .filter_map(|matrix| matrix.data.as_slice())
             .flat_map(|slice| slice.iter().copied())
             .collect();
 
         if total_pixels.is_empty() {
-            return Err("No data available for standardization");
+            return Err("Failed to get data from matrices");
         }
 
-        let mean = total_pixels.iter().sum::<f64>() / total_pixels.len() as f64;
-        let variance = total_pixels
-            .iter()
-            .map(|&x| (x - mean).powi(2))
-            .sum::<f64>()
-            / total_pixels.len() as f64;
-        let std_dev = variance.sqrt();
+        // Calculate mean and standard deviation using ndarray-stats
+        let mean = total_pixels.mean().unwrap_or(0.0);
+        let std_dev = total_pixels.std(0.0);
 
-        Ok(StandardizationParams { mean, std_dev })
+        Ok(StandardizationParams {
+            mean: Mean::from(mean),
+            std_dev: StdDev::try_from(std_dev).unwrap(),
+        })
     }
 
     /// Returns the mean of the data.
     pub fn mean(&self) -> f64 {
-        self.mean
+        f64::from(self.mean)
     }
 
     /// Returns the standard deviation of the data.
     pub fn std_dev(&self) -> f64 {
-        self.std_dev
+        f64::from(self.std_dev)
     }
 }
 
@@ -116,7 +153,7 @@ impl StandardizedMnistData {
                 "Failed to access matrix data",
             )))?
             .iter()
-            .map(|&x| (x - self.params.mean) / self.params.std_dev)
+            .map(|&x| (x - f64::from(self.params.mean)) / f64::from(self.params.std_dev))
             .collect();
 
         Ok(Matrix::new(matrix.rows(), matrix.cols(), standardized_data))
@@ -136,8 +173,8 @@ mod tests {
         let params = StandardizationParams::build(&data);
 
         let params = params.expect("Failed to build standardization params");
-        assert_relative_eq!(params.mean, 2.5, epsilon = 1e-10);
-        assert_relative_eq!(params.std_dev, 1.118033988749895, epsilon = 1e-10);
+        assert_relative_eq!(params.mean.0, 2.5, epsilon = 1e-10);
+        assert_relative_eq!(params.std_dev.0, 1.118033988749895, epsilon = 1e-10);
     }
 
     #[test]
