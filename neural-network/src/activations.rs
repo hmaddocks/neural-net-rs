@@ -321,6 +321,35 @@ mod tests {
     }
 
     #[test]
+    fn test_softmax_batch_operations() {
+        let softmax = SOFTMAX;
+        let input = Matrix::new(3, 3, vec![
+            1.0, 2.0, 3.0,
+            4.0, 5.0, 6.0,
+            7.0, 8.0, 9.0
+        ]);
+
+        let output = softmax.apply_vector(&input);
+
+        // Check dimensions
+        assert_eq!(output.rows(), 3);
+        assert_eq!(output.cols(), 3);
+
+        // Check each column sums to 1
+        for col in 0..output.cols() {
+            let sum: f64 = (0..output.rows())
+                .map(|row| output.data[[row, col]])
+                .sum();
+            assert!((sum - 1.0).abs() < 1e-6, "Column {} sum is {}, expected 1.0", col, sum);
+        }
+
+        // Check all values are between 0 and 1
+        for val in output.data.iter() {
+            assert!(*val >= 0.0 && *val <= 1.0, "Value {} not between 0 and 1", val);
+        }
+    }
+
+    #[test]
     fn test_softmax_numerical_stability() {
         // Test with large numbers that could cause overflow
         let input = vec![1000.0, 1000.1].into_matrix(2, 1);

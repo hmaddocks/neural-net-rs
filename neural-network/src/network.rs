@@ -661,7 +661,7 @@ mod tests {
         let mut network = create_test_network();
         let input = Matrix::from(vec![0.5]);
 
-        let output = network.feed_forward(input);
+        let output = network.feed_forward_batch(input);
 
         assert_eq!(output.rows(), 1);
         assert_eq!(output.cols(), 1);
@@ -674,7 +674,7 @@ mod tests {
         let mut network = create_test_network();
         let input = Matrix::from(vec![0.5]);
 
-        let output_ff = network.feed_forward(input.clone());
+        let output_ff = network.feed_forward_batch(input.clone());
         let output_predict = network.predict(input);
 
         assert_eq!(output_ff.rows(), output_predict.rows());
@@ -798,7 +798,7 @@ mod tests {
         let mut network = create_deep_network();
         let input = Matrix::from(vec![0.5, 0.3]);
 
-        let output = network.feed_forward(input);
+        let output = network.feed_forward_batch(input);
 
         assert_eq!(output.rows(), 2);
         assert_eq!(output.cols(), 1);
@@ -931,7 +931,7 @@ mod tests {
         // Test predictions with a more lenient error threshold
         let mut total_error = 0.0;
         for (input, target) in inputs.iter().zip(targets.iter()) {
-            let output = network.feed_forward(input.clone());
+            let output = network.feed_forward_batch(input.clone());
             let error = (target.get(0, 0) - output.get(0, 0)).abs();
             total_error += error;
         }
@@ -1019,9 +1019,46 @@ mod tests {
         let input = Matrix::from(vec![0.5]);
         let target = Matrix::from(vec![1.0]);
 
-        let output = network.feed_forward(input);
-        let gradients = network.accumulate_gradients(output, target);
+        let output = network.feed_forward_batch(input);
+        let gradients = network.accumulate_gradients_batch(output, target);
 
+        assert_eq!(gradients.len(), network.weights.len());
+        for (gradient, weight) in gradients.iter().zip(network.weights.iter()) {
+            assert_eq!(gradient.rows(), weight.rows());
+            assert_eq!(gradient.cols(), weight.cols());
+        }
+    }
+
+    #[test]
+    fn test_batch_processing() {
+        let mut network = create_deep_network();
+        
+        // Create a batch of inputs
+        let input = Matrix::new(2, 3, vec![
+            0.5, 0.3, 0.7,
+            0.2, 0.8, 0.4
+        ]);
+
+        // Process batch
+        let output = network.feed_forward_batch(input.clone());
+
+        // Check dimensions
+        assert_eq!(output.rows(), 2); // Output layer size
+        assert_eq!(output.cols(), 3); // Batch size
+
+        // Check all outputs are valid probabilities
+        for val in output.data.iter() {
+            assert!(*val >= 0.0 && *val <= 1.0, "Output {} not between 0 and 1", val);
+        }
+
+        // Test gradient computation
+        let target = Matrix::new(2, 3, vec![
+            1.0, 0.0, 1.0,
+            0.0, 1.0, 0.0
+        ]);
+        let gradients = network.accumulate_gradients_batch(output, target);
+
+        // Check gradient dimensions
         assert_eq!(gradients.len(), network.weights.len());
         for (gradient, weight) in gradients.iter().zip(network.weights.iter()) {
             assert_eq!(gradient.rows(), weight.rows());
@@ -1079,7 +1116,7 @@ mod tests {
         let target = Matrix::from(vec![1.0]);
 
         // Separate feed_forward call to avoid multiple mutable borrows
-        let outputs = network.feed_forward(input.clone());
+        let outputs = network.feed_forward_batch(input.clone());
         let (error, _correct) = network.evaluate_sample(&target, &outputs);
 
         assert!(error >= 0.0, "Error should be non-negative");
@@ -1115,7 +1152,7 @@ mod tests {
         let target = Matrix::from(vec![1.0, 0.0, 0.0]); // One-hot encoded
 
         // Separate feed_forward call to avoid multiple mutable borrows
-        let outputs = network.feed_forward(input.clone());
+        let outputs = network.feed_forward_batch(input.clone());
         let (error, _correct) = network.evaluate_sample(&target, &outputs);
 
         assert!(error >= 0.0, "Error should be non-negative");
