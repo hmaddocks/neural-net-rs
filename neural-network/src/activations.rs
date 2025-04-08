@@ -109,12 +109,34 @@ impl ActivationFunction for Softmax {
             // Normalize
             exp_matrix.map(|x| x / sum)
         } else {
-            // For matrices, apply softmax to each column independently
-            let exp_matrix = input.map(|x| E.powf(x));
-            let sums = exp_matrix.sum_axis(ndarray::Axis(0));
+            // For matrices, apply softmax to each column independently using ndarray operations
+            let mut shifted = input.data.clone();
 
-            // Normalize each column by its sum
-            exp_matrix.broadcast_apply(&sums, |x, sum| x / sum)
+            // Subtract max of each column for numerical stability
+            let max_per_col =
+                input
+                    .data
+                    .fold_axis(ndarray::Axis(0), f64::NEG_INFINITY, |&a, &b| a.max(b));
+            for (i, mut col) in shifted.axis_iter_mut(ndarray::Axis(1)).enumerate() {
+                let max_val = max_per_col[i];
+                col.map_inplace(|x| *x -= max_val);
+            }
+
+            // Apply exp to the shifted values
+            shifted.mapv_inplace(|x| E.powf(x));
+
+            // Sum along columns
+            let sums = shifted.sum_axis(ndarray::Axis(0));
+
+            // Divide each column by its sum (broadcasting)
+            for (i, mut col) in shifted.axis_iter_mut(ndarray::Axis(1)).enumerate() {
+                let sum = sums[i];
+                if sum > 0.0 {
+                    col.map_inplace(|x| *x /= sum);
+                }
+            }
+
+            Matrix { data: shifted }
         }
     }
 
