@@ -97,47 +97,29 @@ impl ActivationFunction for Softmax {
     }
 
     fn apply_vector(&self, input: &Matrix) -> Matrix {
-        // For column vectors, treat the entire vector as one group
-        if input.cols() == 1 {
+        // For both vectors and matrices, use column-wise operations
+        let mut result = input.data.clone();
+
+        // Process each column independently
+        for mut col in result.axis_iter_mut(ndarray::Axis(1)) {
             // Find maximum value for numerical stability
-            let max_val = input.data.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+            let max_val = col.fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
-            // Calculate exp(x - max) for each element and sum
-            let exp_matrix = input.map(|x| E.powf(x - max_val));
-            let sum = exp_matrix.data.sum();
+            // Apply exp(x - max) for numerical stability
+            col.mapv_inplace(|x| E.powf(x - max_val));
 
-            // Normalize
-            exp_matrix.map(|x| x / sum)
-        } else {
-            // For matrices, apply softmax to each column independently using ndarray operations
-            let mut shifted = input.data.clone();
-
-            // Subtract max of each column for numerical stability
-            let max_per_col =
-                input
-                    .data
-                    .fold_axis(ndarray::Axis(0), f64::NEG_INFINITY, |&a, &b| a.max(b));
-            for (i, mut col) in shifted.axis_iter_mut(ndarray::Axis(1)).enumerate() {
-                let max_val = max_per_col[i];
-                col.map_inplace(|x| *x -= max_val);
+            // Compute sum and normalize
+            let sum = col.sum();
+            if sum > 0.0 {
+                col.mapv_inplace(|x| x / sum);
+            } else {
+                // If sum is 0, set equal probabilities
+                let prob = 1.0 / col.len() as f64;
+                col.fill(prob);
             }
-
-            // Apply exp to the shifted values
-            shifted.mapv_inplace(|x| E.powf(x));
-
-            // Sum along columns
-            let sums = shifted.sum_axis(ndarray::Axis(0));
-
-            // Divide each column by its sum (broadcasting)
-            for (i, mut col) in shifted.axis_iter_mut(ndarray::Axis(1)).enumerate() {
-                let sum = sums[i];
-                if sum > 0.0 {
-                    col.map_inplace(|x| *x /= sum);
-                }
-            }
-
-            Matrix { data: shifted }
         }
+
+        Matrix { data: result }
     }
 
     fn apply_derivative_vector(&self, input: &Matrix) -> Matrix {
@@ -149,19 +131,16 @@ impl ActivationFunction for Softmax {
                 .as_slice()
                 .expect("Failed to get softmax output data");
 
-            let mut result = Matrix::zeros(rows, rows);
-
-            for i in 0..rows {
-                for j in 0..rows {
-                    result.data[[i, j]] = if i == j {
-                        probs[i] * (1.0 - probs[i])
-                    } else {
-                        -probs[i] * probs[j]
-                    };
+            // Create the Jacobian matrix
+            let result_data = ndarray::Array2::from_shape_fn((rows, rows), |(i, j)| {
+                if i == j {
+                    probs[i] * (1.0 - probs[i])
+                } else {
+                    -probs[i] * probs[j]
                 }
-            }
+            });
 
-            result
+            Matrix { data: result_data }
         } else {
             panic!("Softmax derivative not implemented for matrices with multiple columns")
         }
@@ -323,11 +302,7 @@ mod tests {
     #[test]
     fn test_softmax_batch_operations() {
         let softmax = SOFTMAX;
-        let input = Matrix::new(3, 3, vec![
-            1.0, 2.0, 3.0,
-            4.0, 5.0, 6.0,
-            7.0, 8.0, 9.0
-        ]);
+        let input = Matrix::new(3, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
 
         let output = softmax.apply_vector(&input);
 
@@ -337,15 +312,22 @@ mod tests {
 
         // Check each column sums to 1
         for col in 0..output.cols() {
-            let sum: f64 = (0..output.rows())
-                .map(|row| output.data[[row, col]])
-                .sum();
-            assert!((sum - 1.0).abs() < 1e-6, "Column {} sum is {}, expected 1.0", col, sum);
+            let sum: f64 = (0..output.rows()).map(|row| output.data[[row, col]]).sum();
+            assert!(
+                (sum - 1.0).abs() < 1e-6,
+                "Column {} sum is {}, expected 1.0",
+                col,
+                sum
+            );
         }
 
         // Check all values are between 0 and 1
         for val in output.data.iter() {
-            assert!(*val >= 0.0 && *val <= 1.0, "Value {} not between 0 and 1", val);
+            assert!(
+                *val >= 0.0 && *val <= 1.0,
+                "Value {} not between 0 and 1",
+                val
+            );
         }
     }
 
