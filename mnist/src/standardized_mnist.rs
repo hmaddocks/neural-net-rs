@@ -1,4 +1,5 @@
 use crate::MnistError;
+use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use ndarray::prelude::*;
 
@@ -128,10 +129,25 @@ impl StandardizedMnistData {
     /// # Returns
     /// * `Vec<Matrix>` - A vector of standardized matrices
     pub fn standardize(&self, mnist_data: &[Matrix]) -> Result<Vec<Matrix>, MnistError> {
-        mnist_data
-            .iter()
-            .map(|matrix| self.standardize_matrix(matrix))
-            .collect()
+        let progress = ProgressBar::new(mnist_data.len() as u64);
+
+        let style = ProgressStyle::default_bar()
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos:>7}/{len:7} {msg}",
+            )
+            .map_err(|e| e)?
+            .progress_chars("##-");
+        progress.set_style(style);
+        progress.set_message("Standardizing matrices...");
+        let mut standardized = Vec::with_capacity(mnist_data.len());
+
+        for matrix in mnist_data {
+            standardized.push(self.standardize_matrix(matrix)?);
+            progress.inc(1);
+        }
+
+        progress.finish();
+        Ok(standardized)
     }
 
     /// Standardizes a single matrix.

@@ -38,9 +38,13 @@ fn main() -> Result<()> {
         }
     };
 
-    println!("Standardizing MNIST data...");
     let standardized_params = StandardizationParams::build(&mnist_data.images())
         .map_err(|e| anyhow!("Failed to build standardization parameters: {}", e))?;
+    println!(
+        "Standardizing MNIST data, mean: {:.4}, std_dev: {:.4}...",
+        standardized_params.mean(),
+        standardized_params.std_dev()
+    );
     let standardized_data =
         StandardizedMnistData::new(standardized_params).standardize(&mnist_data.images())?;
 

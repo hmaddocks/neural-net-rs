@@ -105,9 +105,13 @@ fn main() -> Result<()> {
     println!("Loading test data...");
     let test_data = load_test_data().map_err(|e| anyhow!("Failed to load test data: {}", e))?;
 
-    println!("Standardizing test data...");
     let standardized_params = StandardizationParams::build(&test_data.images())
         .map_err(|e| anyhow!("Failed to build standardization parameters: {}", e))?;
+    println!(
+        "Standardizing MNIST data, mean: {:.4}, std_dev: {:.4}...",
+        standardized_params.mean(),
+        standardized_params.std_dev()
+    );
     let standardised_test_data = StandardizedMnistData::new(standardized_params)
         .standardize(&test_data.images())
         .map_err(|e| anyhow!("Failed to standardize test data: {}", e))?;
