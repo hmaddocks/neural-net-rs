@@ -323,7 +323,7 @@ impl Network {
         })
     }
 
-    /// Trains a single epoch and returns (total_error, correct_predictions, epoch_duration)
+    /// Trains a single epoch and returns (total_error, correct_predictions)
     /// Process a single batch of training data.
     ///
     /// # Arguments
