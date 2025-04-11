@@ -105,6 +105,7 @@ impl From<BatchSize> for usize {
         batch_size.0
     }
 }
+
 /// Configuration for a neural network.
 ///
 /// This struct holds all the parameters needed to define and train a neural network,

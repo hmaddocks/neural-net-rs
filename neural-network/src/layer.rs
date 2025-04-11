@@ -14,7 +14,7 @@ pub struct Layer {
     /// The number of nodes (neurons) in this layer.
     pub nodes: usize,
     /// The activation function applied to the output of this layer.
-    /// If `None`, no activation function is applied (e.g., for the input layer).
+    /// If `None`, no activation function is applied (e.g., for the output layer).
     pub activation: Option<ActivationType>,
 }
 
