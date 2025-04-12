@@ -10,7 +10,54 @@ use std::fs::File;
 use std::io::Write;
 use std::time::{Duration, Instant};
 
-type ConfusionMatrix = [[usize; 10]; 10];
+/// A confusion matrix for tracking model predictions vs actual values
+#[derive(Debug, Default)]
+struct ConfusionMatrix {
+    matrix: [[usize; 10]; 10],
+}
+
+impl ConfusionMatrix {
+    /// Creates a new empty confusion matrix
+    pub fn new() -> Self {
+        Self {
+            matrix: [[0; 10]; 10],
+        }
+    }
+
+    /// Records a prediction in the confusion matrix
+    pub fn record(&mut self, actual: usize, predicted: usize) {
+        self.matrix[actual][predicted] += 1;
+    }
+
+    /// Gets the value at a specific position
+    pub fn get(&self, actual: usize, predicted: usize) -> usize {
+        self.matrix[actual][predicted]
+    }
+}
+
+impl std::fmt::Display for ConfusionMatrix {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // write confusion matrix
+        writeln!(f, "\nConfusion Matrix:")?;
+        writeln!(f, "      Predicted →")?;
+        writeln!(
+            f,
+            "Actual     0    1    2    3    4    5    6    7    8    9"
+        )?;
+        writeln!(
+            f,
+            "  ↓   +--------------------------------------------------"
+        )?;
+        for i in 0..10 {
+            write!(f, "  {}   |", i)?;
+            for j in 0..10 {
+                write!(f, " {:4}", self.get(i, j))?;
+            }
+            writeln!(f)?;
+        }
+        Ok(())
+    }
+}
 
 /// Metrics for a single digit classification
 struct DigitMetrics {
@@ -34,9 +81,9 @@ fn create_progress_bar(total: u64) -> Result<ProgressBar> {
 
 /// Calculates metrics for a digit from the confusion matrix
 fn calculate_metrics(confusion_matrix: &ConfusionMatrix, digit: usize) -> DigitMetrics {
-    let true_positives = confusion_matrix[digit][digit];
-    let total_predictions: usize = confusion_matrix[digit].iter().sum();
-    let total_actuals: usize = (0..10).map(|i| confusion_matrix[i][digit]).sum();
+    let true_positives = confusion_matrix.get(digit, digit);
+    let total_predictions: usize = (0..10).map(|i| confusion_matrix.get(digit, i)).sum();
+    let total_actuals: usize = (0..10).map(|i| confusion_matrix.get(i, digit)).sum();
 
     let accuracy = (true_positives as f64) / (total_predictions.max(1) as f64);
     let precision = true_positives as f64 / total_actuals.max(1) as f64;
@@ -65,8 +112,8 @@ fn calculate_metrics(confusion_matrix: &ConfusionMatrix, digit: usize) -> DigitM
 /// * F1 Score - Harmonic mean of precision and recall (2 * precision * recall)/(precision + recall)
 ///
 /// The overall accuracy represents the total correct predictions across all digits.
-fn print_metrics(confusion_matrix: ConfusionMatrix, total: usize) {
-    let total_correct: usize = (0..10).map(|i| confusion_matrix[i][i]).sum();
+fn print_metrics(confusion_matrix: &ConfusionMatrix, total: usize) {
+    let total_correct: usize = (0..10).map(|i| confusion_matrix.get(i, i)).sum();
     let overall_accuracy = (total_correct as f64) / (total as f64) * 100.0;
 
     println!("\nPer-digit Metrics:");
@@ -86,44 +133,6 @@ fn print_metrics(confusion_matrix: ConfusionMatrix, total: usize) {
     }
 
     println!("\nOverall Accuracy: {:.2}%", overall_accuracy);
-}
-
-/// Prints a confusion matrix showing the neural network's prediction performance.
-///
-/// The matrix is a 10x10 grid where:
-/// - Rows represent the actual digit (0-9)
-/// - Columns represent what the model predicted (0-9)
-/// - Each cell [i][j] contains the count of how many times:
-///   * The actual digit was i
-///   * The model predicted j
-///
-/// Example:
-/// ```text
-/// Actual 5: |  12   1   0  39   4  808   8   3  11   6
-///           |   ↑   ↑   ↑   ↑   ↑   ↑    ↑   ↑   ↑   ↑
-/// Predicted |   0   1   2   3   4   5    6   7   8   9
-/// ```
-/// This row shows that when the actual digit was 5:
-/// - 808 times it was correctly predicted as 5
-/// - 39 times it was incorrectly predicted as 3
-/// - 12 times it was incorrectly predicted as 0
-/// - etc.
-///
-/// The diagonal (where row index equals column index) shows correct predictions.
-/// Everything off the diagonal represents mistakes.
-fn print_confusion_matrix(confusion_matrix: ConfusionMatrix) {
-    // Print confusion matrix
-    println!("\nConfusion Matrix:");
-    println!("      Predicted →");
-    println!("Actual     0    1    2    3    4    5    6    7    8    9");
-    println!("  ↓   +--------------------------------------------------");
-    for (i, row) in confusion_matrix.iter().enumerate() {
-        print!("  {}   |", i);
-        for &count in row.iter() {
-            print!(" {:4}", count);
-        }
-        println!();
-    }
 }
 
 fn format_duration(duration: Duration) -> String {
@@ -172,7 +181,7 @@ fn test() -> Result<()> {
         .context("Failed to standardize test data")?;
 
     println!("\nTesting network predictions...");
-    let mut confusion_matrix = [[0usize; 10]; 10];
+    let mut confusion_matrix = ConfusionMatrix::new();
     let total = standardised_test_data.len();
 
     let progress_bar = create_progress_bar(total as u64)?;
@@ -186,16 +195,16 @@ fn test() -> Result<()> {
                 .map_err(|e| anyhow!("Failed to get predicted digit: {}", e))?;
             let actual = get_actual_digit(label)
                 .map_err(|e| anyhow!("Failed to get actual digit: {}", e))?;
-            confusion_matrix[actual][predicted] += 1;
+            confusion_matrix.record(actual, predicted);
             progress_bar.inc(1);
             Ok(())
         })?;
 
     progress_bar.finish_with_message("Testing complete");
 
-    print_confusion_matrix(confusion_matrix);
+    println!("{}", confusion_matrix);
 
-    print_metrics(confusion_matrix, total);
+    print_metrics(&confusion_matrix, total);
 
     Ok(())
 }
