@@ -26,6 +26,7 @@
 ///     0.8,
 ///     30,
 ///     32,
+///     0.0001, // L2 regularization rate
 /// ).unwrap();
 ///
 /// // Create and save network
@@ -33,7 +34,9 @@
 /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
 /// ```
 use crate::activations::{ActivationFunction, ActivationType};
-use crate::network_config::{BatchSize, Epochs, LearningRate, Momentum, NetworkConfig};
+use crate::network_config::{
+    BatchSize, Epochs, LearningRate, Momentum, NetworkConfig, RegularizationRate,
+};
 use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use ndarray::Axis;
@@ -74,6 +77,8 @@ pub struct Network {
     epochs: Epochs,
     /// Batch size for training
     batch_size: BatchSize,
+    /// L2 regularization rate (weight decay)
+    regularization_rate: RegularizationRate,
 }
 
 impl Network {
@@ -108,6 +113,7 @@ impl Network {
     ///     0.8,
     ///     30,
     ///     32,
+    ///     0.0001, // L2 regularization rate
     /// ).unwrap();
     ///
     /// let network = Network::new(&config);
@@ -159,6 +165,7 @@ impl Network {
             std_dev: None,
             epochs: network_config.epochs,
             batch_size: network_config.batch_size,
+            regularization_rate: network_config.regularization_rate,
         }
     }
 
@@ -240,16 +247,22 @@ impl Network {
             .collect()
     }
 
-    /// Updates weights using accumulated gradients from a batch.
+    /// Updates weights using accumulated gradients from a batch, including L2 regularization.
     ///
     /// Note: Gradients are applied as a sum rather than an average, meaning
     /// the effective learning rate scales with batch size. Larger batches
     /// will result in larger weight updates.
+    ///
+    /// L2 regularization is applied by adding a penalty term proportional to the weight magnitude.
     fn update_weights(&mut self, accumulated_gradients: &[Matrix]) {
         // Apply summed gradients (not averaged by batch size)
         for i in 0..self.weights.len() {
             // Calculate weight updates with momentum
-            let learning_term = accumulated_gradients[i].map(|x| x * self.learning_rate);
+            // Calculate L2 regularization gradient (weight decay)
+            let l2_gradient = &self.weights[i] * self.regularization_rate;
+
+            // Combine accumulated gradients with L2 regularization
+            let learning_term = (&accumulated_gradients[i] + &l2_gradient) * self.learning_rate;
             let momentum_term = self.prev_weight_updates[i].map(|x| x * self.momentum);
 
             // Update weights and store updates for next iteration
@@ -313,14 +326,29 @@ impl Network {
     /// # Returns
     /// (total_error, number_of_correct_predictions) for the batch
     fn evaluate_batch(&self, targets: &Matrix, outputs: &Matrix) -> (f64, usize) {
-        // Calculate error and correctness for each sample in batch using iterators
-        (0..targets.cols()).fold((0.0, 0), |(total_error, total_correct), i| {
-            let target_col = targets.slice(0..targets.rows(), i..i + 1);
-            let output_col = outputs.slice(0..outputs.rows(), i..i + 1);
-            let (error, correct) = self.evaluate_sample(&target_col, &output_col);
+        let mut total_error = 0.0;
+        let mut correct_predictions = 0;
 
-            (total_error + error, total_correct + usize::from(correct))
-        })
+        // For each sample in the batch
+        for i in 0..targets.cols() {
+            let target = targets.col(i);
+            let output = outputs.col(i);
+            let (error, correct) = self.evaluate_sample(&target, &output);
+            total_error += error;
+            if correct {
+                correct_predictions += 1;
+            }
+        }
+
+        // Add L2 regularization term
+        let l2_term: f64 = self
+            .weights
+            .iter()
+            .map(|w| w.data.iter().map(|&x| x * x).sum::<f64>())
+            .sum::<f64>()
+            * (self.regularization_rate / 2.0);
+
+        (total_error + l2_term, correct_predictions)
     }
 
     /// Trains a single epoch and returns (total_error, correct_predictions)
@@ -619,6 +647,7 @@ mod tests {
             0.9,
             30,
             32,
+            0.0001,
         )
         .unwrap();
 
@@ -649,6 +678,7 @@ mod tests {
             0.9,
             30,
             32,
+            0.0001,
         )
         .unwrap();
 
@@ -676,6 +706,7 @@ mod tests {
             0.9,
             30,
             32,
+            0.0001,
         )
         .unwrap();
 
@@ -740,6 +771,7 @@ mod tests {
             0.9,
             2000,
             2, // Small batch size for XOR
+            0.0001,
         )
         .unwrap();
 
@@ -863,6 +895,7 @@ mod tests {
             0.9,
             1,
             32,
+            0.0001,
         )
         .unwrap();
 
@@ -923,6 +956,7 @@ mod tests {
             0.9,  // High momentum
             1000, // Number of epochs
             2,    // Small batch size for testing
+            0.0001,
         )
         .unwrap();
 
@@ -997,6 +1031,7 @@ mod tests {
             0.9,
             1000,
             32,
+            0.0001,
         )
         .unwrap();
 
@@ -1022,6 +1057,7 @@ mod tests {
                 f64::from(config.momentum),
                 usize::from(config.epochs),
                 batch_size,
+                0.0001,
             )
             .unwrap();
             let mut network = Network::new(&config);
@@ -1173,6 +1209,7 @@ mod tests {
             0.9,
             30,
             32,
+            0.0001,
         )
         .unwrap();
 

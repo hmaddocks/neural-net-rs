@@ -41,6 +41,7 @@ fn train_xor_network(c: &mut Criterion) {
             0.9,
             100,
             2,
+            0.0001,
         )
         .unwrap(),
     ];

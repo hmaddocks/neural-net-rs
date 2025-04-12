@@ -1,9 +1,9 @@
-use ndarray::{azip, concatenate, Array2, ArrayView2, Axis};
+use ndarray::{azip, concatenate, s, Array2, ArrayView2, Axis};
 use ndarray_rand::rand_distr::Uniform;
 use ndarray_rand::RandomExt;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::ops::{Add, Sub};
+use std::ops::{Add, Mul, Sub};
 
 /// A 2D matrix implementation optimized for neural network operations.
 ///
@@ -240,6 +240,24 @@ impl Matrix {
     pub fn cols(&self) -> usize {
         self.data.ncols()
     }
+
+    /// Get a specific column from the matrix
+    ///
+    /// # Arguments
+    /// * `col` - The index of the column to get
+    ///
+    /// # Returns
+    /// A new Matrix containing the specified column
+    pub fn col(&self, col: usize) -> Matrix {
+        Matrix {
+            data: self
+                .data
+                .slice(s![.., col])
+                .to_owned()
+                .into_shape_with_order((self.rows(), 1))
+                .unwrap(),
+        }
+    }
 }
 
 /// Implementation of the Add trait for Matrix references.
@@ -289,6 +307,31 @@ impl Sub for &Matrix {
         Matrix {
             data: &self.data - &other.data,
         }
+    }
+}
+
+/// Implementation of the Mul trait for f64 and Matrix references.
+///
+/// # Arguments
+/// * `other` - The scalar to multiply this matrix with
+///
+/// # Returns
+/// A new matrix containing the product of the scalar and the matrix
+impl Mul<f64> for &Matrix {
+    type Output = Matrix;
+
+    fn mul(self, other: f64) -> Self::Output {
+        Matrix {
+            data: &self.data * other,
+        }
+    }
+}
+
+impl Mul<Matrix> for f64 {
+    type Output = Matrix;
+
+    fn mul(self, matrix: Matrix) -> Self::Output {
+        &matrix * self
     }
 }
 
