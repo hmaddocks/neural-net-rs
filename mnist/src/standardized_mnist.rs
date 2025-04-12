@@ -68,20 +68,39 @@ impl StandardizationParams {
     ///
     /// # Returns
     /// * `StandardizationParams` - A new StandardizationParams with the computed mean and standard deviation
-    pub fn build(mnist_data: &[Matrix]) -> Result<StandardizationParams, &'static str> {
+    pub fn build(mnist_data: &[Matrix]) -> Result<StandardizationParams, MnistError> {
         if mnist_data.is_empty() {
-            return Err("No data available for standardization");
+            return Err(MnistError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "No data available for standardization",
+            )));
         }
+
+        let progress = ProgressBar::new(mnist_data.len() as u64);
+        let style = ProgressStyle::default_bar()
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos:>7}/{len:7} {msg}",
+            )
+            .map_err(|e| e)?
+            .progress_chars("##-");
+        progress.set_style(style);
+        progress.set_message("Processing matrices for standardization...");
 
         // Concatenate all matrices into a single ndarray
         let total_pixels: Array1<f64> = mnist_data
             .iter()
+            .inspect(|_| progress.inc(1))
             .filter_map(|matrix| matrix.data.as_slice())
             .flat_map(|slice| slice.iter().copied())
             .collect();
 
+        progress.finish();
+
         if total_pixels.is_empty() {
-            return Err("Failed to get data from matrices");
+            return Err(MnistError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Failed to get data from matrices",
+            )));
         }
 
         // Calculate mean and standard deviation using ndarray-stats
