@@ -6,14 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [[bin]]
-name = "train"
-path = "src/bin/train.rs"
-
-[[bin]]
-name = "test"
-path = "src/bin/test.rs"
-
-[[bin]]
 name = "guess_digit"
 path = "src/bin/guess_digit.rs"
 

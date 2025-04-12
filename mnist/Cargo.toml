@@ -11,6 +11,14 @@ indicatif = { version = "0.17.11" }
 assert_fs = "1.1.2"
 tempfile = "3.10.1"
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 approx = "0.5"
 ndarray = { version = "0.16", features = ["serde"] }
 ndarray-stats = "0.5"
+anyhow = "1.0"
+neural-network = { path = "../neural-network" }
+clap = { version = "4.0", features = ["derive"] }
+
+[[bin]]
+name = "mnist"
+path = "src/bin/mnist.rs"
