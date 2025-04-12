@@ -8,7 +8,6 @@ use neural_network::network_config::NetworkConfig;
 use serde_json;
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 type ConfusionMatrix = [[usize; 10]; 10];
@@ -151,37 +150,26 @@ fn test() -> Result<()> {
     println!("Loading test data...");
     let test_data = load_test_data().context("Failed to load test data")?;
 
-    let standardized_params = StandardizationParams::build(&test_data.images())
-        .context("Failed to build standardization parameters")?;
-    println!(
-        "Standardizing MNIST data, mean: {:.4}, std_dev: {:.4}...",
-        standardized_params.mean(),
-        standardized_params.std_dev()
-    );
+    println!("Loading trained network...");
+    let model_path =
+        std::env::current_dir().map_err(|e| anyhow!("Failed to get current directory: {}", e))?;
+    let model_path = model_path.join("models").join("trained_network.json");
+    let model_path = model_path
+        .to_str()
+        .ok_or(anyhow!("Failed to convert model path to string"))?;
+    let network =
+        Network::load(model_path).map_err(|e| anyhow!("Failed to load trained network: {}", e))?;
+
+    let standardized_params = if let (Some(mean), Some(std_dev)) = (network.mean, network.std_dev) {
+        StandardizationParams::new(mean, std_dev)
+    } else {
+        StandardizationParams::build(&test_data.images())
+            .map_err(|e| anyhow!("Failed to build standardization parameters: {}", e))?
+    };
+
     let standardised_test_data = StandardizedMnistData::new(standardized_params)
         .standardize(&test_data.images())
         .context("Failed to standardize test data")?;
-
-    let mut network = Network::new(&NetworkConfig::default());
-
-    println!("Training network...");
-    let start_time = Instant::now();
-    network.train(&standardised_test_data, &test_data.labels());
-    let duration = start_time.elapsed();
-
-    println!("Training completed in {}", format_duration(duration));
-
-    println!("Saving trained network...");
-    let model_path = std::env::current_dir()
-        .context("Failed to get current directory")?
-        .join("models")
-        .join("trained_network.json");
-    let model_path = model_path
-        .to_str()
-        .ok_or_else(|| anyhow!("Invalid UTF-8 in model path"))?;
-    network
-        .save(model_path)
-        .context("Failed to save trained network")?;
 
     println!("\nTesting network predictions...");
     let mut confusion_matrix = [[0usize; 10]; 10];
@@ -214,8 +202,7 @@ fn test() -> Result<()> {
 
 fn train() -> Result<()> {
     println!("Loading MNIST training data...");
-    let mnist_data = load_training_data()
-        .context("Failed to load training data")?;
+    let mnist_data = load_training_data().context("Failed to load training data")?;
 
     let standardized_params = StandardizationParams::build(&mnist_data.images())
         .map_err(|e| anyhow!("Failed to build standardization parameters: {}", e))?;
@@ -228,9 +215,8 @@ fn train() -> Result<()> {
         StandardizedMnistData::new(standardized_params).standardize(&mnist_data.images())?;
 
     println!("Loading network configuration...");
-    // Get the path to config.json in the consumer_binary root
-    let config_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
+    let config_path = std::env::current_dir()
+        .context("Failed to get current directory")?
         .join("config.json");
     let network_config = NetworkConfig::load(&config_path)
         .map_err(|e| anyhow!("Failed to load network configuration: {}", e))?;
@@ -253,36 +239,15 @@ fn train() -> Result<()> {
     );
 
     println!("Saving trained network...");
-    let network_json = match serde_json::to_string(&network) {
-        Ok(json) => json,
-        Err(e) => {
-            eprintln!("Failed to serialize network: {}", e);
-            return Err(e.into());
-        }
-    };
-    let model_path = match std::env::current_dir() {
-        Ok(path) => path.join("models").join("trained_network.json"),
-        Err(e) => {
-            eprintln!("Failed to get current directory: {}", e);
-            return Err(e.into());
-        }
-    };
+    let network_json = serde_json::to_string(&network).context("Failed to serialize network")?;
+    let model_path = std::env::current_dir()
+        .context("Failed to get current directory")?
+        .join("models")
+        .join("trained_network.json");
 
-    let mut file = match File::create(&model_path) {
-        Ok(file) => file,
-        Err(e) => {
-            eprintln!("Failed to create model file: {}", e);
-            return Err(e.into());
-        }
-    };
-    match file.write_all(network_json.as_bytes()) {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!("Failed to write model file: {}", e);
-            return Err(e.into());
-        }
-    };
-
+    let mut file = File::create(&model_path).context("Failed to create model file")?;
+    file.write_all(network_json.as_bytes())
+        .context("Failed to write model file")?;
     println!("Network trained and saved to {}", model_path.display());
     Ok(())
 }
