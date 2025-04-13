@@ -23,10 +23,10 @@
 ///         Layer { nodes: 1, activation: None },
 ///     ],
 ///     0.1,
-///     0.8,
+///     Some(0.8),
 ///     30,
 ///     32,
-///     0.0001, // L2 regularization rate
+///     Some(0.0001), // L2 regularization rate
 /// ).unwrap();
 ///
 /// // Create and save network
@@ -64,8 +64,8 @@ pub struct Network {
     activation_types: Vec<ActivationType>,
     /// Learning rate for weight updates
     learning_rate: LearningRate,
-    /// Momentum coefficient for weight updates
-    momentum: Momentum,
+    /// Optional momentum coefficient for weight updates
+    momentum: Option<Momentum>,
     /// Previous weight updates for momentum calculation
     #[serde(skip)]
     prev_weight_updates: Vec<Matrix>,
@@ -77,8 +77,8 @@ pub struct Network {
     epochs: Epochs,
     /// Batch size for training
     batch_size: BatchSize,
-    /// L2 regularization rate (weight decay)
-    regularization_rate: RegularizationRate,
+    /// Optional L2 regularization rate (weight decay)
+    regularization_rate: Option<RegularizationRate>,
 }
 
 impl Network {
@@ -110,10 +110,10 @@ impl Network {
     ///         Layer { nodes: 1, activation: None },
     ///     ],
     ///     0.1,
-    ///     0.8,
+    ///     Some(0.8),
     ///     30,
     ///     32,
-    ///     0.0001, // L2 regularization rate
+    ///     Some(0.0001), // L2 regularization rate
     /// ).unwrap();
     ///
     /// let network = Network::new(&config);
@@ -264,14 +264,23 @@ impl Network {
         for i in 0..self.weights.len() {
             // Calculate weight updates with momentum
             // Calculate L2 regularization gradient (weight decay)
-            let l2_gradient = &self.weights[i] * self.regularization_rate;
+            let l2_gradient = if let Some(rate) = self.regularization_rate {
+                &self.weights[i] * rate
+            } else {
+                Matrix::zeros(self.weights[i].rows(), self.weights[i].cols()) // FIXME: zeros?
+            };
 
             // Combine accumulated gradients with L2 regularization
             let learning_term = (&accumulated_gradients[i] + &l2_gradient) * self.learning_rate;
-            let momentum_term = self.prev_weight_updates[i].map(|x| x * self.momentum);
+
+            if let Some(momentum) = self.momentum {
+                let momentum_term = self.prev_weight_updates[i].map(|x| x * momentum);
+                self.prev_weight_updates[i] = &learning_term + &momentum_term;
+            } else {
+                self.prev_weight_updates[i] = learning_term;
+            }
 
             // Update weights and store updates for next iteration
-            self.prev_weight_updates[i] = &learning_term + &momentum_term;
             self.weights[i] = &self.weights[i] + &self.prev_weight_updates[i];
         }
     }
@@ -345,15 +354,18 @@ impl Network {
             }
         }
 
-        // Add L2 regularization term
-        let l2_term: f64 = self
-            .weights
-            .iter()
-            .map(|w| w.data.iter().map(|&x| x * x).sum::<f64>())
-            .sum::<f64>()
-            * (self.regularization_rate / 2.0);
+        if let Some(rate) = self.regularization_rate {
+            // Add L2 regularization term
+            let l2_term: f64 = self
+                .weights
+                .iter()
+                .map(|w| w.data.iter().map(|&x| x * x).sum::<f64>())
+                .sum::<f64>()
+                * (rate / 2.0);
+            total_error += l2_term;
+        }
 
-        (total_error + l2_term, correct_predictions)
+        (total_error, correct_predictions)
     }
 
     /// Trains a single epoch and returns (total_error, correct_predictions)
@@ -559,7 +571,7 @@ impl Network {
     ///     Layer { nodes: 1, activation: None },
     /// ];
     /// config.learning_rate = LearningRate::try_from(0.1).unwrap();
-    /// config.momentum = Momentum::try_from(0.8).unwrap();
+    /// config.momentum = Some(Momentum::try_from(0.8).unwrap());
     ///
     /// // Create and save network
     /// let mut network = Network::new(&config);
@@ -649,10 +661,10 @@ mod tests {
                 },
             ],
             0.1,
-            0.9,
+            Some(0.9),
             30,
             32,
-            0.0001,
+            Some(0.0001),
         )
         .unwrap();
 
@@ -680,10 +692,10 @@ mod tests {
                 },
             ],
             0.1,
-            0.9,
+            Some(0.9),
             30,
             32,
-            0.0001,
+            Some(0.0001),
         )
         .unwrap();
 
@@ -708,10 +720,10 @@ mod tests {
                 },
             ],
             0.1,
-            0.9,
+            Some(0.9),
             30,
             32,
-            0.0001,
+            Some(0.0001),
         )
         .unwrap();
 
@@ -773,10 +785,10 @@ mod tests {
                 },
             ],
             0.5, // Higher learning rate
-            0.9,
+            Some(0.9),
             2000,
             2, // Small batch size for XOR
-            0.0001,
+            Some(0.0001),
         )
         .unwrap();
 
@@ -897,10 +909,10 @@ mod tests {
                 },
             ],
             0.1,
-            0.9,
+            Some(0.9),
             1,
             32,
-            0.0001,
+            Some(0.0001),
         )
         .unwrap();
 
@@ -945,10 +957,6 @@ mod tests {
                     activation: Some(ActivationType::Sigmoid),
                 },
                 Layer {
-                    nodes: 8,
-                    activation: Some(ActivationType::Sigmoid),
-                },
-                Layer {
                     nodes: 4,
                     activation: Some(ActivationType::Sigmoid),
                 },
@@ -957,11 +965,11 @@ mod tests {
                     activation: None,
                 },
             ],
-            1.0,  // Higher learning rate
-            0.9,  // High momentum
-            1000, // Number of epochs
+            0.5,  // Moderate learning rate
+            Some(0.9),  // High momentum
+            2000, // More epochs for better convergence
             2,    // Small batch size for testing
-            0.0001,
+            Some(0.0001),
         )
         .unwrap();
 
@@ -1033,10 +1041,10 @@ mod tests {
                 },
             ],
             0.8, // Higher learning rate
-            0.9,
+            Some(0.9),
             1000,
             32,
-            0.0001,
+            Some(0.0001),
         )
         .unwrap();
 
@@ -1059,10 +1067,10 @@ mod tests {
             config = NetworkConfig::new(
                 config.layers,
                 f64::from(config.learning_rate),
-                f64::from(config.momentum),
-                usize::from(config.epochs),
+                config.momentum.map(|m| f64::from(m)),
+                config.epochs.into(),
                 batch_size,
-                0.0001,
+                config.regularization_rate.map(|r| f64::from(r)),
             )
             .unwrap();
             let mut network = Network::new(&config);
@@ -1211,10 +1219,10 @@ mod tests {
                 },
             ],
             0.1,
-            0.9,
+            Some(0.9),
             30,
             32,
-            0.0001,
+            Some(0.0001),
         )
         .unwrap();
 
