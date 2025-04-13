@@ -5,10 +5,10 @@ use mnist::mnist::{get_actual_digit, load_test_data, load_training_data};
 use mnist::{StandardizationParams, StandardizedMnistData};
 use neural_network::network::Network;
 use neural_network::network_config::NetworkConfig;
+use neural_network::matrix::Matrix;
+use ndarray::Axis;
 use serde_json;
-use std::fs::File;
-use std::io::Write;
-use std::time::{Duration, Instant};
+use std::{fs::File, io::Write, time::{Duration, Instant}};
 
 /// A confusion matrix for tracking model predictions vs actual values
 #[derive(Debug, Default)]
@@ -180,20 +180,34 @@ fn test() -> Result<()> {
         .standardize(&test_data.images())
         .context("Failed to standardize test data")?;
 
+    // Combine test data into matrices for batch processing
+    let test_matrix = Matrix::concatenate(
+        &standardised_test_data.iter().collect::<Vec<_>>(),
+        Axis(1)
+    );
+
+    // Get predictions for all test data at once
+    let output_matrix = network.predict(test_matrix);
+
+    // Combine labels into matrix
+    let label_matrix = Matrix::concatenate(
+        &test_data.labels().iter().collect::<Vec<_>>(),
+        Axis(1)
+    );
+
     println!("\nTesting network predictions...");
-    let mut confusion_matrix = ConfusionMatrix::new();
     let total = standardised_test_data.len();
-
     let progress_bar = create_progress_bar(total as u64)?;
+    let mut confusion_matrix = ConfusionMatrix::new();
 
-    standardised_test_data
-        .iter()
-        .zip(test_data.labels().iter())
-        .try_for_each(|(image, label)| -> Result<()> {
-            let output = network.predict(image.clone());
+    // Process predictions and update confusion matrix
+    (0..output_matrix.cols())
+        .try_for_each(|i| -> Result<()> {
+            let output = output_matrix.col(i);
+            let label = label_matrix.col(i);
             let predicted = get_actual_digit(&output)
                 .map_err(|e| anyhow!("Failed to get predicted digit: {}", e))?;
-            let actual = get_actual_digit(label)
+            let actual = get_actual_digit(&label)
                 .map_err(|e| anyhow!("Failed to get actual digit: {}", e))?;
             confusion_matrix.record(actual, predicted);
             progress_bar.inc(1);
