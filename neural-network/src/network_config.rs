@@ -1,13 +1,59 @@
 use crate::activations::{ActivationFunction, ActivationType, Sigmoid, Softmax};
 use crate::layer::Layer;
+use crate::matrix::Matrix;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs;
-use std::ops::Mul;
+use std::ops::{Div, Mul};
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LearningRate(f64);
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RegularizationRate(f64);
+
+impl TryFrom<f64> for RegularizationRate {
+    type Error = &'static str;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        if value >= 0.0 {
+            Ok(Self(value))
+        } else {
+            Err("Regularization rate must be non-negative")
+        }
+    }
+}
+
+impl From<RegularizationRate> for f64 {
+    fn from(rate: RegularizationRate) -> Self {
+        rate.0
+    }
+}
+
+// impl Mul<RegularizationRate> for f64 {
+//     type Output = f64;
+
+//     fn mul(self, rate: RegularizationRate) -> Self::Output {
+//         self * rate.0
+//     }
+// }
+
+impl Mul<RegularizationRate> for &Matrix {
+    type Output = Matrix;
+
+    fn mul(self, rate: RegularizationRate) -> Self::Output {
+        self * rate.0
+    }
+}
+
+impl Div<f64> for RegularizationRate {
+    type Output = f64;
+
+    fn div(self, value: f64) -> Self::Output {
+        self.0 / value
+    }
+}
 
 impl TryFrom<f64> for LearningRate {
     type Error = &'static str;
@@ -32,6 +78,38 @@ impl Mul<LearningRate> for f64 {
 
     fn mul(self, lr: LearningRate) -> Self::Output {
         self * lr.0
+    }
+}
+
+// impl Mul<LearningRate> for Matrix {
+//     type Output = Matrix;
+
+//     fn mul(self, lr: LearningRate) -> Self::Output {
+//         self * lr.0
+//     }
+// }
+
+impl Mul<LearningRate> for Matrix {
+    type Output = Matrix;
+
+    fn mul(self, lr: LearningRate) -> Self::Output {
+        &self * lr.0
+    }
+}
+
+impl Mul<LearningRate> for &Matrix {
+    type Output = Matrix;
+
+    fn mul(self, lr: LearningRate) -> Self::Output {
+        self * lr.0
+    }
+}
+
+impl Mul<Matrix> for LearningRate {
+    type Output = Matrix;
+
+    fn mul(self, matrix: Matrix) -> Self::Output {
+        &matrix * self.0
     }
 }
 
@@ -149,6 +227,9 @@ pub struct NetworkConfig {
     /// Larger batches provide more stable gradients but slower training.
     /// Default is 32.
     pub batch_size: BatchSize,
+
+    /// L2 regularization rate (weight decay)
+    pub regularization_rate: RegularizationRate,
 }
 
 impl NetworkConfig {
@@ -161,6 +242,7 @@ impl NetworkConfig {
     /// * `momentum` - Momentum coefficient for gradient descent
     /// * `epochs` - Number of training epochs
     /// * `batch_size` - Size of mini-batches for gradient descent
+    /// * `regularization_rate` - L2 regularization rate (weight decay)
     ///
     /// # Returns
     ///
@@ -171,6 +253,7 @@ impl NetworkConfig {
         momentum: f64,
         epochs: usize,
         batch_size: usize,
+        regularization_rate: f64,
     ) -> Option<Self> {
         Some(Self {
             layers: layers,
@@ -178,6 +261,7 @@ impl NetworkConfig {
             momentum: Momentum::try_from(momentum).ok()?,
             epochs: Epochs::try_from(epochs).ok()?,
             batch_size: BatchSize::try_from(batch_size).ok()?,
+            regularization_rate: RegularizationRate::try_from(regularization_rate).ok()?,
         })
     }
 
@@ -273,6 +357,7 @@ impl Default for NetworkConfig {
             momentum: Momentum::try_from(0.5).unwrap(),
             epochs: Epochs::try_from(30).unwrap(),
             batch_size: BatchSize::try_from(32).unwrap(),
+            regularization_rate: RegularizationRate::try_from(0.0001).unwrap(), // Small default L2 regularization
         }
     }
 }
