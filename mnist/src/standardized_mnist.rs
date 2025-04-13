@@ -124,11 +124,11 @@ impl StandardizationParams {
     }
 }
 
-pub struct StandardizedMnistData {
-    params: StandardizationParams,
+pub struct StandardizedMnistData<'a> {
+    params: &'a StandardizationParams,
 }
 
-impl StandardizedMnistData {
+impl<'a> StandardizedMnistData<'a> {
     /// Returns a new StandardizedMnistData with the given MnistData and StandardizationParams.
     ///
     /// # Arguments
@@ -136,7 +136,7 @@ impl StandardizedMnistData {
     ///
     /// # Returns
     /// * `StandardizedMnistData` - A new StandardizedMnistData with the given StandardizationParams
-    pub fn new(params: StandardizationParams) -> StandardizedMnistData {
+    pub fn new(params: &'a StandardizationParams) -> StandardizedMnistData<'a> {
         StandardizedMnistData { params }
     }
 
@@ -220,7 +220,7 @@ mod tests {
         ];
         let params = StandardizationParams::build(&data);
         let params = params.expect("Failed to build standardization params");
-        let standardized_data = StandardizedMnistData::new(params)
+        let standardized_data = StandardizedMnistData::new(&params)
             .standardize(&data)
             .unwrap();
 

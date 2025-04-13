@@ -176,7 +176,7 @@ fn test() -> Result<()> {
             .map_err(|e| anyhow!("Failed to build standardization parameters: {}", e))?
     };
 
-    let standardised_test_data = StandardizedMnistData::new(standardized_params)
+    let standardised_test_data = StandardizedMnistData::new(&standardized_params)
         .standardize(&test_data.images())
         .context("Failed to standardize test data")?;
 
@@ -221,7 +221,7 @@ fn train() -> Result<()> {
         standardized_params.std_dev()
     );
     let standardized_data =
-        StandardizedMnistData::new(standardized_params).standardize(&mnist_data.images())?;
+        StandardizedMnistData::new(&standardized_params).standardize(&mnist_data.images())?;
 
     println!("Loading network configuration...");
     let config_path = std::env::current_dir()
@@ -233,6 +233,10 @@ fn train() -> Result<()> {
     println!("Creating network...");
     // Create network from configuration
     let mut network = Network::new(&network_config);
+
+    let mean = standardized_params.mean();
+    let std_dev = standardized_params.std_dev();
+    network.set_standardization_parameters(Some(mean), Some(std_dev));
 
     println!("{network_config}");
 
