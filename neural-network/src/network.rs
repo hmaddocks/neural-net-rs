@@ -303,7 +303,7 @@ impl Network {
                 .data
                 .iter()
                 .enumerate()
-                .filter(|(_, &val)| !val.is_nan())
+                .filter(|&(_, &val)| !val.is_nan())
                 .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
                 .map(|(idx, _)| idx)
                 .unwrap(); // safe because output is not empty
