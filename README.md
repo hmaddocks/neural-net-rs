@@ -2,7 +2,9 @@
 
 This code was originally forked from [neural-net-rs](https://github.com/codemoonsxyz/neural-net-rs). It has been changed and extended so much that it no longer bears any resemblance to the original code. I would like to thank the original author for their work and for inspiring me to extend this project.
 
-There are two interesting branches
+I've merged everything into the `main` branch now so you can ignore this...
+
+~~There are two interesting branches~~
 
 * `main` This is my "stream of consciousness" code that poured out of me one weekend. It became overly complicated because I added multithreading half way through then tried to back it out. Threading isn't the best way to optimise neural networks. Not immediately anyway.
 * `mnist` This was a new start where I concentrate on getting the code correct first. I'm pretty happy where this code is and I'll use this branch as the basis for future development.
