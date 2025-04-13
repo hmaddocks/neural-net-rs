@@ -81,14 +81,6 @@ impl Mul<LearningRate> for f64 {
     }
 }
 
-// impl Mul<LearningRate> for Matrix {
-//     type Output = Matrix;
-
-//     fn mul(self, lr: LearningRate) -> Self::Output {
-//         self * lr.0
-//     }
-// }
-
 impl Mul<LearningRate> for Matrix {
     type Output = Matrix;
 
@@ -368,10 +360,20 @@ impl fmt::Display for NetworkConfig {
         for (i, layer) in self.layers.iter().enumerate() {
             writeln!(f, "  Layer {}: {}", i, layer)?;
         }
-        writeln!(f, "  Learning Rate: {:.4}", f64::from(self.learning_rate))?;
-        writeln!(f, "  Momentum:      {:.4}", f64::from(self.momentum))?;
-        writeln!(f, "  Epochs:        {}", usize::from(self.epochs))?;
-        write!(f, "  Batch Size:    {}", usize::from(self.batch_size))
+        writeln!(
+            f,
+            "  Learning Rate:       {:.4}",
+            f64::from(self.learning_rate)
+        )?;
+        writeln!(f, "  Momentum:            {:.4}", f64::from(self.momentum))?;
+        writeln!(f, "  Epochs:              {}", usize::from(self.epochs))?;
+        writeln!(f, "  Batch Size:          {}", usize::from(self.batch_size))?;
+        write!(
+            f,
+            "  Regularization Rate: {:.4}",
+            f64::from(self.regularization_rate)
+        )?;
+        Ok(())
     }
 }
 
@@ -530,9 +532,11 @@ mod tests {
         file.write_all(config_json.as_bytes()).unwrap();
 
         let error = NetworkConfig::load(&config_path).unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("invalid value: integer `-30`, expected usize"));
+        assert!(
+            error
+                .to_string()
+                .contains("invalid value: integer `-30`, expected usize")
+        );
     }
 
     #[test]
