@@ -1,7 +1,10 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use matrix::matrix::Matrix;
 use neural_network::{
-    activations::ActivationType, layer::Layer, network::Network, network_config::NetworkConfig,
+    activations::ActivationType,
+    layer::Layer,
+    network::Network,
+    network_config::{Momentum, NetworkConfig, RegularizationRate},
 };
 
 fn train_xor_network(c: &mut Criterion) {
@@ -38,10 +41,10 @@ fn train_xor_network(c: &mut Criterion) {
                 },
             ],
             0.5,
-            0.9,
-            100,
+            30,
             2,
-            0.0001,
+            Some(Momentum::try_from(0.5).unwrap()),
+            Some(RegularizationRate::try_from(0.0001).unwrap()),
         )
         .unwrap(),
     ];
