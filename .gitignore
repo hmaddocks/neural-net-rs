@@ -1,4 +1,4 @@
 target/
-
-# windsurf rules
-.windsurfrules
+models/
+mnist/data/
+flamegraph.svg

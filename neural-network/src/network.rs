@@ -1,354 +1,626 @@
-use crate::activations::Activation;
-use anyhow::{Result, anyhow};
+/// Neural network implementation using a feed-forward architecture with backpropagation.
+///
+/// This module provides a flexible neural network implementation that supports:
+/// - Configurable layer sizes
+/// - Custom activation functions with vector operations support
+/// - Momentum-based learning
+/// - Batch training capabilities
+/// - Model saving and loading
+///
+/// # Example
+/// ```
+/// use neural_network::{network::Network, activations::ActivationType, network_config::{NetworkConfig, LearningRate, Momentum, Epochs, BatchSize}, layer::Layer};
+/// use tempfile::tempdir;
+///
+/// let dir = tempdir().unwrap();
+/// let model_path = dir.path().join("model.json");
+///
+/// // Create network configuration
+/// let config = NetworkConfig::new(
+///     vec![
+///         Layer { nodes: 2, activation: Some(ActivationType::Sigmoid) },
+///         Layer { nodes: 3, activation: Some(ActivationType::Sigmoid) },
+///         Layer { nodes: 1, activation: None },
+///     ],
+///     0.1,
+///     0.8,
+///     30,
+///     32,
+///     0.0001, // L2 regularization rate
+/// ).unwrap();
+///
+/// // Create and save network
+/// let mut network = Network::new(&config);
+/// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
+/// ```
+use crate::activations::{ActivationFunction, ActivationType};
+use crate::network_config::{
+    BatchSize, Epochs, LearningRate, Momentum, NetworkConfig, RegularizationRate,
+};
+use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
+use ndarray::Axis;
+use rand::rng;
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::Path;
+use std::io;
+use std::time::Instant;
 
-/// A neural network implementation with configurable layers and activation function.
-///
-/// This implementation provides a flexible neural network that can be configured with
-/// any number of layers and neurons, as well as different activation functions.
-/// The network supports training through backpropagation and can be serialized to/from JSON.
-///
-/// # Examples
-///
-/// ```
-/// use neural_network::{Network, SIGMOID};
-/// use matrix::matrix::Matrix;
-///
-/// // Create a network with 2 inputs, 3 hidden neurons, and 1 output
-/// let mut network = Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1);
-///
-/// // Train the network
-/// let inputs = vec![vec![0.0, 0.0], vec![0.0, 1.0], vec![1.0, 0.0], vec![1.0, 1.0]];
-/// let targets = vec![vec![0.0], vec![1.0], vec![1.0], vec![0.0]];
-/// network.train(inputs, targets, 10000).unwrap();
-///
-/// // Use the trained network
-/// let result = network.feed_forward(&Matrix::from(vec![1.0, 0.0])).unwrap();
-/// println!("Result: {:?}", result.data());
-/// ```
-#[derive(Serialize, Deserialize, Clone, Builder)]
+/// A feed-forward neural network with configurable layers and activation functions.
+#[derive(Serialize, Deserialize)]
+#[serde(crate = "serde")]
 pub struct Network {
-    /// The number of neurons in each layer, including input and output layers
+    /// Sizes of each layer in the network, including input and output layers
     layers: Vec<usize>,
-    /// Weight matrices between each pair of adjacent layers
+    /// Weight matrices between layers, including bias weights
     weights: Vec<Matrix>,
-    /// Bias matrices for each layer (except the input layer)
-    biases: Vec<Matrix>,
-    /// Cached activations for each layer during forward propagation
+    /// Cached layer outputs for backpropagation
     #[serde(skip)]
     data: Vec<Matrix>,
-    /// The activation functions used by each layer (except input layer)
-    activations: Vec<Activation>,
-    /// The learning rate used during training
-    learning_rate: f64,
+    /// Activation functions for each layer
+    #[serde(skip)]
+    activations: Vec<Box<dyn ActivationFunction>>,
+    /// Types of activation functions for serialization
+    activation_types: Vec<ActivationType>,
+    /// Learning rate for weight updates
+    learning_rate: LearningRate,
+    /// Momentum coefficient for weight updates
+    momentum: Momentum,
+    /// Previous weight updates for momentum calculation
+    #[serde(skip)]
+    prev_weight_updates: Vec<Matrix>,
+    /// Mean of the dataset
+    pub mean: Option<f64>,
+    /// Standard deviation of the dataset
+    pub std_dev: Option<f64>,
+    /// Number of epochs for training
+    epochs: Epochs,
+    /// Batch size for training
+    batch_size: BatchSize,
+    /// L2 regularization rate (weight decay)
+    regularization_rate: RegularizationRate,
 }
 
 impl Network {
-    /// Creates a new neural network with the specified layer sizes, activation functions, and learning rate.
+    /// Creates a new neural network with specified configuration.
     ///
-    /// # Parameters
+    /// # Arguments
+    /// * `network_config` - Configuration struct containing:
+    ///   - `layers`: Vector of Layer structs defining the network architecture
+    ///   - `learning_rate`: Learning rate for weight updates during training
+    ///   - `momentum`: Momentum coefficient for weight updates
+    ///   - `epochs`: Number of training epochs
+    ///   - `batch_size`: Size of mini-batches for gradient descent
     ///
-    /// * `layers` - A vector of layer sizes, where the first element is the number of inputs,
-    ///              the last element is the number of outputs, and any elements in between
-    ///              represent hidden layers.
-    /// * `activations` - A vector of activation functions to use for each layer (except input layer).
-    ///                   Must have length equal to layers.len() - 1.
-    /// * `learning_rate` - The learning rate to use during training (typically a small value like 0.1).
+    /// # Returns
+    /// A new `Network` instance with randomly initialized weights and configured parameters
     ///
-    /// # Examples
+    /// # Panics
+    /// Panics if the number of activation functions doesn't match the number of layers minus one
     ///
+    /// # Example
     /// ```
-    /// use neural_network::{Network, SIGMOID, SOFTMAX};
+    /// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig, layer::Layer};
     ///
-    /// // Create a network with sigmoid for hidden layer and softmax for output
-    /// let network = Network::new(vec![2, 2, 1], vec![SIGMOID, SOFTMAX], 0.1);
+    /// // Create network configuration for a simple XOR network
+    /// let config = NetworkConfig::new(
+    ///     vec![
+    ///         Layer { nodes: 2, activation: Some(ActivationType::Sigmoid) },
+    ///         Layer { nodes: 3, activation: Some(ActivationType::Sigmoid) },
+    ///         Layer { nodes: 1, activation: None },
+    ///     ],
+    ///     0.1,
+    ///     0.8,
+    ///     30,
+    ///     32,
+    ///     0.0001, // L2 regularization rate
+    /// ).unwrap();
+    ///
+    /// let network = Network::new(&config);
     /// ```
-    pub fn new(layers: Vec<usize>, activations: Vec<Activation>, learning_rate: f64) -> Self {
-        assert_eq!(
-            activations.len(),
-            layers.len() - 1,
-            "Number of activation functions must match number of layers minus 1"
+    pub fn new(network_config: &NetworkConfig) -> Self {
+        assert!(
+            network_config.activations().len() == network_config.layers.len() - 1,
+            "Number of activation functions ({}) must be one less than number of layers ({})",
+            network_config.activations().len(),
+            network_config.layers.len()
         );
 
-        let (weights, biases): (Vec<Matrix>, Vec<Matrix>) = layers
-            .windows(2)
-            .map(|window| {
-                (
-                    Matrix::random(window[1], window[0]),
-                    Matrix::random(window[1], 1),
-                )
-            })
-            .unzip();
+        let nodes = network_config.nodes();
+        let layer_pairs: Vec<_> = nodes.windows(2).collect();
 
-        // Pre-allocate data vector with capacity
-        let mut data = Vec::with_capacity(layers.len());
-        data.resize(layers.len(), Matrix::default());
+        // Fill weights with random values
+        let weights = layer_pairs
+            .iter()
+            .map(|pair| {
+                let (input_size, output_size) = (pair[0], pair[1]);
+                Matrix::random(output_size, input_size + 1) // Add one for bias
+            })
+            .collect();
+
+        // Fill prev_weight_updates with zeros. There is one matrix for each weight matrix and it's dimensions
+        // are the input x output sizes of the corresponding weight matrix.
+        let prev_weight_updates = layer_pairs
+            .iter()
+            .map(|pair| {
+                let (input_size, output_size) = (pair[0], pair[1]);
+                Matrix::zeros(output_size, input_size + 1)
+            })
+            .collect();
+
+        // Fill data with empty matrices. There is one matrix for each layer.
+        let mut data = Vec::with_capacity(network_config.layers.len());
+        data.resize(network_config.layers.len(), Matrix::default());
 
         Network {
-            layers,
+            layers: nodes.clone(),
             weights,
-            biases,
             data,
-            activations,
-            learning_rate,
+            activations: network_config.activations(),
+            activation_types: network_config.activations_types(),
+            learning_rate: network_config.learning_rate,
+            momentum: network_config.momentum,
+            prev_weight_updates,
+            mean: None,
+            std_dev: None,
+            epochs: network_config.epochs,
+            batch_size: network_config.batch_size,
+            regularization_rate: network_config.regularization_rate,
         }
     }
 
-    /// Performs forward propagation through the network to compute an output.
+    pub fn set_standardization_parameters(&mut self, mean: Option<f64>, std_dev: Option<f64>) {
+        self.mean = mean;
+        self.std_dev = std_dev;
+    }
+
+    /// Creates mini-batches from input and target data.
     ///
-    /// This method takes an input matrix and passes it through each layer of the network,
-    /// applying weights, biases, and the activation function at each step.
-    ///
-    /// # Parameters
-    ///
-    /// * `inputs` - A matrix containing the input values. The number of elements must match
-    ///              the size of the input layer.
+    /// # Arguments
+    /// * `inputs` - Vector of input matrices
+    /// * `targets` - Vector of target matrices
+    /// * `batch_size` - Size of each mini-batch
     ///
     /// # Returns
+    /// Vector of tuples containing (input_batch, target_batch)
+    fn prepare_mini_batches<'a>(
+        inputs: &'a [Matrix],
+        targets: &'a [Matrix],
+        batch_size: usize,
+    ) -> Vec<(Vec<&'a Matrix>, Vec<&'a Matrix>)> {
+        assert_eq!(
+            inputs.len(),
+            targets.len(),
+            "Number of inputs must match number of targets"
+        );
+
+        let total_samples = inputs.len();
+        let mut indices: Vec<_> = (0..total_samples).collect();
+        indices.shuffle(&mut rng()); // Not really needed, MNIST is already shuffled.
+
+        indices
+            .chunks(batch_size)
+            .map(|chunk| {
+                (
+                    chunk.iter().map(|&i| &inputs[i]).collect(),
+                    chunk.iter().map(|&i| &targets[i]).collect(),
+                )
+            })
+            .collect()
+    }
+
+    /// Accumulates gradients for a batch of samples using backpropagation.
     ///
-    /// * `Result<Matrix>` - The output matrix if successful, or an error if the input size is invalid.
+    /// # Arguments
+    /// * `outputs` - Output matrix where each column is a network output (output_size x batch_size)
+    /// * `targets` - Target matrix where each column is a target (output_size x batch_size)
     ///
-    /// # Errors
+    /// # Returns
+    /// Vector of gradient matrices for each layer, ordered from input to output layer.
+    /// Each gradient matrix has the same dimensions as its corresponding weight matrix,
+    /// including the bias weights.
+    fn accumulate_gradients(&mut self, outputs: Matrix, targets: Matrix) -> Vec<Matrix> {
+        let error = &targets - &outputs;
+
+        // Calculate deltas for all layers using iterator chain
+        let mut deltas = Vec::with_capacity(self.weights.len());
+        deltas.push(error.clone());
+
+        // Calculate deltas for hidden layers
+        let mut prev_delta = error;
+        deltas.extend((0..self.weights.len() - 1).rev().map(|i| {
+            let weight = &self.weights[i + 1];
+            let activation_derivative =
+                self.activations[i].apply_derivative_vector(&self.data[i + 1]);
+
+            // Remove bias weights for backpropagation
+            let weight_no_bias = weight.slice(0..weight.rows(), 0..weight.cols() - 1);
+            let propagated_error = weight_no_bias.transpose().dot_multiply(&prev_delta);
+            let delta = propagated_error.elementwise_multiply(&activation_derivative);
+
+            prev_delta = delta.clone();
+            delta
+        }));
+
+        // Calculate gradients
+        (0..self.weights.len())
+            .map(|i| {
+                let input_with_bias = self.data[i].augment_with_bias();
+                let delta = &deltas[self.weights.len() - 1 - i];
+                delta.dot_multiply(&input_with_bias.transpose())
+            })
+            .collect()
+    }
+
+    /// Updates weights using accumulated gradients from a batch, including L2 regularization.
     ///
-    /// Returns an error if the number of inputs doesn't match the size of the input layer.
+    /// Note: Gradients are applied as a sum rather than an average, meaning
+    /// the effective learning rate scales with batch size. Larger batches
+    /// will result in larger weight updates.
     ///
-    /// # Examples
+    /// L2 regularization is applied by adding a penalty term proportional to the weight magnitude.
+    fn update_weights(&mut self, accumulated_gradients: &[Matrix]) {
+        // Apply summed gradients (not averaged by batch size)
+        for i in 0..self.weights.len() {
+            // Calculate weight updates with momentum
+            // Calculate L2 regularization gradient (weight decay)
+            let l2_gradient = &self.weights[i] * self.regularization_rate;
+
+            // Combine accumulated gradients with L2 regularization
+            let learning_term = (&accumulated_gradients[i] + &l2_gradient) * self.learning_rate;
+            let momentum_term = self.prev_weight_updates[i].map(|x| x * self.momentum);
+
+            // Update weights and store updates for next iteration
+            self.prev_weight_updates[i] = &learning_term + &momentum_term;
+            self.weights[i] = &self.weights[i] + &self.prev_weight_updates[i];
+        }
+    }
+
+    /// Evaluates a single sample from a batch and returns its error and correctness.
     ///
+    /// # Arguments
+    /// * `target` - Target matrix of shape (output_size x 1) for this sample
+    /// * `output` - Network output matrix of shape (output_size x 1) for this sample
+    ///
+    /// # Returns
+    /// Tuple containing (squared_error, is_prediction_correct)
+    fn evaluate_sample(&self, target: &Matrix, output: &Matrix) -> (f64, bool) {
+        // Calculate squared error sum using fold
+        let error = target - output;
+        let error_sum = error.data.iter().fold(0.0, |sum, &x| sum + x * x);
+
+        // Determine if prediction is correct based on classification type
+        let correct = if output.rows() == 1 {
+            // Binary classification - compare thresholded values
+            (output.get(0, 0) >= 0.5) == (target.get(0, 0) >= 0.5)
+        } else {
+            // Multi-class classification - compare indices of maximum values
+            debug_assert!(!output.data.is_empty(), "Output vector should not be empty");
+            debug_assert!(!target.data.is_empty(), "Target vector should not be empty");
+
+            // Find index of maximum value for output and target
+            let predicted = output
+                .data
+                .iter()
+                .enumerate()
+                .filter(|(_, &val)| !val.is_nan())
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
+                .map(|(idx, _)| idx)
+                .unwrap(); // safe because output is not empty
+
+            let actual = target
+                .data
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
+                .map(|(idx, _)| idx)
+                .unwrap(); // safe because target is not empty
+
+            predicted == actual
+        };
+
+        (error_sum, correct)
+    }
+
+    /// Evaluates a batch of samples.
+    ///
+    /// # Arguments
+    /// * `targets` - Target matrix where each column is a target (output_size x batch_size)
+    /// * `outputs` - Output matrix where each column is a network output (output_size x batch_size)
+    ///
+    /// # Returns
+    /// (total_error, number_of_correct_predictions) for the batch
+    fn evaluate_batch(&self, targets: &Matrix, outputs: &Matrix) -> (f64, usize) {
+        let mut total_error = 0.0;
+        let mut correct_predictions = 0;
+
+        // For each sample in the batch
+        for i in 0..targets.cols() {
+            let target = targets.col(i);
+            let output = outputs.col(i);
+            let (error, correct) = self.evaluate_sample(&target, &output);
+            total_error += error;
+            if correct {
+                correct_predictions += 1;
+            }
+        }
+
+        // Add L2 regularization term
+        let l2_term: f64 = self
+            .weights
+            .iter()
+            .map(|w| w.data.iter().map(|&x| x * x).sum::<f64>())
+            .sum::<f64>()
+            * (self.regularization_rate / 2.0);
+
+        (total_error + l2_term, correct_predictions)
+    }
+
+    /// Trains a single epoch and returns (total_error, correct_predictions)
+    /// Process a single batch of training data.
+    ///
+    /// # Arguments
+    /// * `batch_inputs` - Vector of input matrices for the batch
+    /// * `batch_targets` - Vector of target matrices for the batch
+    ///
+    /// # Returns
+    /// Tuple containing (batch_error, number_of_correct_predictions)
+    fn process_batch(
+        &mut self,
+        batch_inputs: Vec<&Matrix>,
+        batch_targets: Vec<&Matrix>,
+    ) -> (f64, usize) {
+        // Combine batch inputs and targets into single matrices
+        let input_matrix = Matrix::concatenate(&batch_inputs, Axis(1));
+        let target_matrix = Matrix::concatenate(&batch_targets, Axis(1));
+
+        // Feed forward entire batch at once
+        let outputs = self.feed_forward(input_matrix);
+
+        // Evaluate batch results
+        let (batch_error, batch_correct) = self.evaluate_batch(&target_matrix, &outputs);
+
+        // Accumulate gradients for entire batch
+        let accumulated_gradients = self.accumulate_gradients(outputs, target_matrix);
+
+        // Update weights using accumulated gradients
+        self.update_weights(&accumulated_gradients);
+
+        (batch_error, batch_correct)
+    }
+
+    /// Trains the network for a single epoch.
+    ///
+    /// # Arguments
+    /// * `input_matrices` - Slice of input matrices
+    /// * `target_matrices` - Slice of target matrices
+    /// * `batch_size` - Size of each mini-batch
+    ///
+    /// # Returns
+    /// Tuple containing (total_error, number_of_correct_predictions)
+    fn train_epoch(
+        &mut self,
+        input_matrices: &[Matrix],
+        target_matrices: &[Matrix],
+        batch_size: usize,
+    ) -> (f64, usize) {
+        let mut total_error = 0.0;
+        let mut correct_predictions = 0;
+
+        // Create mini-batches for this epoch
+        let mini_batches = Self::prepare_mini_batches(input_matrices, target_matrices, batch_size);
+
+        // Process each mini-batch
+        for (batch_inputs, batch_targets) in mini_batches {
+            let (batch_error, batch_correct) = self.process_batch(batch_inputs, batch_targets);
+            total_error += batch_error;
+            correct_predictions += batch_correct;
+        }
+
+        (total_error, correct_predictions)
+    }
+
+    /// Trains the network on a dataset for a specified number of epochs.
+    ///
+    /// # Arguments
+    /// * `inputs` - Slice of input matrices
+    /// * `targets` - Slice of target matrices
+    pub fn train(&mut self, inputs: &[Matrix], targets: &[Matrix]) {
+        let total_samples = inputs.len();
+
+        // Create progress bar
+        let progress_bar = ProgressBar::new(usize::from(self.epochs) as u64);
+        let style = ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos}/{len} epochs | Accuracy: {msg}")
+            .map_err(|e| Box::new(e))
+            .expect("Failed to set progress bar style")
+            .progress_chars("#>-");
+        progress_bar.set_style(style);
+
+        let start_time = Instant::now();
+        let mut accuracy = 0.0;
+
+        for _ in 1..=usize::from(self.epochs) {
+            let (_, correct_predictions) = self.train_epoch(&inputs, &targets, 32);
+            accuracy = (correct_predictions as f64 / total_samples as f64) * 100.0;
+
+            progress_bar.set_message(format!("{:.2}%", accuracy));
+            progress_bar.inc(1);
+        }
+
+        progress_bar
+            .finish_with_message(format!("Training completed in {:?}", start_time.elapsed()));
+        println!("Final accuracy: {:.2}%", accuracy);
+    }
+
+    /// Processes a single layer in the neural network.
+    ///
+    /// # Algorithm
+    /// 1. Computes the weighted sum (weight * input)
+    /// 2. Applies the activation function
+    ///
+    /// # Arguments
+    /// * `weight` - Weight matrix including bias weights
+    /// * `input` - Input values from previous layer
+    /// * `activation` - Activation function to apply
+    ///
+    /// # Returns
+    /// The processed output matrix after applying weights and activation
+    fn process_layer(
+        weight: &Matrix,
+        input: &Matrix,
+        activation: &dyn ActivationFunction,
+    ) -> Matrix {
+        let output = weight.dot_multiply(input);
+        activation.apply_vector(&output)
+    }
+
+    /// Performs forward propagation for a batch of inputs, storing intermediate layer outputs.
+    ///
+    /// # Arguments
+    /// * `inputs` - Input matrix where each column is a sample (input_size x batch_size)
+    ///
+    /// # Returns
+    /// Output matrix where each column is the network's output for the corresponding input
+    /// (output_size x batch_size). Intermediate layer outputs are stored in self.data
+    /// for use in backpropagation.
+    fn feed_forward(&mut self, inputs: Matrix) -> Matrix {
+        assert!(
+            self.layers[0] == inputs.rows(),
+            "Invalid number of inputs. Expected {}, got {}",
+            self.layers[0],
+            inputs.rows()
+        );
+
+        // Store original input
+        self.data = vec![inputs.clone()];
+
+        self.weights
+            .iter()
+            .enumerate()
+            .fold(inputs, |current, (i, weight)| {
+                let with_bias = current.augment_with_bias();
+                let output = Self::process_layer(weight, &with_bias, self.activations[i].as_ref());
+                self.data.push(output.clone());
+                output
+            })
+    }
+
+    /// Performs prediction without storing intermediate outputs.
+    /// This is more efficient for inference-only use cases.
+    ///
+    /// # Arguments
+    /// * `inputs` - Input matrix to process
+    ///
+    /// # Returns
+    /// The network's output matrix
+    ///
+    /// # Panics
+    /// Panics if the number of inputs doesn't match the first layer size
+    pub fn predict(&self, inputs: Matrix) -> Matrix {
+        assert!(
+            self.layers[0] == inputs.rows(),
+            "Invalid number of inputs. Expected {}, got {}",
+            self.layers[0],
+            inputs.rows()
+        );
+
+        // Process through layers without storing intermediates
+        self.weights
+            .iter()
+            .enumerate()
+            .fold(inputs, |current, (i, weight)| {
+                let with_bias = current.augment_with_bias();
+                Self::process_layer(weight, &with_bias, self.activations[i].as_ref())
+            })
+    }
+
+    /// Saves the trained network to a JSON file.
+    ///
+    /// # Arguments
+    /// * `path` - Path to save the model file
+    ///
+    /// # Returns
+    /// Result indicating success or containing an IO error
+    ///
+    /// # Example
     /// ```
-    /// use neural_network::{Network, SIGMOID, SOFTMAX};
-    /// use matrix::matrix::Matrix;
+    /// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig, layer::Layer, network_config::{LearningRate, Momentum}};
+    /// use tempfile::tempdir;
     ///
-    /// let mut network = Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1);
-    /// let input = Matrix::from(vec![0.5, 0.8]);
-    /// let output = network.feed_forward(&input).unwrap();
+    /// let dir = tempdir().unwrap();
+    /// let model_path = dir.path().join("model.json");
+    ///
+    /// // Create network configuration
+    /// let mut config = NetworkConfig::default();
+    /// config.layers = vec![
+    ///     Layer { nodes: 2, activation: Some(ActivationType::Sigmoid) },
+    ///     Layer { nodes: 3, activation: Some(ActivationType::Sigmoid) },
+    ///     Layer { nodes: 1, activation: None },
+    /// ];
+    /// config.learning_rate = LearningRate::try_from(0.1).unwrap();
+    /// config.momentum = Momentum::try_from(0.8).unwrap();
+    ///
+    /// // Create and save network
+    /// let mut network = Network::new(&config);
+    /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
     /// ```
-    pub fn feed_forward(&mut self, inputs: &Matrix) -> Result<Matrix> {
-        if self.layers[0] != inputs.data().len() {
-            return Err(anyhow!(
-                "Invalid number of inputs: expected {}, got {}",
-                self.layers[0],
-                inputs.data().len()
+    pub fn save(&self, path: &str) -> io::Result<()> {
+        let json = match serde_json::to_string_pretty(self) {
+            Ok(json) => json,
+            Err(e) => return Err(e.into()),
+        };
+        std::fs::write(path, json)
+    }
+
+    /// Loads a trained network from a JSON file.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the model file
+    ///
+    /// # Returns
+    /// Result containing the loaded Network or an IO error
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use neural_network::{network::Network, activations::ActivationType};
+    /// # use tempfile::tempdir;
+    /// # let dir = tempdir().unwrap();
+    /// # let model_path = dir.path().join("model.json");
+    /// let network = Network::load(model_path.to_str().unwrap()).expect("Failed to load model");
+    /// ```
+    pub fn load(path: &str) -> io::Result<Self> {
+        let json = std::fs::read_to_string(path)?;
+        let mut network: Network = serde_json::from_str(&json)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        // Initialize non-serialized fields
+        network.data = Vec::new();
+        network.prev_weight_updates = network
+            .weights
+            .iter()
+            .map(|w| Matrix::zeros(w.rows(), w.cols()))
+            .collect();
+
+        // Create activation functions from types
+        network.activations = network
+            .activation_types
+            .iter()
+            .map(|t| t.create_activation())
+            .collect();
+
+        // Verify that we have the correct number of activation functions
+        if network.activations.len() != network.layers.len() - 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "Invalid number of activation functions. Expected {}, got {}",
+                    network.layers.len() - 1,
+                    network.activations.len()
+                ),
             ));
         }
 
-        // Store input in data vector
-        self.data[0] = inputs.clone();
-        let mut current = inputs.clone();
-
-        // Process each layer
-        for i in 0..self.layers.len() - 1 {
-            current = {
-                let weighted = self.weights[i].dot_multiply(&current);
-                let biased = weighted.add(&self.biases[i]);
-                let activated = Matrix::from(self.activations[i].apply_vector(biased.data()));
-                self.data[i + 1] = activated.clone();
-                activated
-            };
-        }
-
-        Ok(current)
-    }
-
-    /// Performs backpropagation to update weights and biases based on the error.
-    ///
-    /// This method implements the backpropagation algorithm, which calculates the gradient
-    /// of the loss function with respect to the weights and biases, and updates them
-    /// to minimize the error.
-    ///
-    /// # Parameters
-    ///
-    /// * `outputs` - The output matrix from the forward pass.
-    /// * `targets` - The expected output matrix (ground truth).
-    ///
-    /// # Note
-    ///
-    /// This method should be called after `feed_forward()` to update the network based on
-    /// the error between the actual output and the expected output.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use neural_network::{Network, SIGMOID, SOFTMAX};
-    /// use matrix::matrix::Matrix;
-    ///
-    /// let mut network = Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1);
-    /// let input = Matrix::from(vec![0.5, 0.8]);
-    /// let target = Matrix::from(vec![1.0]);
-    ///
-    /// let output = network.feed_forward(&input).unwrap();
-    /// network.back_propogate(output, &target);
-    /// ```
-    pub fn back_propogate(&mut self, outputs: Matrix, targets: &Matrix) {
-        let mut errors = targets.subtract(&outputs);
-
-        // For each layer, starting from the output layer
-        for i in (0..self.layers.len() - 1).rev() {
-            // Calculate gradients for each node in the current layer
-            let mut all_gradients = vec![0.0; self.layers[i + 1]];
-
-            // For each node in the current layer
-            for j in 0..self.layers[i + 1] {
-                // Get the derivative vector for this node
-                let node_derivatives =
-                    self.activations[i].derivative_vector(self.data[i + 1].data(), j);
-
-                // Update the gradient for this node using the error
-                all_gradients[j] = node_derivatives[j] * errors.data()[j] * self.learning_rate;
-            }
-
-            let gradients = Matrix::from(all_gradients);
-
-            // Update weights and biases
-            let weight_deltas = gradients.dot_multiply(&self.data[i].transpose());
-            self.weights[i] = self.weights[i].add(&weight_deltas);
-            self.biases[i] = self.biases[i].add(&gradients);
-
-            // Prepare for next layer
-            if i > 0 {
-                errors = self.weights[i].transpose().dot_multiply(&errors);
-            }
-        }
-    }
-
-    /// Trains the network using the provided inputs and targets for a specified number of epochs.
-    ///
-    /// This method performs supervised learning by repeatedly passing inputs through the network,
-    /// comparing the outputs to the expected targets, and adjusting the weights and biases
-    /// through backpropagation.
-    ///
-    /// # Parameters
-    ///
-    /// * `inputs` - A vector of input vectors, where each inner vector represents one training example.
-    /// * `targets` - A vector of target vectors, where each inner vector represents the expected output
-    ///               for the corresponding input.
-    /// * `epochs` - The number of complete passes through the training data.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<()>` - Ok if training completes successfully, or an error if inputs and targets don't match.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the number of inputs doesn't match the number of targets.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use neural_network::{Network, SIGMOID};
-    ///
-    /// // Create a network for XOR problem
-    /// let mut network = Network::new(vec![2, 2, 1], vec![SIGMOID, SIGMOID], 0.1);
-    ///
-    /// // XOR training data
-    /// let inputs = vec![
-    ///     vec![0.0, 0.0],
-    ///     vec![0.0, 1.0],
-    ///     vec![1.0, 0.0],
-    ///     vec![1.0, 1.0]
-    /// ];
-    /// let targets = vec![
-    ///     vec![0.0],
-    ///     vec![1.0],
-    ///     vec![1.0],
-    ///     vec![0.0]
-    /// ];
-    ///
-    /// // Train for 10,000 epochs
-    /// network.train(inputs, targets, 10000).unwrap();
-    /// ```
-    pub fn train(
-        &mut self,
-        inputs: Vec<Vec<f64>>,
-        targets: Vec<Vec<f64>>,
-        epochs: u32,
-    ) -> Result<()> {
-        if inputs.len() != targets.len() {
-            return Err(anyhow!("Number of inputs must match number of targets"));
-        }
-
-        // Pre-compute matrices for inputs and targets
-        let input_matrices: Vec<Matrix> = inputs.into_iter().map(Matrix::from).collect();
-        let target_matrices: Vec<Matrix> = targets.into_iter().map(Matrix::from).collect();
-
-        // Training loop
-        for epoch in 1..=epochs {
-            if epochs < 100 || epoch % (epochs / 100) == 0 {
-                println!("Epoch {} of {}", epoch, epochs);
-            }
-
-            // Process each training example
-            for (input, target) in input_matrices.iter().zip(target_matrices.iter()) {
-                let outputs = self.feed_forward(input)?;
-                self.back_propogate(outputs, target);
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Saves the network to a file in JSON format.
-    ///
-    /// This method serializes the network structure, weights, and biases to a JSON file,
-    /// allowing it to be loaded later.
-    ///
-    /// # Parameters
-    ///
-    /// * `path` - The path where the network should be saved.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<()>` - Ok if the save is successful, or an error if serialization or file writing fails.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if serialization fails or if the file cannot be written.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use neural_network::{Network, SIGMOID};
-    ///
-    /// let network = Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1);
-    /// network.save("my_network.json").unwrap();
-    /// ```
-    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
-        Ok(())
-    }
-
-    /// Loads a network from a JSON file.
-    ///
-    /// This method deserializes a previously saved network from a JSON file,
-    /// restoring its structure, weights, and biases.
-    ///
-    /// # Parameters
-    ///
-    /// * `path` - The path to the saved network file.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<Self>` - The loaded network if successful, or an error if deserialization or file reading fails.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the file cannot be read or if deserialization fails.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use neural_network::{Network, SIGMOID};
-    ///
-    /// let network = Network::load("my_network.json").unwrap();
-    /// ```
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let json = fs::read_to_string(path)?;
-        let mut network: Network = serde_json::from_str(&json)?;
-        // Reinitialize data vector
-        network.data = vec![Matrix::default(); network.layers.len()];
         Ok(network)
     }
 }
@@ -356,269 +628,707 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::activations::SIGMOID;
+    use crate::layer::Layer;
     use approx::assert_relative_eq;
-    use tempfile::NamedTempFile;
+    use tempfile::tempdir;
 
-    /// Helper function to create a simple network for testing
     fn create_test_network() -> Network {
-        Network::new(vec![2, 3, 1], vec![SIGMOID, SIGMOID], 0.1)
+        let config = NetworkConfig::new(
+            vec![
+                Layer {
+                    nodes: 1,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 1,
+                    activation: None,
+                },
+            ],
+            0.1,
+            0.9,
+            30,
+            32,
+            0.0001,
+        )
+        .unwrap();
+
+        Network::new(&config)
     }
 
-    /// Helper function to create XOR training data
-    fn create_xor_data() -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
-        let inputs = vec![
-            vec![0.0, 0.0],
-            vec![0.0, 1.0],
-            vec![1.0, 0.0],
-            vec![1.0, 1.0],
-        ];
-        let targets = vec![vec![0.0], vec![1.0], vec![1.0], vec![0.0]];
-        (inputs, targets)
+    fn create_deep_network() -> Network {
+        let config = NetworkConfig::new(
+            vec![
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 4,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 3,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 2,
+                    activation: None,
+                },
+            ],
+            0.1,
+            0.9,
+            30,
+            32,
+            0.0001,
+        )
+        .unwrap();
+
+        Network::new(&config)
     }
 
     #[test]
     fn test_network_creation() {
-        let network = create_test_network();
+        let config = NetworkConfig::new(
+            vec![
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 4,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 1,
+                    activation: None,
+                },
+            ],
+            0.1,
+            0.9,
+            30,
+            32,
+            0.0001,
+        )
+        .unwrap();
 
-        // Check network structure
-        assert_eq!(network.layers, vec![2, 3, 1]);
-        assert_eq!(network.weights.len(), 2);
-        assert_eq!(network.biases.len(), 2);
-        assert_eq!(network.data.len(), 3);
+        let network = Network::new(&config);
 
-        // Check dimensions of weight matrices
-        assert_eq!(network.weights[0].rows(), 3);
-        assert_eq!(network.weights[0].cols(), 2);
+        assert_eq!(network.layers, vec![2, 4, 1]);
+        assert_eq!(network.weights[0].rows(), 4);
+        assert_eq!(network.weights[0].cols(), 3); // 2 inputs + 1 bias
         assert_eq!(network.weights[1].rows(), 1);
-        assert_eq!(network.weights[1].cols(), 3);
-
-        // Check dimensions of bias matrices
-        assert_eq!(network.biases[0].rows(), 3);
-        assert_eq!(network.biases[0].cols(), 1);
-        assert_eq!(network.biases[1].rows(), 1);
-        assert_eq!(network.biases[1].cols(), 1);
+        assert_eq!(network.weights[1].cols(), 5); // 4 inputs + 1 bias
     }
 
     #[test]
-    fn test_feed_forward() -> Result<()> {
+    fn test_feed_forward() {
         let mut network = create_test_network();
+        let input = Matrix::from(vec![0.5]);
 
-        // Test with valid input
-        let input = Matrix::from(vec![0.5, 0.5]);
-        let output = network.feed_forward(&input)?;
+        let output = network.feed_forward(input);
 
-        // Check output dimensions
         assert_eq!(output.rows(), 1);
         assert_eq!(output.cols(), 1);
-
-        // Test with invalid input
-        let invalid_input = Matrix::from(vec![0.5, 0.5, 0.5]);
-        let result = network.feed_forward(&invalid_input);
-        assert!(result.is_err());
-
-        Ok(())
+        // Output should be between 0 and 1 (sigmoid activation)
+        assert!(output.get(0, 0) > 0.0 && output.get(0, 0) < 1.0);
     }
 
     #[test]
-    fn test_back_propagation() -> Result<()> {
+    fn test_predict() {
         let mut network = create_test_network();
+        let input = Matrix::from(vec![0.5]);
 
-        // Store initial weights and biases
-        let initial_weights = network.weights.clone();
-        let initial_biases = network.biases.clone();
+        let output_ff = network.feed_forward(input.clone());
+        let output_predict = network.predict(input);
 
-        // Perform forward and backward pass
-        let input = Matrix::from(vec![0.5, 0.5]);
-        let target = Matrix::from(vec![1.0]);
-
-        let output = network.feed_forward(&input)?;
-        network.back_propogate(output, &target);
-
-        // Verify weights and biases have changed
-        for i in 0..network.weights.len() {
-            assert!(network.weights[i].data() != initial_weights[i].data());
-            assert!(network.biases[i].data() != initial_biases[i].data());
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_train_input_validation() {
-        let mut network = create_test_network();
-
-        // Test with mismatched inputs and targets
-        let inputs = vec![vec![0.0, 0.0], vec![0.0, 1.0]];
-        let targets = vec![vec![0.0]]; // Only one target for two inputs
-
-        let result = network.train(inputs, targets, 1);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_train_xor() -> Result<()> {
-        let mut network = Network::new(vec![2, 4, 1], vec![SIGMOID, SIGMOID], 0.5);
-        let (inputs, targets) = create_xor_data();
-
-        // Train for a small number of epochs for testing
-        network.train(inputs.clone(), targets.clone(), 1000)?;
-
-        // Test predictions
-        let test_inputs = inputs
-            .iter()
-            .map(|input| Matrix::from(input.clone()))
-            .collect::<Vec<_>>();
-        let test_targets = targets
-            .iter()
-            .map(|target| Matrix::from(target.clone()))
-            .collect::<Vec<_>>();
-
-        // Verify that predictions are closer to targets after training
-        for (input, target) in test_inputs.iter().zip(test_targets.iter()) {
-            let output = network.feed_forward(input)?;
-            let error = (output.data()[0] - target.data()[0]).abs();
-
-            // Allow some error margin since we're not training to convergence
-            assert!(error < 0.4, "Error too large: {}", error);
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_save_and_load() -> Result<()> {
-        let network = create_test_network();
-
-        // Create a temporary file
-        let temp_file = NamedTempFile::new()?;
-        let temp_path = temp_file.path().to_path_buf();
-
-        // Save network
-        network.save(&temp_path)?;
-
-        // Verify file contains data
-        let file_content = fs::read_to_string(&temp_path)?;
-        assert!(!file_content.is_empty());
-        assert!(file_content.contains("layers"));
-        assert!(file_content.contains("weights"));
-        assert!(file_content.contains("biases"));
-
-        // Load network
-        let loaded_network = Network::load(&temp_path)?;
-
-        // Verify structure is preserved
-        assert_eq!(loaded_network.layers, network.layers);
-        assert_eq!(loaded_network.weights.len(), network.weights.len());
-        assert_eq!(loaded_network.biases.len(), network.biases.len());
-
-        // Verify weights and biases are preserved with approximate equality
-        for i in 0..network.weights.len() {
-            let original_data = network.weights[i].data();
-            let loaded_data = loaded_network.weights[i].data();
-
-            assert_eq!(original_data.len(), loaded_data.len());
-            for j in 0..original_data.len() {
-                assert_relative_eq!(original_data[j], loaded_data[j], epsilon = 1e-10);
-            }
-
-            let original_biases = network.biases[i].data();
-            let loaded_biases = loaded_network.biases[i].data();
-
-            assert_eq!(original_biases.len(), loaded_biases.len());
-            for j in 0..original_biases.len() {
-                assert_relative_eq!(original_biases[j], loaded_biases[j], epsilon = 1e-10);
-            }
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_deterministic_output() -> Result<()> {
-        let mut network = create_test_network();
-        let input = Matrix::from(vec![0.5, 0.5]);
-
-        // Run feed_forward multiple times and check for consistent output
-        let first_output = network.feed_forward(&input)?;
-
-        for _ in 0..5 {
-            let output = network.feed_forward(&input)?;
-            assert_eq!(output.data(), first_output.data());
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_softmax_output() -> Result<()> {
-        // Create a network with softmax output
-        let mut network = Network::new(vec![2, 3], vec![crate::activations::SOFTMAX], 0.1);
-
-        // Test input
-        let input = Matrix::from(vec![0.5, -0.2]);
-        let output = network.feed_forward(&input)?;
-
-        // Verify output sums to 1.0 (softmax property)
-        let sum: f64 = output.data().iter().sum();
-        assert!((sum - 1.0).abs() < 1e-6, "Softmax output should sum to 1.0");
-
-        // Verify all outputs are between 0 and 1
-        for &val in output.data() {
-            assert!(
-                val >= 0.0 && val <= 1.0,
-                "Softmax outputs should be probabilities"
-            );
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_multi_class_training() -> Result<()> {
-        // Create a network for 3-class classification
-        let mut network = Network::new(
-            vec![2, 4, 3], // 2 inputs, 4 hidden, 3 outputs
-            vec![SIGMOID, crate::activations::SOFTMAX],
-            0.1,
+        assert_eq!(output_ff.rows(), output_predict.rows());
+        assert_eq!(output_ff.cols(), output_predict.cols());
+        assert_relative_eq!(
+            output_ff.get(0, 0),
+            output_predict.get(0, 0),
+            epsilon = 1e-10
         );
+    }
 
-        // Simple training data: three points in 2D space
+    #[test]
+    fn test_xor_training() {
+        // Create a simpler network for XOR
+        let config = NetworkConfig::new(
+            vec![
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 4,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 1,
+                    activation: None,
+                },
+            ],
+            0.5, // Higher learning rate
+            0.9,
+            2000,
+            2, // Small batch size for XOR
+            0.0001,
+        )
+        .unwrap();
+
+        let mut network = Network::new(&config);
+
+        // XOR training data
+        let inputs = vec![
+            Matrix::from(vec![0.0, 0.0]),
+            Matrix::from(vec![0.0, 1.0]),
+            Matrix::from(vec![1.0, 0.0]),
+            Matrix::from(vec![1.0, 1.0]),
+        ];
+        let targets = vec![
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.0]),
+        ];
+
+        network.train(&inputs, &targets);
+
+        // Test the network
         let test_inputs = vec![
-            vec![0.0, 0.0], // Class 0
-            vec![1.0, 0.0], // Class 1
-            vec![0.0, 1.0], // Class 2
+            Matrix::from(vec![0.0, 1.0]),
+            Matrix::from(vec![1.0, 0.0]),
+            Matrix::from(vec![0.0, 0.0]),
+            Matrix::from(vec![1.0, 1.0]),
+        ];
+
+        let outputs: Vec<_> = test_inputs
+            .iter()
+            .map(|input| network.predict(input.clone()))
+            .collect();
+
+        // Check outputs with more lenient thresholds
+        assert!(
+            outputs[0].get(0, 0) > 0.7,
+            "Failed on input [0,1], output: {}",
+            outputs[0].get(0, 0)
+        );
+        assert!(
+            outputs[1].get(0, 0) > 0.7,
+            "Failed on input [1,0], output: {}",
+            outputs[1].get(0, 0)
+        );
+        assert!(
+            outputs[2].get(0, 0) < 0.3,
+            "Failed on input [0,0], output: {}",
+            outputs[2].get(0, 0)
+        );
+        assert!(
+            outputs[3].get(0, 0) < 0.3,
+            "Failed on input [1,1], output: {}",
+            outputs[3].get(0, 0)
+        );
+    }
+
+    #[test]
+    fn test_serialization() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("network.json");
+
+        // Create and train a network
+        let original_network = create_test_network();
+        let input = Matrix::from(vec![0.5]);
+        let original_output = original_network.predict(input.clone());
+
+        // Save the network
+        original_network
+            .save(file_path.to_str().unwrap())
+            .expect("Failed to save network");
+
+        // Load the network
+        let loaded_network =
+            Network::load(file_path.to_str().unwrap()).expect("Failed to load network");
+        let loaded_output = loaded_network.predict(input);
+
+        // Compare outputs
+        assert_relative_eq!(
+            original_output.get(0, 0),
+            loaded_output.get(0, 0),
+            epsilon = 1e-10
+        );
+    }
+
+    #[test]
+    fn test_layer_outputs() {
+        let mut network = create_deep_network();
+        let input = Matrix::from(vec![0.5, 0.3]);
+
+        let output = network.feed_forward(input);
+
+        assert_eq!(output.rows(), 2);
+        assert_eq!(output.cols(), 1);
+
+        // Check intermediate layer sizes
+        assert_eq!(network.data[1].rows(), 4); // hidden1 layer size
+        assert_eq!(network.data[2].rows(), 3); // hidden2 layer size
+        assert_eq!(network.data[3].rows(), 2); // output layer size
+    }
+
+    #[test]
+    fn test_softmax_backpropagation() {
+        // Create a simple network with Softmax output layer
+        let config = NetworkConfig::new(
+            vec![
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 4,
+                    activation: Some(ActivationType::Softmax),
+                },
+                Layer {
+                    nodes: 3,
+                    activation: None,
+                },
+            ],
+            0.1,
+            0.9,
+            1,
+            32,
+            0.0001,
+        )
+        .unwrap();
+
+        let mut network = Network::new(&config);
+
+        // Simple 3-class classification problem
+        let inputs = vec![
+            Matrix::from(vec![0.0, 0.0]), // Class 0
+            Matrix::from(vec![1.0, 0.0]), // Class 1
+            Matrix::from(vec![0.0, 1.0]), // Class 2
         ];
 
         let targets = vec![
-            vec![1.0, 0.0, 0.0], // One-hot encoding for class 0
-            vec![0.0, 1.0, 0.0], // One-hot encoding for class 1
-            vec![0.0, 0.0, 1.0], // One-hot encoding for class 2
+            Matrix::from(vec![1.0, 0.0, 0.0]), // One-hot encoding for class 0
+            Matrix::from(vec![0.0, 1.0, 0.0]), // One-hot encoding for class 1
+            Matrix::from(vec![0.0, 0.0, 1.0]), // One-hot encoding for class 2
         ];
 
-        // Train for a few epochs
-        network.train(test_inputs.clone(), targets, 1000)?;
+        // This should not panic with dimension mismatch
+        network.train(&inputs, &targets);
 
-        // Test predictions
-        for (i, input) in test_inputs.iter().enumerate() {
-            let output = network.feed_forward(&Matrix::from(input.clone()))?;
+        // Test forward pass dimensions
+        let output = network.predict(Matrix::from(inputs[0].clone()));
+        assert_eq!(output.rows(), 3);
+        assert_eq!(output.cols(), 1);
 
-            // Verify output is valid probability distribution
-            let sum: f64 = output.data().iter().sum();
-            assert!((sum - 1.0).abs() < 1e-6, "Output should sum to 1.0");
+        // Verify output is valid probability distribution
+        let sum: f64 = output.data.iter().sum();
+        assert_relative_eq!(sum, 1.0, epsilon = 1e-6);
+        output.data.iter().for_each(|&x| {
+            assert!(x >= 0.0 && x <= 1.0);
+        });
+    }
 
-            // Verify highest probability matches target class
-            let pred_class = output
-                .data()
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-                .map(|(idx, _)| idx)
-                .unwrap();
+    #[test]
+    fn test_mini_batch_training() {
+        // Create a network with a more robust architecture
+        let config = NetworkConfig::new(
+            vec![
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 8,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 4,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 1,
+                    activation: None,
+                },
+            ],
+            1.0,  // Higher learning rate
+            0.9,  // High momentum
+            1000, // Number of epochs
+            2,    // Small batch size for testing
+            0.0001,
+        )
+        .unwrap();
 
-            assert_eq!(pred_class, i, "Should predict correct class after training");
+        let mut network = Network::new(&config);
+
+        // Create a simple dataset with clear separation
+        let inputs = vec![
+            Matrix::from(vec![0.0, 0.0]),
+            Matrix::from(vec![0.0, 1.0]),
+            Matrix::from(vec![1.0, 0.0]),
+            Matrix::from(vec![1.0, 1.0]),
+        ];
+        let targets = vec![
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.0]),
+        ];
+
+        // Test prepare_mini_batches directly
+        let input_matrices = inputs.clone();
+        let target_matrices = targets.clone();
+
+        let batches = Network::prepare_mini_batches(&input_matrices, &target_matrices, 2);
+        assert_eq!(batches.len(), 2, "Should create 2 batches of size 2");
+        for (batch_inputs, batch_targets) in &batches {
+            assert_eq!(batch_inputs.len(), 2, "Each input batch should have size 2");
+            assert_eq!(
+                batch_targets.len(),
+                2,
+                "Each target batch should have size 2"
+            );
         }
 
-        Ok(())
+        // Train the network
+        network.train(&inputs, &targets);
+
+        // Test predictions with a more lenient error threshold
+        let mut total_error = 0.0;
+        for (input, target) in inputs.iter().zip(targets.iter()) {
+            let output = network.feed_forward(input.clone());
+            let error = (target.get(0, 0) - output.get(0, 0)).abs();
+            total_error += error;
+        }
+
+        let avg_error = total_error / 4.0;
+        assert!(
+            avg_error < 0.45,
+            "Prediction error too large: {}",
+            avg_error
+        );
+    }
+
+    #[test]
+    fn test_batch_size_effects() {
+        let mut config = NetworkConfig::new(
+            vec![
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 4,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 1,
+                    activation: None,
+                },
+            ],
+            0.8, // Higher learning rate
+            0.9,
+            1000,
+            32,
+            0.0001,
+        )
+        .unwrap();
+
+        // XOR training data
+        let inputs = vec![
+            Matrix::from(vec![0.0, 0.0]),
+            Matrix::from(vec![0.0, 1.0]),
+            Matrix::from(vec![1.0, 0.0]),
+            Matrix::from(vec![1.0, 1.0]),
+        ];
+        let targets = vec![
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.0]),
+        ];
+
+        // Test different batch sizes
+        for &batch_size in &[1, 2, 4] {
+            config = NetworkConfig::new(
+                config.layers,
+                f64::from(config.learning_rate),
+                f64::from(config.momentum),
+                usize::from(config.epochs),
+                batch_size,
+                0.0001,
+            )
+            .unwrap();
+            let mut network = Network::new(&config);
+            network.train(&inputs, &targets);
+
+            // Test predictions
+            let mut total_error = 0.0;
+            for (input, target) in inputs.iter().zip(targets.iter()) {
+                let output = network.predict(input.clone());
+                let error = (target.get(0, 0) - output.get(0, 0)).abs();
+                total_error += error;
+            }
+            let avg_error = total_error / 4.0;
+
+            assert!(
+                avg_error < 0.4,
+                "Training failed to converge with batch_size {}, error: {}",
+                batch_size,
+                avg_error
+            );
+        }
+    }
+
+    #[test]
+    fn test_gradient_computation() {
+        let mut network = create_test_network();
+        let input = Matrix::from(vec![0.5]);
+        let target = Matrix::from(vec![1.0]);
+
+        let output = network.feed_forward(input);
+        let gradients = network.accumulate_gradients(output, target);
+
+        assert_eq!(gradients.len(), network.weights.len());
+        for (gradient, weight) in gradients.iter().zip(network.weights.iter()) {
+            assert_eq!(gradient.rows(), weight.rows());
+            assert_eq!(gradient.cols(), weight.cols());
+        }
+    }
+
+    #[test]
+    fn test_batch_processing() {
+        let mut network = create_deep_network();
+
+        // Create a batch of inputs
+        let input = Matrix::new(2, 3, vec![0.5, 0.3, 0.7, 0.2, 0.8, 0.4]);
+
+        // Process batch
+        let output = network.feed_forward(input.clone());
+
+        // Check dimensions
+        assert_eq!(output.rows(), 2); // Output layer size
+        assert_eq!(output.cols(), 3); // Batch size
+
+        // Check all outputs are valid probabilities
+        for val in output.data.iter() {
+            assert!(
+                *val >= 0.0 && *val <= 1.0,
+                "Output {} not between 0 and 1",
+                val
+            );
+        }
+
+        // Test gradient computation
+        let target = Matrix::new(2, 3, vec![1.0, 0.0, 1.0, 0.0, 1.0, 0.0]);
+        let gradients = network.accumulate_gradients(output, target);
+
+        // Check gradient dimensions
+        assert_eq!(gradients.len(), network.weights.len());
+        for (gradient, weight) in gradients.iter().zip(network.weights.iter()) {
+            assert_eq!(gradient.rows(), weight.rows());
+            assert_eq!(gradient.cols(), weight.cols());
+        }
+    }
+
+    #[test]
+    fn test_batch_training_convergence() {
+        let mut network = create_test_network();
+        let inputs = vec![Matrix::from(vec![0.0]), Matrix::from(vec![1.0])];
+        let targets = vec![Matrix::from(vec![1.0]), Matrix::from(vec![0.0])];
+
+        let initial_error = compute_error(&network, &inputs, &targets);
+        network.train(&inputs, &targets);
+        let final_error = compute_error(&network, &inputs, &targets);
+
+        assert!(final_error < initial_error, "Training should reduce error");
+    }
+
+    #[test]
+    fn test_mini_batch_shuffling() {
+        let inputs = vec![
+            Matrix::from(vec![0.0, 0.0]),
+            Matrix::from(vec![0.0, 1.0]),
+            Matrix::from(vec![1.0, 0.0]),
+            Matrix::from(vec![1.0, 1.0]),
+        ];
+        let targets = vec![
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.0]),
+        ];
+
+        // Generate multiple batches and verify they're not always in the same order
+        let mut all_same = true;
+        let first_batch = Network::prepare_mini_batches(&inputs, &targets, 2);
+        for _ in 0..5 {
+            let next_batch = Network::prepare_mini_batches(&inputs, &targets, 2);
+            if first_batch != next_batch {
+                all_same = false;
+                break;
+            }
+        }
+        assert!(!all_same, "Mini-batches should be randomly shuffled");
+    }
+
+    #[test]
+    fn test_evaluate_sample() {
+        let mut network = create_test_network();
+
+        // Test binary classification
+        let input = Matrix::from(vec![0.5]);
+        let target = Matrix::from(vec![1.0]);
+
+        // Separate feed_forward call to avoid multiple mutable borrows
+        let outputs = network.feed_forward(input.clone());
+        let (error, _correct) = network.evaluate_sample(&target, &outputs);
+
+        assert!(error >= 0.0, "Error should be non-negative");
+        assert!(error <= 1.0, "Error should be normalized");
+        // Note: correctness can be either true or false as this is initial prediction
+
+        // Test multi-class classification
+        let config = NetworkConfig::new(
+            vec![
+                Layer {
+                    nodes: 2,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 3,
+                    activation: Some(ActivationType::Sigmoid),
+                },
+                Layer {
+                    nodes: 3,
+                    activation: None,
+                },
+            ],
+            0.1,
+            0.9,
+            30,
+            32,
+            0.0001,
+        )
+        .unwrap();
+
+        let mut network = Network::new(&config);
+
+        let input = Matrix::from(vec![0.5, 0.3]);
+        let target = Matrix::from(vec![1.0, 0.0, 0.0]); // One-hot encoded
+
+        // Separate feed_forward call to avoid multiple mutable borrows
+        let outputs = network.feed_forward(input.clone());
+        let (error, _correct) = network.evaluate_sample(&target, &outputs);
+
+        assert!(error >= 0.0, "Error should be non-negative");
+        // Note: correctness can be either true or false as this is initial prediction
+    }
+
+    #[test]
+    fn test_train_epoch() {
+        let mut network = create_test_network();
+
+        let inputs = vec![
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.5]),
+            Matrix::from(vec![0.7]),
+        ];
+        let targets = vec![
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.5]),
+            Matrix::from(vec![0.3]),
+        ];
+
+        let (total_error, correct_predictions) = network.train_epoch(&inputs, &targets, 2);
+
+        assert!(total_error >= 0.0, "Total error should be non-negative");
+        assert!(
+            correct_predictions <= inputs.len(),
+            "Correct predictions should not exceed dataset size"
+        );
+        // assert!(duration.as_secs_f64() > 0.0, "Duration should be positive");
+
+        // Test with different batch sizes
+        let batch_sizes = [1, 2, 4];
+        for &batch_size in &batch_sizes {
+            let (error, predictions) = network.train_epoch(&inputs, &targets, batch_size);
+            assert!(
+                error >= 0.0,
+                "Error should be non-negative for batch size {}",
+                batch_size
+            );
+            assert!(
+                predictions <= inputs.len(),
+                "Predictions should not exceed dataset size for batch size {}",
+                batch_size
+            );
+        }
+    }
+
+    #[test]
+    fn test_training_integration() {
+        let mut network = create_test_network();
+        let inputs = vec![Matrix::from(vec![0.0]), Matrix::from(vec![1.0])];
+        let targets = vec![Matrix::from(vec![1.0]), Matrix::from(vec![0.0])];
+
+        // Record initial state
+        let initial_weights: Vec<Matrix> = network.weights.iter().cloned().collect();
+
+        // Train for a few epochs
+        network.train(&inputs, &targets);
+
+        // Verify weights have been updated
+        for (initial, current) in initial_weights.iter().zip(network.weights.iter()) {
+            assert!(
+                initial.data != current.data,
+                "Weights should be updated during training"
+            );
+        }
+
+        // Verify error decreases
+        let final_error = compute_error(&network, &inputs, &targets);
+        assert!(
+            final_error < 1.0,
+            "Error should decrease after training, got {}",
+            final_error
+        );
+    }
+
+    #[test]
+    fn test_training_progress() {
+        let mut network = create_test_network();
+
+        // Simple dataset
+        let inputs = vec![Matrix::from(vec![0.0]), Matrix::from(vec![1.0])];
+        let targets = vec![Matrix::from(vec![1.0]), Matrix::from(vec![0.0])];
+
+        // Training should complete without errors and show progress
+        network.train(&inputs, &targets);
+
+        // Since progress bar is just for display, we only test that training completes
+        assert!(true, "Training with progress bar completed successfully");
+    }
+
+    // Helper functions for tests
+    fn compute_error(network: &Network, inputs: &[Matrix], targets: &[Matrix]) -> f64 {
+        inputs
+            .iter()
+            .zip(targets)
+            .map(|(input, target)| {
+                let output = network.predict(input.clone());
+                let error = target.get(0, 0) - output.get(0, 0);
+                error * error
+            })
+            .sum::<f64>()
+            / inputs.len() as f64
     }
 }

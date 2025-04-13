@@ -1,13 +1,9 @@
-#[macro_use]
 extern crate derive_builder;
 
 pub mod activations;
+pub mod layer;
 pub mod network;
-
-pub use activations::{Activation, ActivationType, SIGMOID, SOFTMAX};
-pub use network::Network;
-
-pub mod prelude {
-    pub use crate::Network;
-    pub use crate::SIGMOID;
+pub mod network_config;
+pub mod matrix {
+    pub use matrix::matrix::Matrix;
 }

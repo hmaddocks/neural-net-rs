@@ -1,11 +1,24 @@
 [package]
 name = "mnist"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
+neural-network = { path = "../neural-network" }
 thiserror = "2.0.12"
 image = "0.25.5"
 matrix = { path = "../matrix" }
 indicatif = { version = "0.17.11" }
 assert_fs = "1.1.2"
+tempfile = "3.10.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+approx = "0.5"
+ndarray = { version = "0.16", features = ["serde"] }
+ndarray-stats = "0.5"
+anyhow = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+
+[[bin]]
+name = "mnist"
+path = "src/bin/mnist.rs"
