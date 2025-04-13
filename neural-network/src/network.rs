@@ -702,6 +702,20 @@ mod tests {
         Network::new(&config)
     }
 
+    // Helper functions for tests
+    fn compute_error(network: &Network, inputs: &[Matrix], targets: &[Matrix]) -> f64 {
+        inputs
+            .iter()
+            .zip(targets)
+            .map(|(input, target)| {
+                let output = network.predict(input.clone());
+                let error = target.get(0, 0) - output.get(0, 0);
+                error * error
+            })
+            .sum::<f64>()
+            / inputs.len() as f64
+    }
+
     #[test]
     fn test_network_creation() {
         let config = NetworkConfig::new(
@@ -1309,34 +1323,5 @@ mod tests {
             "Error should decrease after training, got {}",
             final_error
         );
-    }
-
-    #[test]
-    fn test_training_progress() {
-        let mut network = create_test_network();
-
-        // Simple dataset
-        let inputs = vec![Matrix::from(vec![0.0]), Matrix::from(vec![1.0])];
-        let targets = vec![Matrix::from(vec![1.0]), Matrix::from(vec![0.0])];
-
-        // Training should complete without errors and show progress
-        network.train(&inputs, &targets);
-
-        // Since progress bar is just for display, we only test that training completes
-        assert!(true, "Training with progress bar completed successfully");
-    }
-
-    // Helper functions for tests
-    fn compute_error(network: &Network, inputs: &[Matrix], targets: &[Matrix]) -> f64 {
-        inputs
-            .iter()
-            .zip(targets)
-            .map(|(input, target)| {
-                let output = network.predict(input.clone());
-                let error = target.get(0, 0) - output.get(0, 0);
-                error * error
-            })
-            .sum::<f64>()
-            / inputs.len() as f64
     }
 }
