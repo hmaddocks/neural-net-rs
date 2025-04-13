@@ -6,5 +6,7 @@
   ],
   "learning_rate": 0.01,
   "epochs": 30,
-  "batch_size": 32
+  "batch_size": 32,
+  "momentum": 0.5,
+  "regularization_rate": 0.0001
 }
