@@ -123,10 +123,14 @@ impl From<BatchSize> for usize {
 #[serde(default)]
 pub struct NetworkConfig {
     /// A collection of [`Layer`]s in the network, including input and output layers.
-    /// For example, `vec![Layer { nodes: 784, activation: Some(ActivationType::Sigmoid) }, Layer { nodes: 128, activation: Some(ActivationType::Sigmoid) }, Layer { nodes: 10, activation: None }]` represents a network with:
-    /// - 784 input neurons (e.g., 28x28 pixels) and sigmoid activation
-    /// - 128 hidden neurons and sigmoid activation
-    /// - 10 output neurons and no activation
+    /// For example,
+    /// vec![Layer { nodes: 784, activation: Some(ActivationType::Sigmoid) },
+    ///      Layer { nodes: 128, activation: Some(ActivationType::Sigmoid) },
+    ///      Layer { nodes: 10, activation: None }]
+    /// represents a network with:
+    /// - 784 input neurons (e.g., 28x28 pixels) with sigmoid activation
+    /// - 128 hidden neurons with sigmoid activation
+    /// - 10 output neurons with no activation
     pub layers: Vec<Layer>,
 
     /// Learning rate for gradient descent.
