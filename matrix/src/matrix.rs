@@ -67,13 +67,14 @@ impl Matrix {
     /// across layers, preventing vanishing or exploding gradients.
     ///
     /// The weights are initialized from a uniform distribution U(-scale, scale) where:
-    /// scale = 1/sqrt(n_inputs)
+    /// scale = sqrt(6/(n_inputs + n_outputs))
     ///
     /// # Arguments
-    /// * `rows` - Number of rows in the matrix
-    /// * `cols` - Number of columns in the matrix
+    /// * `rows` - Number of rows in the matrix (outputs)
+    /// * `cols` - Number of columns in the matrix (inputs)
     pub fn random(rows: usize, cols: usize) -> Self {
-        let scale = 1.0 / (rows as f64).sqrt(); // Xavier/Glorot initialization
+        // Improved Xavier/Glorot initialization for better convergence
+        let scale = (6.0 / (rows + cols) as f64).sqrt();
         let dist = Uniform::new(-scale, scale);
         Matrix {
             data: Array2::random((rows, cols), dist),
