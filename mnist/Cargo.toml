@@ -18,6 +18,7 @@ ndarray = { version = "0.16", features = ["serde"] }
 ndarray-stats = "0.6"
 anyhow = "1.0"
 clap = { version = "4.0", features = ["derive"] }
+plotters = { version = "0.3.7", features = ["svg_backend"] }
 
 [[bin]]
 name = "mnist"

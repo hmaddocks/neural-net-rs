@@ -2,3 +2,4 @@ target/
 models/
 mnist/data/
 flamegraph.svg
+graphs/training_history.svg

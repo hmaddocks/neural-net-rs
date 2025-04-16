@@ -8,6 +8,7 @@ use neural_network::network_config::NetworkConfig;
 use neural_network::matrix::Matrix;
 use neural_network::training_history::TrainingHistory;
 use ndarray::Axis;
+use plotters::prelude::*;
 use serde_json;
 use std::{fs::File, io::Write, time::{Duration, Instant}};
 
@@ -265,7 +266,7 @@ fn train() -> Result<()> {
         format_duration(total_duration),
         total_duration
     );
-    
+
     // Save training history to file
     println!("Saving training history...");
     save_training_history(training_history)?;
@@ -288,24 +289,182 @@ fn train() -> Result<()> {
 fn save_training_history(history: &TrainingHistory) -> Result<()> {
     let history_json = serde_json::to_string_pretty(history)
         .context("Failed to serialize training history")?;
-    
+
     let history_path = std::env::current_dir()
         .context("Failed to get current directory")?
         .join("models")
         .join("training_history.json");
-    
+
     // Create models directory if it doesn't exist
     if let Some(parent) = history_path.parent() {
         std::fs::create_dir_all(parent)
             .context("Failed to create models directory")?;
     }
-    
+
     let mut file = File::create(&history_path)
         .context("Failed to create training history file")?;
     file.write_all(history_json.as_bytes())
         .context("Failed to write training history file")?;
-    
+
     println!("Training history saved to {}", history_path.display());
+    Ok(())
+}
+
+/// Creates an SVG graph of the training history
+fn create_training_history_graph() -> Result<()> {
+    println!("Loading training history...");
+
+    // Load training history from JSON file
+    let history_path = std::env::current_dir()
+        .map_err(|e| anyhow!("Failed to get current directory: {}", e))?
+        .join("models")
+        .join("training_history.json");
+
+    if !history_path.exists() {
+        return Err(anyhow!("Training history file not found at {}", history_path.display()));
+    }
+
+    let history_json = std::fs::read_to_string(&history_path)
+        .context("Failed to read training history file")?;
+
+    let history: TrainingHistory = serde_json::from_str(&history_json)
+        .context("Failed to parse training history JSON")?;
+
+    // Create output directory if it doesn't exist
+    let output_dir = std::env::current_dir()
+        .map_err(|e| anyhow!("Failed to get current directory: {}", e))?
+        .join("graphs");
+
+    if !output_dir.exists() {
+        std::fs::create_dir(&output_dir)
+            .context("Failed to create graphs directory")?;
+    }
+
+    // Create SVG file for the graph
+    let output_path = output_dir.join("training_history.svg");
+
+    // Set up the plot
+    let root = SVGBackend::new(&output_path, (1024, 768)).into_drawing_area();
+    root.fill(&WHITE)
+        .context("Failed to fill drawing area")?;
+
+    // Determine the ranges for the chart
+    let epoch_range = 0.0..(history.accuracies.len() as f64);
+    let loss_max = history.losses.iter().fold(0.0, |a: f64, &b| a.max(b));
+
+    // Define formatter functions
+    let accuracy_formatter = |y: &f64| -> String { format!("{:.1}%", *y) };
+    let x_formatter = |x: &f64| -> String { format!("{}", (*x).round()) };
+
+    // Create a single chart for both metrics
+    let mut chart = ChartBuilder::on(&root)
+        .caption("Training Metrics", ("sans-serif", 30).into_font())
+        .margin(10)
+        .margin_bottom(60) // Add extra space at the bottom for the legend
+        .x_label_area_size(40)
+        .y_label_area_size(60)
+        .right_y_label_area_size(60) // Add space for second scale on right
+        .build_cartesian_2d(epoch_range.clone(), 0f64..100f64)
+        .context("Failed to build chart")?;
+
+    // Add a second y-axis for loss
+    // We'll scale the loss values to fit in the 0-100 range for display
+    // but show the actual values in the labels
+    let loss_scale = 100.0 / loss_max;
+
+    // Configure the mesh
+    chart
+        .configure_mesh()
+        .x_labels(10)
+        .y_labels(10)
+        .disable_mesh()
+        .y_label_formatter(&accuracy_formatter)
+        .x_label_formatter(&x_formatter)
+        .x_desc("Epoch")
+        .draw()
+        .context("Failed to draw mesh")?;
+
+    // Draw a second y-axis on the right for loss
+    // We'll manually draw this
+    let x_range = chart.plotting_area().get_x_range();
+    let y_range = chart.plotting_area().get_y_range();
+
+    // We only need right, bottom, and top coordinates
+    let right = x_range.end;
+    let bottom = y_range.start;
+    let top = y_range.end;
+
+    // Draw the right y-axis line
+    chart.plotting_area().draw(&PathElement::new(
+        vec![(right, bottom), (right, top)],
+        &BLACK.mix(0.5),
+    )).context("Failed to draw right y-axis")?;
+
+    // Draw tick marks and labels for loss axis
+    let num_ticks = 10;
+    for i in 0..=num_ticks {
+        let y_pos = bottom + (top - bottom) * i as f64 / num_ticks as f64;
+        let actual_loss = (i as f64 / num_ticks as f64) * loss_max;
+
+        // Draw tick mark
+        chart.plotting_area().draw(&PathElement::new(
+            vec![(right, y_pos), (right + 5.0, y_pos)],
+            &BLACK.mix(0.5),
+        )).context("Failed to draw tick mark")?;
+
+        // Draw label
+        chart.plotting_area().draw(&Text::new(
+            format!("{:.4}", actual_loss),
+            (right + 10.0, y_pos),
+            ("sans-serif", 15).into_font(),
+        )).context("Failed to draw tick label")?;
+    }
+
+    // Draw the loss axis label
+    chart.plotting_area().draw(&Text::new(
+        "Loss",
+        (right + 40.0, (bottom + top) / 2.0),
+        ("sans-serif", 15).into_font().transform(FontTransform::Rotate90),
+    )).context("Failed to draw loss axis label")?;
+
+    // Create the accuracy line series
+    let accuracy_points: Vec<(f64, f64)> = history.accuracies
+        .iter()
+        .enumerate()
+        .map(|(i, &acc)| (i as f64, acc))
+        .collect();
+
+    // Create the loss line series - scale to fit in the 0-100 range
+    let loss_points: Vec<(f64, f64)> = history.losses
+        .iter()
+        .enumerate()
+        .map(|(i, &loss)| (i as f64, loss * loss_scale))
+        .collect();
+
+    // Draw the accuracy line
+    chart
+        .draw_series(LineSeries::new(accuracy_points, &BLUE))
+        .context("Failed to draw accuracy line")?
+        .label("Accuracy")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
+
+    // Draw the loss line
+    chart
+        .draw_series(LineSeries::new(loss_points, &RED))
+        .context("Failed to draw loss line")?
+        .label("Loss")
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+
+    // Draw the legend
+    chart
+        .configure_series_labels()
+        .background_style(&WHITE.mix(0.8))
+        .border_style(&BLACK)
+        .margin(10)
+        .draw()
+        .context("Failed to draw legend")?;
+
+    println!("Training history graph saved to {}", output_path.display());
     Ok(())
 }
 
@@ -315,6 +474,7 @@ fn main() -> Result<()> {
     match args.command {
         Command::Train => train().context("Failed to train network")?,
         Command::Test => test().context("Failed to test network")?,
+        Command::Graph => create_training_history_graph().context("Failed to create training history graph")?,
     }
 
     Ok(())
@@ -334,4 +494,6 @@ enum Command {
     Train,
     /// Test a trained neural network on the MNIST test set
     Test,
+    /// Create an SVG graph of training history accuracies and losses
+    Graph,
 }
