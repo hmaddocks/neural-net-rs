@@ -37,6 +37,7 @@ use crate::activations::{ActivationFunction, ActivationType};
 use crate::network_config::{
     BatchSize, Epochs, LearningRate, Momentum, NetworkConfig, RegularizationRate,
 };
+use crate::training_history::TrainingHistory;
 use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
 use ndarray::Axis;
@@ -79,6 +80,9 @@ pub struct Network {
     batch_size: BatchSize,
     /// Optional L2 regularization rate (weight decay)
     regularization_rate: Option<RegularizationRate>,
+    /// Training history containing metrics recorded during training
+    #[serde(skip)]
+    pub training_history: TrainingHistory,
 }
 
 impl Network {
@@ -166,6 +170,7 @@ impl Network {
             epochs: network_config.epochs,
             batch_size: network_config.batch_size,
             regularization_rate: network_config.regularization_rate,
+            training_history: TrainingHistory::new(),
         }
     }
 
@@ -437,7 +442,10 @@ impl Network {
     /// # Arguments
     /// * `inputs` - Slice of input matrices
     /// * `targets` - Slice of target matrices
-    pub fn train(&mut self, inputs: &[Matrix], targets: &[Matrix]) {
+    /// 
+    /// # Returns
+    /// Reference to the training history containing recorded metrics
+    pub fn train(&mut self, inputs: &[Matrix], targets: &[Matrix]) -> &TrainingHistory {
         let total_samples = inputs.len();
 
         // Create progress bar
@@ -452,9 +460,15 @@ impl Network {
         let start_time = Instant::now();
         let mut accuracy = 0.0;
 
-        for _ in 1..=usize::from(self.epochs) {
-            let (_, correct_predictions) = self.train_epoch(&inputs, &targets, 32);
+        // Reset training history before starting new training
+        self.training_history = TrainingHistory::new();
+
+        for epoch in 1..=usize::from(self.epochs) {
+            let (total_error, correct_predictions) = self.train_epoch(&inputs, &targets, usize::from(self.batch_size));
             accuracy = (correct_predictions as f64 / total_samples as f64) * 100.0;
+            
+            // Record metrics in training history
+            self.training_history.record_epoch(epoch as u32, accuracy, total_error / total_samples as f64);
 
             progress_bar.set_message(format!("{:.2}%", accuracy));
             progress_bar.inc(1);
@@ -463,6 +477,11 @@ impl Network {
         progress_bar
             .finish_with_message(format!("Training completed in {:?}", start_time.elapsed()));
         println!("Final accuracy: {:.2}%", accuracy);
+        
+        // Print training history summary
+        self.training_history.print_summary();
+        
+        &self.training_history
     }
 
     /// Processes a single layer in the neural network.
@@ -620,6 +639,9 @@ impl Network {
             .iter()
             .map(|t| t.create_activation())
             .collect();
+            
+        // Initialize training history
+        network.training_history = TrainingHistory::new();
 
         // Verify that we have the correct number of activation functions
         if network.activations.len() != network.layers.len() - 1 {

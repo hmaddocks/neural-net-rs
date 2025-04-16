@@ -1,5 +1,7 @@
+use serde::{Serialize, Deserialize};
+
 /// Training history containing metrics recorded during training
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrainingHistory {
     /// Accuracy values for each epoch
     pub accuracies: Vec<f64>,

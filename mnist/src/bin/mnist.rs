@@ -6,6 +6,7 @@ use mnist::{StandardizationParams, StandardizedMnistData};
 use neural_network::network::Network;
 use neural_network::network_config::NetworkConfig;
 use neural_network::matrix::Matrix;
+use neural_network::training_history::TrainingHistory;
 use ndarray::Axis;
 use serde_json;
 use std::{fs::File, io::Write, time::{Duration, Instant}};
@@ -256,7 +257,7 @@ fn train() -> Result<()> {
 
     println!("Training network...");
     let start_time = Instant::now();
-    network.train(&standardized_data, &mnist_data.labels());
+    let training_history = network.train(&standardized_data, &mnist_data.labels());
 
     let total_duration = start_time.elapsed();
     println!(
@@ -264,6 +265,10 @@ fn train() -> Result<()> {
         format_duration(total_duration),
         total_duration
     );
+    
+    // Save training history to file
+    println!("Saving training history...");
+    save_training_history(training_history)?;
 
     println!("Saving trained network...");
     let network_json = serde_json::to_string(&network).context("Failed to serialize network")?;
@@ -276,6 +281,31 @@ fn train() -> Result<()> {
     file.write_all(network_json.as_bytes())
         .context("Failed to write model file")?;
     println!("Network trained and saved to {}", model_path.display());
+    Ok(())
+}
+
+/// Saves the training history to a JSON file
+fn save_training_history(history: &TrainingHistory) -> Result<()> {
+    let history_json = serde_json::to_string_pretty(history)
+        .context("Failed to serialize training history")?;
+    
+    let history_path = std::env::current_dir()
+        .context("Failed to get current directory")?
+        .join("models")
+        .join("training_history.json");
+    
+    // Create models directory if it doesn't exist
+    if let Some(parent) = history_path.parent() {
+        std::fs::create_dir_all(parent)
+            .context("Failed to create models directory")?;
+    }
+    
+    let mut file = File::create(&history_path)
+        .context("Failed to create training history file")?;
+    file.write_all(history_json.as_bytes())
+        .context("Failed to write training history file")?;
+    
+    println!("Training history saved to {}", history_path.display());
     Ok(())
 }
 
