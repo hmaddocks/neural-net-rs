@@ -1264,4 +1264,94 @@ mod tests {
             final_error
         );
     }
+
+    #[test]
+    fn test_network_serialization_with_regularization() {
+        let config = NetworkConfig::new(
+            vec![
+                Layer::new(2, Some(ActivationType::Sigmoid)),
+                Layer::new(4, Some(ActivationType::Sigmoid)),
+                Layer::new(1, None),
+            ],
+            0.1,
+            Some(0.9),
+            30,
+            32,
+            Some(0.0001),
+            Some(RegularizationType::L2),
+        )
+        .unwrap();
+
+        let network = Network::new(&config);
+
+        // Serialize to JSON
+        let serialized = serde_json::to_string(&network).unwrap();
+
+        // Deserialize back
+        let deserialized: Network = serde_json::from_str(&serialized).unwrap();
+
+        // Verify regularization type is preserved
+        assert_eq!(
+            network.regularization_type,
+            deserialized.regularization_type
+        );
+        assert_eq!(
+            network.regularization_rate,
+            deserialized.regularization_rate
+        );
+    }
+
+    #[test]
+    fn test_network_file_serialization_with_regularization() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("network.json");
+
+        // Create network with L2 regularization
+        let config = NetworkConfig::new(
+            vec![
+                Layer::new(2, Some(ActivationType::Sigmoid)),
+                Layer::new(4, Some(ActivationType::Sigmoid)),
+                Layer::new(1, None),
+            ],
+            0.1,
+            Some(0.9),
+            30,
+            32,
+            Some(0.0001),
+            Some(RegularizationType::L2),
+        )
+        .unwrap();
+
+        let network = Network::new(&config);
+
+        // Save to file
+        network.save(file_path.to_str().unwrap()).unwrap();
+
+        // Load from file
+        let loaded_network = Network::load(file_path.to_str().unwrap()).unwrap();
+
+        // Print JSON content for debugging
+        let json_content = std::fs::read_to_string(file_path).unwrap();
+        println!("JSON content: {}", json_content);
+
+        // Verify regularization parameters
+        assert_eq!(
+            network.regularization_type, loaded_network.regularization_type,
+            "Regularization type should be preserved"
+        );
+        assert_eq!(
+            network.regularization_rate, loaded_network.regularization_rate,
+            "Regularization rate should be preserved"
+        );
+
+        // Also verify the JSON content
+        assert!(
+            json_content.contains("\"regularization_type\": \"L2\""),
+            "JSON should contain regularization type"
+        );
+        assert!(
+            json_content.contains("\"regularization_rate\": 0.0001"),
+            "JSON should contain regularization rate"
+        );
+    }
 }
