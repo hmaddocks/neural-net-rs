@@ -243,36 +243,6 @@ impl Layer {
 
         (error_sum, correct)
     }
-
-    /// Calculates the L2 regularization term for a set of weight matrices.
-    ///
-    /// # Arguments
-    /// * `weights` - Vector of weight matrices
-    /// * `regularization_rate` - The L2 regularization rate
-    ///
-    /// # Returns
-    /// The L2 regularization term to be added to the error
-    pub fn calculate_l2_regularization(weights: &[Matrix], regularization_rate: f64) -> f64 {
-        weights
-            .iter()
-            .map(|w| w.data.iter().map(|&x| x * x).sum::<f64>())
-            .sum::<f64>()
-            * (regularization_rate / 2.0)
-    }
-
-    /// Applies L2 regularization to weight updates during backpropagation.
-    ///
-    /// # Arguments
-    /// * `weights` - Current weight matrix
-    /// * `regularization_rate` - The L2 regularization rate
-    ///
-    /// # Returns
-    /// The L2 regularization gradient for the weights
-    pub fn apply_l2_regularization(weights: &Matrix, regularization_rate: Option<f64>) -> Matrix {
-        regularization_rate
-            .map(|rate| weights * rate)
-            .unwrap_or_else(|| Matrix::zeros(weights.rows(), weights.cols()))
-    }
 }
 
 impl fmt::Display for Layer {
@@ -481,55 +451,5 @@ mod tests {
             !multi_incorrect,
             "Multi-class prediction should be incorrect when highest value does not match target"
         );
-    }
-
-    #[test]
-    fn test_calculate_l2_regularization() {
-        // Create sample weights
-        let weights = vec![
-            vec![0.1, 0.2, 0.3, 0.4].into_matrix(2, 2),
-            vec![0.5, 0.6, 0.7, 0.8, 0.9, 1.0].into_matrix(2, 3),
-        ];
-
-        let reg_rate = 0.01;
-        let l2_term = Layer::calculate_l2_regularization(&weights, reg_rate);
-
-        // Calculate expected value manually:
-        // Sum of squares of first matrix: 0.1² + 0.2² + 0.3² + 0.4² = 0.01 + 0.04 + 0.09 + 0.16 = 0.3
-        // Sum of squares of second matrix: 0.5² + 0.6² + 0.7² + 0.8² + 0.9² + 1.0² = 0.25 + 0.36 + 0.49 + 0.64 + 0.81 + 1.0 = 3.55
-        // Total sum: 0.3 + 3.55 = 3.85
-        // L2 term: 3.85 * (0.01 / 2) = 3.85 * 0.005 = 0.01925
-
-        assert_relative_eq!(l2_term, 0.01925, epsilon = 1e-10);
-    }
-
-    #[test]
-    fn test_apply_l2_regularization() {
-        // Create sample weights
-        let weights = vec![0.1, 0.2, 0.3, 0.4].into_matrix(2, 2);
-
-        // Test with regularization rate
-        let reg_rate = 0.01;
-        let l2_gradient = Layer::apply_l2_regularization(&weights, Some(reg_rate));
-
-        // Check dimensions
-        assert_eq!(l2_gradient.rows(), weights.rows());
-        assert_eq!(l2_gradient.cols(), weights.cols());
-
-        // Check values: each weight should be multiplied by reg_rate
-        assert_relative_eq!(l2_gradient.get(0, 0), 0.1 * 0.01, epsilon = 1e-10);
-        assert_relative_eq!(l2_gradient.get(0, 1), 0.2 * 0.01, epsilon = 1e-10);
-        assert_relative_eq!(l2_gradient.get(1, 0), 0.3 * 0.01, epsilon = 1e-10);
-        assert_relative_eq!(l2_gradient.get(1, 1), 0.4 * 0.01, epsilon = 1e-10);
-
-        // Test with no regularization
-        let zero_gradient = Layer::apply_l2_regularization(&weights, None);
-
-        // Check all values are zero
-        for i in 0..zero_gradient.rows() {
-            for j in 0..zero_gradient.cols() {
-                assert_relative_eq!(zero_gradient.get(i, j), 0.0, epsilon = 1e-10);
-            }
-        }
     }
 }

@@ -6,6 +6,7 @@ pub mod matrix {
 }
 pub mod network;
 pub mod network_config;
+pub mod regularization;
 pub mod training_history;
 
 pub use crate::activations::ActivationType;

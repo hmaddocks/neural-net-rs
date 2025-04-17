@@ -1,6 +1,7 @@
 use crate::activations::{ActivationFunction, ActivationType, Sigmoid, Softmax};
 use crate::layer::Layer;
 use crate::matrix::Matrix;
+use crate::regularization::{RegularizationFunction, RegularizationType};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs;
@@ -130,7 +131,7 @@ impl Mul<Momentum> for f64 {
     type Output = f64;
 
     fn mul(self, momentum: Momentum) -> Self::Output {
-        self * momentum.0
+        self * f64::from(momentum)
     }
 }
 
@@ -184,7 +185,7 @@ impl From<BatchSize> for usize {
 /// # Example
 ///
 /// ```
-/// use neural_network::{network_config::NetworkConfig, layer::Layer, activations::ActivationType};
+/// use neural_network::{network_config::NetworkConfig, layer::Layer, activations::ActivationType, regularization::RegularizationType};
 ///
 /// let config = NetworkConfig::default();
 /// assert_eq!(config.layers, vec![Layer::new(784, Some(ActivationType::Sigmoid)), Layer::new(128, Some(ActivationType::Sigmoid)), Layer::new(10, None)]); // MNIST-like architecture
@@ -219,8 +220,11 @@ pub struct NetworkConfig {
     /// When specified, helps accelerate training and avoid local minima.
     pub momentum: Option<Momentum>,
 
-    /// Optional L2 regularization rate (weight decay)
+    /// Optional regularization rate (weight decay)
     pub regularization_rate: Option<RegularizationRate>,
+
+    /// Type of regularization to use (L1 or L2)
+    pub regularization_type: Option<RegularizationType>,
 }
 
 impl NetworkConfig {
@@ -233,7 +237,8 @@ impl NetworkConfig {
     /// * `momentum` - Momentum coefficient for gradient descent
     /// * `epochs` - Number of training epochs
     /// * `batch_size` - Size of mini-batches for gradient descent
-    /// * `regularization_rate` - L2 regularization rate (weight decay)
+    /// * `regularization_rate` - Regularization rate (weight decay)
+    /// * `regularization_type` - Type of regularization to use (L1 or L2)
     ///
     /// # Returns
     ///
@@ -245,19 +250,22 @@ impl NetworkConfig {
         epochs: usize,
         batch_size: usize,
         regularization_rate: Option<f64>,
+        regularization_type: Option<RegularizationType>,
     ) -> Option<Self> {
         let rr = if let Some(rate) = regularization_rate {
             Some(RegularizationRate::try_from(rate).ok()?)
         } else {
             None
         };
+
         Some(Self {
-            layers: layers,
+            layers,
             learning_rate: LearningRate::try_from(learning_rate).ok()?,
-            momentum: momentum.map(Momentum::try_from).transpose().ok()?,
+            momentum: momentum.map(|m| Momentum::try_from(m).ok()).flatten(),
             epochs: Epochs::try_from(epochs).ok()?,
             batch_size: BatchSize::try_from(batch_size).ok()?,
             regularization_rate: rr,
+            regularization_type,
         })
     }
 
@@ -319,6 +327,11 @@ impl NetworkConfig {
             })
             .collect()
     }
+
+    /// Returns the regularization function if configured
+    pub fn regularization(&self) -> Option<Box<dyn RegularizationFunction>> {
+        self.regularization_type.map(|t| t.create_regularization())
+    }
 }
 
 /// Default implementation provides a common configuration suitable for MNIST-like datasets.
@@ -339,12 +352,13 @@ impl Default for NetworkConfig {
                 Layer::new(784, Some(ActivationType::Sigmoid)),
                 Layer::new(128, Some(ActivationType::Sigmoid)),
                 Layer::new(10, None),
-            ], // Common MNIST-like default architecture
-            learning_rate: LearningRate::try_from(0.01).unwrap(),
-            momentum: Some(Momentum::try_from(0.5).unwrap()),
-            epochs: Epochs::try_from(30).unwrap(),
-            batch_size: BatchSize::try_from(32).unwrap(),
-            regularization_rate: Some(RegularizationRate::try_from(0.0001).unwrap()), // Small default L2 regularization
+            ],
+            learning_rate: LearningRate(0.01),
+            epochs: Epochs(10),
+            batch_size: BatchSize(32),
+            momentum: Some(Momentum(0.9)),
+            regularization_rate: Some(RegularizationRate(0.0001)),
+            regularization_type: Some(RegularizationType::L2),
         }
     }
 }
@@ -541,8 +555,8 @@ mod tests {
             ]
         );
         assert_eq!(config.learning_rate, LearningRate::try_from(0.01).unwrap());
-        assert_eq!(config.momentum, Some(Momentum::try_from(0.5).unwrap()));
-        assert_eq!(config.epochs, Epochs::try_from(30).unwrap());
+        assert_eq!(config.momentum, Some(Momentum::try_from(0.9).unwrap()));
+        assert_eq!(config.epochs, Epochs::try_from(10).unwrap());
         assert_eq!(config.batch_size, BatchSize::try_from(32).unwrap());
     }
 }

@@ -2,6 +2,7 @@ use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use matrix::matrix::Matrix;
 use neural_network::{
     activations::ActivationType, layer::Layer, network::Network, network_config::NetworkConfig,
+    regularization::RegularizationType,
 };
 
 fn train_xor_network(c: &mut Criterion) {
@@ -33,6 +34,7 @@ fn train_xor_network(c: &mut Criterion) {
             100,
             2,
             Some(0.0001),
+            Some(RegularizationType::L2),
         )
         .unwrap(),
     ];

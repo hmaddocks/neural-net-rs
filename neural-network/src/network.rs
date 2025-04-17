@@ -9,7 +9,7 @@
 ///
 /// # Example
 /// ```
-/// use neural_network::{network::Network, activations::ActivationType, network_config::{NetworkConfig, LearningRate, Momentum, Epochs, BatchSize}, layer::Layer};
+/// use neural_network::{network::Network, activations::ActivationType, network_config::{NetworkConfig, LearningRate, Momentum, Epochs, BatchSize}, layer::Layer, regularization::RegularizationType};
 /// use tempfile::tempdir;
 ///
 /// let dir = tempdir().unwrap();
@@ -27,6 +27,7 @@
 ///     30,
 ///     32,
 ///     Some(0.0001), // L2 regularization rate
+///     Some(RegularizationType::L2), // Regularization type
 /// ).unwrap();
 ///
 /// // Create and save network
@@ -38,6 +39,7 @@ use crate::layer::Layer;
 use crate::network_config::{
     BatchSize, Epochs, LearningRate, Momentum, NetworkConfig, RegularizationRate,
 };
+use crate::regularization::RegularizationType;
 use crate::training_history::TrainingHistory;
 use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
@@ -79,8 +81,10 @@ pub struct Network {
     epochs: Epochs,
     /// Batch size for training
     batch_size: BatchSize,
-    /// Optional L2 regularization rate (weight decay)
+    /// Optional regularization rate (weight decay)
     regularization_rate: Option<RegularizationRate>,
+    /// Type of regularization to use (L1 or L2)
+    regularization_type: Option<RegularizationType>,
     /// Training history containing metrics recorded during training
     #[serde(skip)]
     pub training_history: TrainingHistory,
@@ -96,6 +100,8 @@ impl Network {
     ///   - `momentum`: Momentum coefficient for weight updates
     ///   - `epochs`: Number of training epochs
     ///   - `batch_size`: Size of mini-batches for gradient descent
+    ///   - `regularization_rate`: Regularization rate (weight decay)
+    ///   - `regularization_type`: Type of regularization to use (L1 or L2)
     ///
     /// # Returns
     /// A new `Network` instance with randomly initialized weights and configured parameters
@@ -105,7 +111,7 @@ impl Network {
     ///
     /// # Example
     /// ```
-    /// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig, layer::Layer};
+    /// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig, layer::Layer, regularization::RegularizationType};
     ///
     /// // Create network configuration for a simple XOR network
     /// let config = NetworkConfig::new(
@@ -118,7 +124,8 @@ impl Network {
     ///     Some(0.8),
     ///     30,
     ///     32,
-    ///     Some(0.0001), // L2 regularization rate
+    ///     Some(0.0001), // Regularization rate
+    ///     Some(RegularizationType::L2), // Regularization type
     /// ).unwrap();
     ///
     /// let network = Network::new(&config);
@@ -166,6 +173,7 @@ impl Network {
             epochs: network_config.epochs,
             batch_size: network_config.batch_size,
             regularization_rate: network_config.regularization_rate,
+            regularization_type: network_config.regularization_type,
             training_history: TrainingHistory::new(),
         }
     }
@@ -230,34 +238,41 @@ impl Network {
         )
     }
 
-    /// Updates weights using accumulated gradients from a batch, including L2 regularization.
+    /// Updates weights using accumulated gradients from a batch, including regularization.
     ///
     /// Note: Gradients are applied as a sum rather than an average, meaning
     /// the effective learning rate scales with batch size. Larger batches
     /// will result in larger weight updates.
     ///
-    /// L2 regularization is applied by adding a penalty term proportional to the weight magnitude.
+    /// Regularization is applied by adding a penalty term based on the selected regularization type.
     fn update_weights(&mut self, accumulated_gradients: &[Matrix]) {
         // Apply summed gradients (not averaged by batch size)
         for i in 0..self.weights.len() {
             // Calculate weight updates with momentum
-            // Calculate L2 regularization gradient (weight decay) using Layer method
-            let l2_gradient = Layer::apply_l2_regularization(
-                &self.weights[i],
-                self.regularization_rate.map(|r| f64::from(r)),
-            );
+            let learning_term = &accumulated_gradients[i] * f64::from(self.learning_rate);
 
-            // Combine accumulated gradients with L2 regularization
-            let learning_term = (&accumulated_gradients[i] + &l2_gradient) * self.learning_rate;
+            // Calculate regularization gradient if configured
+            let reg_gradient = if let (Some(rate), Some(reg_type)) = (
+                self.regularization_rate.map(|r| f64::from(r)),
+                self.regularization_type,
+            ) {
+                let reg_fn = reg_type.create_regularization();
+                reg_fn.calculate_gradient(&self.weights[i], rate)
+            } else {
+                Matrix::zeros(self.weights[i].rows(), self.weights[i].cols())
+            };
+
+            // Combine accumulated gradients with regularization
+            let total_update = &learning_term + &reg_gradient;
 
             if let Some(momentum) = self.momentum {
-                let momentum_term = self.prev_weight_updates[i].map(|x| x * momentum);
-                self.prev_weight_updates[i] = &learning_term + &momentum_term;
+                let momentum_term = &self.prev_weight_updates[i].map(|x| x * f64::from(momentum));
+                self.prev_weight_updates[i] = &total_update + momentum_term;
             } else {
-                self.prev_weight_updates[i] = learning_term;
+                self.prev_weight_updates[i] = total_update;
             }
 
-            // Update weights and store updates for next iteration
+            // Update weights
             self.weights[i] = &self.weights[i] + &self.prev_weight_updates[i];
         }
     }
@@ -297,9 +312,13 @@ impl Network {
                 )
             });
 
-        // Add L2 regularization if configured
-        let total_error = if let Some(rate) = self.regularization_rate {
-            total_error + Layer::calculate_l2_regularization(&self.weights, f64::from(rate))
+        // Add regularization term if configured
+        let total_error = if let (Some(rate), Some(reg_type)) = (
+            self.regularization_rate.map(|r| f64::from(r)),
+            self.regularization_type,
+        ) {
+            let reg_fn = reg_type.create_regularization();
+            total_error + reg_fn.calculate_term(&self.weights, rate)
         } else {
             total_error
         };
@@ -614,6 +633,7 @@ mod tests {
             30,
             32,
             Some(0.0001),
+            Some(RegularizationType::L2),
         )
         .unwrap();
 
@@ -633,6 +653,7 @@ mod tests {
             30,
             32,
             Some(0.0001),
+            Some(RegularizationType::L2),
         )
         .unwrap();
 
@@ -667,6 +688,7 @@ mod tests {
             30,
             32,
             Some(0.0001),
+            Some(RegularizationType::L2),
         )
         .unwrap();
 
@@ -723,6 +745,7 @@ mod tests {
             2000,
             2, // Small batch size for XOR
             Some(0.0001),
+            Some(RegularizationType::L2),
         )
         .unwrap();
 
@@ -866,6 +889,7 @@ mod tests {
             1,
             32,
             Some(0.0001),
+            Some(RegularizationType::L2),
         )
         .unwrap();
 
@@ -914,6 +938,7 @@ mod tests {
             2000,      // More epochs for better convergence
             2,         // Small batch size for testing
             Some(0.0001),
+            Some(RegularizationType::L2),
         )
         .unwrap();
 
@@ -980,6 +1005,7 @@ mod tests {
             1000,
             32,
             Some(0.0001),
+            Some(RegularizationType::L2),
         )
         .unwrap();
 
@@ -1006,6 +1032,7 @@ mod tests {
                 config.epochs.into(),
                 batch_size,
                 config.regularization_rate.map(|r| f64::from(r)),
+                config.regularization_type,
             )
             .unwrap();
             let mut network = Network::new(&config);
@@ -1149,6 +1176,7 @@ mod tests {
             30,
             32,
             Some(0.0001),
+            Some(RegularizationType::L2),
         )
         .unwrap();
 
