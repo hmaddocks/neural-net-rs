@@ -53,10 +53,10 @@ use std::time::Instant;
 #[serde(crate = "serde")]
 pub struct Network {
     /// Sizes of each layer in the network, including input and output layers
-    layers: Vec<usize>,
+    layers_count: Vec<usize>,
     /// Network layers
     #[serde(skip)]
-    network_layers: Vec<crate::layer::Layer>,
+    layers: Vec<Layer>,
     /// Weight matrices between layers, including bias weights
     weights: Vec<Matrix>,
     /// Cached layer outputs for backpropagation
@@ -128,7 +128,7 @@ impl Network {
         let layer_pairs: Vec<_> = nodes.windows(2).collect();
 
         // Create layers from config
-        let network_layers: Vec<_> = network_config.layers.iter().cloned().collect();
+        let layers: Vec<_> = network_config.layers.iter().cloned().collect();
 
         // Fill weights with random values
         let weights = layer_pairs
@@ -153,8 +153,8 @@ impl Network {
         data.resize(network_config.layers.len(), Matrix::default());
 
         Network {
-            layers: nodes.clone(),
-            network_layers,
+            layers_count: nodes.clone(),
+            layers,
             weights,
             data,
             activation_types: network_config.activations_types(),
@@ -197,7 +197,7 @@ impl Network {
 
         let total_samples = inputs.len();
         let mut indices: Vec<_> = (0..total_samples).collect();
-        indices.shuffle(&mut rng()); // Not really needed, MNIST is already shuffled.
+        indices.shuffle(&mut rng()); // Shuffle indices for random batch creation
 
         indices
             .chunks(batch_size)
@@ -224,7 +224,7 @@ impl Network {
         Layer::accumulate_network_gradients(
             &self.weights,
             &self.data,
-            &self.network_layers,
+            &self.layers,
             &outputs,
             &targets,
         )
@@ -283,29 +283,30 @@ impl Network {
     /// # Returns
     /// (total_error, number_of_correct_predictions) for the batch
     fn evaluate_batch(&self, targets: &Matrix, outputs: &Matrix) -> (f64, usize) {
-        let mut total_error = 0.0;
-        let mut correct_predictions = 0;
+        // Use functional approach with range and fold
+        let (total_error, correct_predictions) = (0..targets.cols())
+            .map(|i| {
+                let target = targets.col(i);
+                let output = outputs.col(i);
+                self.evaluate_sample(&target, &output)
+            })
+            .fold((0.0, 0), |(error_sum, correct_count), (error, correct)| {
+                (
+                    error_sum + error,
+                    correct_count + if correct { 1 } else { 0 },
+                )
+            });
 
-        // For each sample in the batch
-        for i in 0..targets.cols() {
-            let target = targets.col(i);
-            let output = outputs.col(i);
-            let (error, correct) = self.evaluate_sample(&target, &output);
-            total_error += error;
-            if correct {
-                correct_predictions += 1;
-            }
-        }
-
-        if let Some(rate) = self.regularization_rate {
-            // Add L2 regularization term using the Layer method
-            total_error += Layer::calculate_l2_regularization(&self.weights, f64::from(rate));
-        }
+        // Add L2 regularization if configured
+        let total_error = if let Some(rate) = self.regularization_rate {
+            total_error + Layer::calculate_l2_regularization(&self.weights, f64::from(rate))
+        } else {
+            total_error
+        };
 
         (total_error, correct_predictions)
     }
 
-    /// Trains a single epoch and returns (total_error, correct_predictions)
     /// Process a single batch of training data.
     ///
     /// # Arguments
@@ -379,9 +380,11 @@ impl Network {
     /// Reference to the training history containing recorded metrics
     pub fn train(&mut self, inputs: &[Matrix], targets: &[Matrix]) -> &TrainingHistory {
         let total_samples = inputs.len();
+        let batch_size = usize::from(self.batch_size);
+        let num_epochs = usize::from(self.epochs);
 
         // Create progress bar
-        let progress_bar = ProgressBar::new(usize::from(self.epochs) as u64);
+        let progress_bar = ProgressBar::new(num_epochs as u64);
         let style = ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos}/{len} epochs | Accuracy: {msg}")
             .map_err(|e| Box::new(e))
@@ -390,15 +393,15 @@ impl Network {
         progress_bar.set_style(style);
 
         let start_time = Instant::now();
-        let mut accuracy = 0.0;
 
         // Reset training history before starting new training
         self.training_history = TrainingHistory::new();
 
-        for epoch in 1..=usize::from(self.epochs) {
-            let (total_error, correct_predictions) =
-                self.train_epoch(&inputs, &targets, usize::from(self.batch_size));
-            accuracy = (correct_predictions as f64 / total_samples as f64) * 100.0;
+        // Train for each epoch using functional approach
+        (1..=num_epochs).for_each(|epoch| {
+            let (total_error, correct_predictions) = self.train_epoch(inputs, targets, batch_size);
+
+            let accuracy = (correct_predictions as f64 / total_samples as f64) * 100.0;
 
             // Record metrics in training history
             self.training_history.record_epoch(
@@ -409,11 +412,19 @@ impl Network {
 
             progress_bar.set_message(format!("{:.2}%", accuracy));
             progress_bar.inc(1);
-        }
+        });
+
+        // Calculate final accuracy
+        let final_accuracy = self
+            .training_history
+            .accuracies
+            .last()
+            .copied()
+            .unwrap_or(0.0);
 
         progress_bar
             .finish_with_message(format!("Training completed in {:?}", start_time.elapsed()));
-        println!("Final accuracy: {:.2}%", accuracy);
+        println!("Final accuracy: {:.2}%", final_accuracy);
 
         // Print training history summary
         self.training_history.print_summary();
@@ -432,22 +443,23 @@ impl Network {
     /// for use in backpropagation.
     fn feed_forward(&mut self, inputs: Matrix) -> Matrix {
         assert!(
-            self.layers[0] == inputs.rows(),
+            self.layers[0].nodes == inputs.rows(),
             "Invalid number of inputs. Expected {}, got {}",
-            self.layers[0],
+            self.layers[0].nodes,
             inputs.rows()
         );
 
-        // Store original input
-        self.data = vec![inputs.clone()];
+        // Initialize data vector with capacity and start with input
+        self.data = Vec::with_capacity(self.weights.len() + 1);
+        self.data.push(inputs.clone());
 
+        // Process through each layer and store intermediate outputs
         self.weights
             .iter()
             .enumerate()
             .fold(inputs, |current, (i, weight)| {
                 let with_bias = current.augment_with_bias();
-                // Use Layer's process_forward instance method
-                let output = self.network_layers[i].process_forward(weight, &with_bias);
+                let output = self.layers[i].process_forward(weight, &with_bias);
                 self.data.push(output.clone());
                 output
             })
@@ -466,9 +478,9 @@ impl Network {
     /// Panics if the number of inputs doesn't match the first layer size
     pub fn predict(&self, inputs: Matrix) -> Matrix {
         assert!(
-            self.layers[0] == inputs.rows(),
+            self.layers[0].nodes == inputs.rows(),
             "Invalid number of inputs. Expected {}, got {}",
-            self.layers[0],
+            self.layers[0].nodes,
             inputs.rows()
         );
 
@@ -479,7 +491,7 @@ impl Network {
             .fold(inputs, |current, (i, weight)| {
                 let with_bias = current.augment_with_bias();
                 // Use Layer's process_forward instance method
-                self.network_layers[i].process_forward(weight, &with_bias)
+                self.layers[i].process_forward(weight, &with_bias)
             })
     }
 
@@ -514,10 +526,9 @@ impl Network {
     /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
     /// ```
     pub fn save(&self, path: &str) -> io::Result<()> {
-        let json = match serde_json::to_string_pretty(self) {
-            Ok(json) => json,
-            Err(e) => return Err(e.into()),
-        };
+        // Use ? operator for more idiomatic error handling
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         std::fs::write(path, json)
     }
 
@@ -551,16 +562,19 @@ impl Network {
             .collect();
 
         // Create Layer objects from network configuration
-        let mut network_layers = Vec::with_capacity(network.layers.len());
-        for (i, &size) in network.layers.iter().enumerate() {
-            let activation = if i < network.activation_types.len() {
-                Some(network.activation_types[i])
-            } else {
-                None
-            };
-            network_layers.push(crate::layer::Layer::new(size, activation));
-        }
-        network.network_layers = network_layers;
+        network.layers = network
+            .layers_count
+            .iter()
+            .enumerate()
+            .map(|(i, &size)| {
+                let activation = if i < network.activation_types.len() {
+                    Some(network.activation_types[i])
+                } else {
+                    None
+                };
+                crate::layer::Layer::new(size, activation)
+            })
+            .collect();
 
         // Initialize training history
         network.training_history = TrainingHistory::new();
@@ -627,6 +641,7 @@ mod tests {
 
     // Helper functions for tests
     fn compute_error(network: &Network, inputs: &[Matrix], targets: &[Matrix]) -> f64 {
+        // Use functional approach with iterator and sum
         inputs
             .iter()
             .zip(targets)
@@ -657,7 +672,7 @@ mod tests {
 
         let network = Network::new(&config);
 
-        assert_eq!(network.layers, vec![2, 4, 1]);
+        assert_eq!(network.layers_count, vec![2, 4, 1]);
         assert_eq!(network.weights[0].rows(), 4);
         assert_eq!(network.weights[0].cols(), 3); // 2 inputs + 1 bias
         assert_eq!(network.weights[1].rows(), 1);

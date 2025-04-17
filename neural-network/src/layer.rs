@@ -107,28 +107,23 @@ impl Layer {
         next_layer_delta: &Matrix,
         current_output: &Matrix,
     ) -> Matrix {
+        // Remove bias weights for backpropagation
+        let weight_no_bias = next_layer_weights.slice(
+            0..next_layer_weights.rows(),
+            0..next_layer_weights.cols() - 1,
+        );
+
+        // Propagate error backward
+        let propagated_error = weight_no_bias.transpose().dot_multiply(next_layer_delta);
+
+        // Apply activation derivative if present
         if let Some(activation) = &self.activation_fn {
             // Calculate activation derivative for current layer
             let activation_derivative = activation.apply_derivative_vector(current_output);
-
-            // Remove bias weights for backpropagation
-            let weight_no_bias = next_layer_weights.slice(
-                0..next_layer_weights.rows(),
-                0..next_layer_weights.cols() - 1,
-            );
-
-            // Propagate error backward
-            let propagated_error = weight_no_bias.transpose().dot_multiply(next_layer_delta);
-
-            // Element-wise multiplication with activation derivative
             propagated_error.elementwise_multiply(&activation_derivative)
         } else {
-            // For layers with no activation function, just propagate the error
-            let weight_no_bias = next_layer_weights.slice(
-                0..next_layer_weights.rows(),
-                0..next_layer_weights.cols() - 1,
-            );
-            weight_no_bias.transpose().dot_multiply(next_layer_delta)
+            // For layers with no activation function, just return the propagated error
+            propagated_error
         }
     }
 
@@ -234,16 +229,14 @@ impl Layer {
                 .enumerate()
                 .filter(|&(_, &val)| !val.is_nan())
                 .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
-                .map(|(idx, _)| idx)
-                .unwrap(); // safe because output is not empty
+                .map_or(0, |(idx, _)| idx); // Default to 0 if empty (should never happen due to debug_assert)
 
             let actual = target
                 .data
                 .iter()
                 .enumerate()
                 .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
-                .map(|(idx, _)| idx)
-                .unwrap(); // safe because target is not empty
+                .map_or(0, |(idx, _)| idx); // Default to 0 if empty (should never happen due to debug_assert)
 
             predicted == actual
         };
@@ -276,11 +269,9 @@ impl Layer {
     /// # Returns
     /// The L2 regularization gradient for the weights
     pub fn apply_l2_regularization(weights: &Matrix, regularization_rate: Option<f64>) -> Matrix {
-        if let Some(rate) = regularization_rate {
-            weights * rate
-        } else {
-            Matrix::zeros(weights.rows(), weights.cols())
-        }
+        regularization_rate
+            .map(|rate| weights * rate)
+            .unwrap_or_else(|| Matrix::zeros(weights.rows(), weights.cols()))
     }
 }
 
