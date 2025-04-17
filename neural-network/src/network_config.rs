@@ -187,15 +187,15 @@ impl From<BatchSize> for usize {
 /// use neural_network::{network_config::NetworkConfig, layer::Layer, activations::ActivationType};
 ///
 /// let config = NetworkConfig::default();
-/// assert_eq!(config.layers, vec![Layer { nodes: 784, activation: Some(ActivationType::Sigmoid) }, Layer { nodes: 128, activation: Some(ActivationType::Sigmoid) }, Layer { nodes: 10, activation: None }]); // MNIST-like architecture
+/// assert_eq!(config.layers, vec![Layer::new(784, Some(ActivationType::Sigmoid)), Layer::new(128, Some(ActivationType::Sigmoid)), Layer::new(10, None)]); // MNIST-like architecture
 /// ```
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NetworkConfig {
     /// A collection of [`Layer`]s in the network, including input and output layers.
     /// For example,
-    /// vec![Layer { nodes: 784, activation: Some(ActivationType::Sigmoid) },
-    ///      Layer { nodes: 128, activation: Some(ActivationType::Sigmoid) },
-    ///      Layer { nodes: 10, activation: None }]
+    /// vec![Layer::new(784, Some(ActivationType::Sigmoid)),
+    ///      Layer::new(128, Some(ActivationType::Sigmoid)),
+    ///      Layer::new(10, None)]
     /// represents a network with:
     /// - 784 input neurons (e.g., 28x28 pixels) with sigmoid activation
     /// - 128 hidden neurons with sigmoid activation
@@ -336,18 +336,9 @@ impl Default for NetworkConfig {
     fn default() -> Self {
         Self {
             layers: vec![
-                Layer {
-                    nodes: 784,
-                    activation: Some(ActivationType::Sigmoid),
-                },
-                Layer {
-                    nodes: 128,
-                    activation: Some(ActivationType::Sigmoid),
-                },
-                Layer {
-                    nodes: 10,
-                    activation: None,
-                },
+                Layer::new(784, Some(ActivationType::Sigmoid)),
+                Layer::new(128, Some(ActivationType::Sigmoid)),
+                Layer::new(10, None),
             ], // Common MNIST-like default architecture
             learning_rate: LearningRate::try_from(0.01).unwrap(),
             momentum: Some(Momentum::try_from(0.5).unwrap()),
@@ -503,18 +494,9 @@ mod tests {
         assert_eq!(
             config.layers,
             vec![
-                Layer {
-                    nodes: 784,
-                    activation: Some(ActivationType::Sigmoid)
-                },
-                Layer {
-                    nodes: 200,
-                    activation: Some(ActivationType::Sigmoid)
-                },
-                Layer {
-                    nodes: 10,
-                    activation: None
-                }
+                Layer::new(784, Some(ActivationType::Sigmoid)),
+                Layer::new(200, Some(ActivationType::Sigmoid)),
+                Layer::new(10, None)
             ]
         );
         assert_eq!(config.learning_rate, LearningRate::try_from(0.01).unwrap());
@@ -553,18 +535,9 @@ mod tests {
         assert_eq!(
             config.layers,
             vec![
-                Layer {
-                    nodes: 784,
-                    activation: Some(ActivationType::Sigmoid)
-                },
-                Layer {
-                    nodes: 128,
-                    activation: Some(ActivationType::Sigmoid)
-                },
-                Layer {
-                    nodes: 10,
-                    activation: None
-                }
+                Layer::new(784, Some(ActivationType::Sigmoid)),
+                Layer::new(128, Some(ActivationType::Sigmoid)),
+                Layer::new(10, None)
             ]
         );
         assert_eq!(config.learning_rate, LearningRate::try_from(0.01).unwrap());
