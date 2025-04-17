@@ -1,5 +1,6 @@
 use crate::matrix::Matrix;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Type of regularization function
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -15,6 +16,12 @@ impl RegularizationType {
             RegularizationType::L1 => Box::new(L1),
             RegularizationType::L2 => Box::new(L2),
         }
+    }
+}
+
+impl fmt::Display for RegularizationType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 

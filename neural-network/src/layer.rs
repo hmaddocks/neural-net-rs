@@ -209,7 +209,6 @@ impl Layer {
     /// # Returns
     /// Tuple containing (squared_error, is_prediction_correct)
     pub fn evaluate_prediction(target: &Matrix, output: &Matrix) -> (f64, bool) {
-        // Calculate squared error sum using functional approach
         let error = target - output;
         let error_sum = error.data.iter().fold(0.0, |sum, &x| sum + x * x);
 

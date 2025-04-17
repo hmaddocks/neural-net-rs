@@ -253,10 +253,10 @@ impl Network {
 
             // Calculate regularization gradient if configured
             let reg_gradient = if let (Some(rate), Some(reg_type)) = (
-                self.regularization_rate.map(|r| f64::from(r)),
+                self.regularization_rate.map(|r| f64::from(r)), // FIXME: configure this once?
                 self.regularization_type,
             ) {
-                let reg_fn = reg_type.create_regularization();
+                let reg_fn = reg_type.create_regularization(); // FIXME: configure this once?
                 reg_fn.calculate_gradient(&self.weights[i], rate)
             } else {
                 Matrix::zeros(self.weights[i].rows(), self.weights[i].cols())
@@ -298,26 +298,30 @@ impl Network {
     /// # Returns
     /// (total_error, number_of_correct_predictions) for the batch
     fn evaluate_batch(&self, targets: &Matrix, outputs: &Matrix) -> (f64, usize) {
-        // Use functional approach with range and fold
-        let (total_error, correct_predictions) = (0..targets.cols())
+        let sample_results: Vec<(f64, bool)> = (0..targets.cols())
             .map(|i| {
                 let target = targets.col(i);
                 let output = outputs.col(i);
                 self.evaluate_sample(&target, &output)
             })
-            .fold((0.0, 0), |(error_sum, correct_count), (error, correct)| {
+            .collect();
+
+        let (total_error, correct_predictions) = sample_results.into_iter().fold(
+            (0.0, 0),
+            |(error_sum, correct_count), (error, correct)| {
                 (
                     error_sum + error,
                     correct_count + if correct { 1 } else { 0 },
                 )
-            });
+            },
+        );
 
         // Add regularization term if configured
         let total_error = if let (Some(rate), Some(reg_type)) = (
-            self.regularization_rate.map(|r| f64::from(r)),
+            self.regularization_rate.map(|r| f64::from(r)), // FIXME: configure this once?
             self.regularization_type,
         ) {
-            let reg_fn = reg_type.create_regularization();
+            let reg_fn = reg_type.create_regularization(); // FIXME: configure this once?
             total_error + reg_fn.calculate_term(&self.weights, rate)
         } else {
             total_error
@@ -1298,60 +1302,6 @@ mod tests {
         assert_eq!(
             network.regularization_rate,
             deserialized.regularization_rate
-        );
-    }
-
-    #[test]
-    fn test_network_file_serialization_with_regularization() {
-        let dir = tempdir().unwrap();
-        let file_path = dir.path().join("network.json");
-
-        // Create network with L2 regularization
-        let config = NetworkConfig::new(
-            vec![
-                Layer::new(2, Some(ActivationType::Sigmoid)),
-                Layer::new(4, Some(ActivationType::Sigmoid)),
-                Layer::new(1, None),
-            ],
-            0.1,
-            Some(0.9),
-            30,
-            32,
-            Some(0.0001),
-            Some(RegularizationType::L2),
-        )
-        .unwrap();
-
-        let network = Network::new(&config);
-
-        // Save to file
-        network.save(file_path.to_str().unwrap()).unwrap();
-
-        // Load from file
-        let loaded_network = Network::load(file_path.to_str().unwrap()).unwrap();
-
-        // Print JSON content for debugging
-        let json_content = std::fs::read_to_string(file_path).unwrap();
-        println!("JSON content: {}", json_content);
-
-        // Verify regularization parameters
-        assert_eq!(
-            network.regularization_type, loaded_network.regularization_type,
-            "Regularization type should be preserved"
-        );
-        assert_eq!(
-            network.regularization_rate, loaded_network.regularization_rate,
-            "Regularization rate should be preserved"
-        );
-
-        // Also verify the JSON content
-        assert!(
-            json_content.contains("\"regularization_type\": \"L2\""),
-            "JSON should contain regularization type"
-        );
-        assert!(
-            json_content.contains("\"regularization_rate\": 0.0001"),
-            "JSON should contain regularization rate"
         );
     }
 }

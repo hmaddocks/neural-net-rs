@@ -386,6 +386,11 @@ impl fmt::Display for NetworkConfig {
         } else {
             write!(f, "  Regularization Rate: None")?;
         }
+        if let Some(rt) = self.regularization_type {
+            write!(f, "  Regularization Type: {}", rt)?;
+        } else {
+            write!(f, "  Regularization Type: None")?;
+        }
         Ok(())
     }
 }

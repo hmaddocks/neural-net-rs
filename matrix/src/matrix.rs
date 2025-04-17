@@ -1,6 +1,6 @@
-use ndarray::{azip, concatenate, s, Array2, ArrayView2, Axis};
-use ndarray_rand::rand_distr::Uniform;
+use ndarray::{Array2, ArrayView2, Axis, azip, concatenate, s};
 use ndarray_rand::RandomExt;
+use ndarray_rand::rand_distr::Uniform;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, Mul, Sub};
