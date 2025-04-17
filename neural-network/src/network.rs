@@ -34,6 +34,7 @@
 /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
 /// ```
 use crate::activations::ActivationType;
+use crate::layer::Layer;
 use crate::network_config::{
     BatchSize, Epochs, LearningRate, Momentum, NetworkConfig, RegularizationRate,
 };
@@ -220,34 +221,13 @@ impl Network {
     /// Each gradient matrix has the same dimensions as its corresponding weight matrix,
     /// including the bias weights.
     fn accumulate_gradients(&mut self, outputs: Matrix, targets: Matrix) -> Vec<Matrix> {
-        let error = &targets - &outputs;
-
-        // Calculate deltas for all layers using iterator chain
-        let mut deltas = Vec::with_capacity(self.weights.len());
-        deltas.push(error.clone());
-
-        // Calculate deltas for hidden layers
-        let mut prev_delta = error;
-        deltas.extend((0..self.weights.len() - 1).rev().map(|i| {
-            let weight = &self.weights[i + 1];
-            let current_output = &self.data[i + 1];
-            let layer = &self.network_layers[i];
-
-            // Use Layer's compute_hidden_delta instance method
-            let delta = layer.compute_hidden_delta(weight, &prev_delta, current_output);
-
-            prev_delta = delta.clone();
-            delta
-        }));
-
-        // Calculate gradients
-        (0..self.weights.len())
-            .map(|i| {
-                let input_with_bias = self.data[i].augment_with_bias();
-                let delta = &deltas[self.weights.len() - 1 - i];
-                crate::layer::Layer::compute_gradients(delta, &input_with_bias)
-            })
-            .collect()
+        Layer::accumulate_network_gradients(
+            &self.weights,
+            &self.data,
+            &self.network_layers,
+            &outputs,
+            &targets,
+        )
     }
 
     /// Updates weights using accumulated gradients from a batch, including L2 regularization.
@@ -261,12 +241,11 @@ impl Network {
         // Apply summed gradients (not averaged by batch size)
         for i in 0..self.weights.len() {
             // Calculate weight updates with momentum
-            // Calculate L2 regularization gradient (weight decay)
-            let l2_gradient = if let Some(rate) = self.regularization_rate {
-                &self.weights[i] * rate
-            } else {
-                Matrix::zeros(self.weights[i].rows(), self.weights[i].cols()) // FIXME: zeros?
-            };
+            // Calculate L2 regularization gradient (weight decay) using Layer method
+            let l2_gradient = Layer::apply_l2_regularization(
+                &self.weights[i],
+                self.regularization_rate.map(|r| f64::from(r)),
+            );
 
             // Combine accumulated gradients with L2 regularization
             let learning_term = (&accumulated_gradients[i] + &l2_gradient) * self.learning_rate;
@@ -292,41 +271,7 @@ impl Network {
     /// # Returns
     /// Tuple containing (squared_error, is_prediction_correct)
     fn evaluate_sample(&self, target: &Matrix, output: &Matrix) -> (f64, bool) {
-        // Calculate squared error sum using fold
-        let error = target - output;
-        let error_sum = error.data.iter().fold(0.0, |sum, &x| sum + x * x);
-
-        // Determine if prediction is correct based on classification type
-        let correct = if output.rows() == 1 {
-            // Binary classification - compare thresholded values
-            (output.get(0, 0) >= 0.5) == (target.get(0, 0) >= 0.5)
-        } else {
-            // Multi-class classification - compare indices of maximum values
-            debug_assert!(!output.data.is_empty(), "Output vector should not be empty");
-            debug_assert!(!target.data.is_empty(), "Target vector should not be empty");
-
-            // Find index of maximum value for output and target
-            let predicted = output
-                .data
-                .iter()
-                .enumerate()
-                .filter(|&(_, &val)| !val.is_nan())
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
-                .map(|(idx, _)| idx)
-                .unwrap(); // safe because output is not empty
-
-            let actual = target
-                .data
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
-                .map(|(idx, _)| idx)
-                .unwrap(); // safe because target is not empty
-
-            predicted == actual
-        };
-
-        (error_sum, correct)
+        Layer::evaluate_prediction(target, output)
     }
 
     /// Evaluates a batch of samples.
@@ -353,14 +298,8 @@ impl Network {
         }
 
         if let Some(rate) = self.regularization_rate {
-            // Add L2 regularization term
-            let l2_term: f64 = self
-                .weights
-                .iter()
-                .map(|w| w.data.iter().map(|&x| x * x).sum::<f64>())
-                .sum::<f64>()
-                * (rate / 2.0);
-            total_error += l2_term;
+            // Add L2 regularization term using the Layer method
+            total_error += Layer::calculate_l2_regularization(&self.weights, f64::from(rate));
         }
 
         (total_error, correct_predictions)

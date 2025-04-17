@@ -143,6 +143,145 @@ impl Layer {
     pub fn compute_gradients(delta: &Matrix, previous_output: &Matrix) -> Matrix {
         delta.dot_multiply(&previous_output.transpose())
     }
+
+    /// Computes the error for the output layer.
+    ///
+    /// # Arguments
+    /// * `outputs` - Output matrix from the network
+    /// * `targets` - Target matrix
+    ///
+    /// # Returns
+    /// The error matrix for the output layer
+    pub fn compute_output_error(outputs: &Matrix, targets: &Matrix) -> Matrix {
+        targets - outputs
+    }
+
+    /// Accumulates gradients for backpropagation across all layers.
+    ///
+    /// # Arguments
+    /// * `weights` - Network weight matrices
+    /// * `layer_outputs` - Cached outputs from each layer
+    /// * `network_layers` - Vector of network layers
+    /// * `outputs` - Final output matrix
+    /// * `targets` - Target matrix
+    ///
+    /// # Returns
+    /// Vector of gradient matrices for each layer, ordered from input to output layer
+    pub fn accumulate_network_gradients(
+        weights: &[Matrix],
+        layer_outputs: &[Matrix],
+        network_layers: &[Layer],
+        outputs: &Matrix,
+        targets: &Matrix,
+    ) -> Vec<Matrix> {
+        // Calculate initial error
+        let error = Self::compute_output_error(outputs, targets);
+
+        // Calculate deltas for all layers
+        let mut deltas = Vec::with_capacity(weights.len());
+        deltas.push(error.clone());
+
+        // Calculate deltas for hidden layers using functional approach
+        let mut prev_delta = error;
+        deltas.extend((0..weights.len() - 1).rev().map(|i| {
+            let weight = &weights[i + 1];
+            let current_output = &layer_outputs[i + 1];
+            let layer = &network_layers[i];
+
+            // Compute delta for hidden layer
+            let delta = layer.compute_hidden_delta(weight, &prev_delta, current_output);
+
+            prev_delta = delta.clone();
+            delta
+        }));
+
+        // Calculate gradients
+        (0..weights.len())
+            .map(|i| {
+                let input_with_bias = layer_outputs[i].augment_with_bias();
+                let delta = &deltas[weights.len() - 1 - i];
+                Self::compute_gradients(delta, &input_with_bias)
+            })
+            .collect()
+    }
+
+    /// Evaluates a prediction from the output layer and determines if it's correct.
+    ///
+    /// # Arguments
+    /// * `target` - Target matrix of shape (output_size x 1) for this sample
+    /// * `output` - Network output matrix of shape (output_size x 1) for this sample
+    ///
+    /// # Returns
+    /// Tuple containing (squared_error, is_prediction_correct)
+    pub fn evaluate_prediction(target: &Matrix, output: &Matrix) -> (f64, bool) {
+        // Calculate squared error sum using functional approach
+        let error = target - output;
+        let error_sum = error.data.iter().fold(0.0, |sum, &x| sum + x * x);
+
+        // Determine if prediction is correct based on classification type
+        let correct = if output.rows() == 1 {
+            // Binary classification - compare thresholded values
+            (output.get(0, 0) >= 0.5) == (target.get(0, 0) >= 0.5)
+        } else {
+            // Multi-class classification - compare indices of maximum values
+            debug_assert!(!output.data.is_empty(), "Output vector should not be empty");
+            debug_assert!(!target.data.is_empty(), "Target vector should not be empty");
+
+            // Find index of maximum value for output and target using iterator methods
+            let predicted = output
+                .data
+                .iter()
+                .enumerate()
+                .filter(|&(_, &val)| !val.is_nan())
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
+                .map(|(idx, _)| idx)
+                .unwrap(); // safe because output is not empty
+
+            let actual = target
+                .data
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
+                .map(|(idx, _)| idx)
+                .unwrap(); // safe because target is not empty
+
+            predicted == actual
+        };
+
+        (error_sum, correct)
+    }
+
+    /// Calculates the L2 regularization term for a set of weight matrices.
+    ///
+    /// # Arguments
+    /// * `weights` - Vector of weight matrices
+    /// * `regularization_rate` - The L2 regularization rate
+    ///
+    /// # Returns
+    /// The L2 regularization term to be added to the error
+    pub fn calculate_l2_regularization(weights: &[Matrix], regularization_rate: f64) -> f64 {
+        weights
+            .iter()
+            .map(|w| w.data.iter().map(|&x| x * x).sum::<f64>())
+            .sum::<f64>()
+            * (regularization_rate / 2.0)
+    }
+
+    /// Applies L2 regularization to weight updates during backpropagation.
+    ///
+    /// # Arguments
+    /// * `weights` - Current weight matrix
+    /// * `regularization_rate` - The L2 regularization rate
+    ///
+    /// # Returns
+    /// The L2 regularization gradient for the weights
+    pub fn apply_l2_regularization(weights: &Matrix, regularization_rate: Option<f64>) -> Matrix {
+        if let Some(rate) = regularization_rate {
+            weights * rate
+        } else {
+            Matrix::zeros(weights.rows(), weights.cols())
+        }
+    }
 }
 
 impl fmt::Display for Layer {
@@ -309,5 +448,97 @@ mod tests {
 
         // Check that activation function is now present
         assert!(layer.activation_fn.is_some());
+    }
+
+    #[test]
+    fn test_evaluate_prediction() {
+        // Test binary classification
+        let target_binary = vec![1.0].into_matrix(1, 1);
+        let output_binary_correct = vec![0.8].into_matrix(1, 1);
+        let output_binary_incorrect = vec![0.3].into_matrix(1, 1);
+
+        let (error_correct, is_correct) =
+            Layer::evaluate_prediction(&target_binary, &output_binary_correct);
+        assert!(
+            is_correct,
+            "Binary prediction with 0.8 should be considered correct when target is 1.0"
+        );
+        assert_relative_eq!(error_correct, 0.04, epsilon = 1e-10); // (1-0.8)² = 0.04
+
+        let (error_incorrect, is_incorrect) =
+            Layer::evaluate_prediction(&target_binary, &output_binary_incorrect);
+        assert!(
+            !is_incorrect,
+            "Binary prediction with 0.3 should be considered incorrect when target is 1.0"
+        );
+        assert_relative_eq!(error_incorrect, 0.49, epsilon = 1e-10); // (1-0.3)² = 0.49
+
+        // Test multi-class classification
+        let target_multi = vec![0.0, 1.0, 0.0].into_matrix(3, 1);
+        let output_multi_correct = vec![0.1, 0.7, 0.2].into_matrix(3, 1);
+        let output_multi_incorrect = vec![0.1, 0.2, 0.7].into_matrix(3, 1);
+
+        let (_, multi_correct) = Layer::evaluate_prediction(&target_multi, &output_multi_correct);
+        assert!(
+            multi_correct,
+            "Multi-class prediction should be correct when highest value matches target"
+        );
+
+        let (_, multi_incorrect) =
+            Layer::evaluate_prediction(&target_multi, &output_multi_incorrect);
+        assert!(
+            !multi_incorrect,
+            "Multi-class prediction should be incorrect when highest value does not match target"
+        );
+    }
+
+    #[test]
+    fn test_calculate_l2_regularization() {
+        // Create sample weights
+        let weights = vec![
+            vec![0.1, 0.2, 0.3, 0.4].into_matrix(2, 2),
+            vec![0.5, 0.6, 0.7, 0.8, 0.9, 1.0].into_matrix(2, 3),
+        ];
+
+        let reg_rate = 0.01;
+        let l2_term = Layer::calculate_l2_regularization(&weights, reg_rate);
+
+        // Calculate expected value manually:
+        // Sum of squares of first matrix: 0.1² + 0.2² + 0.3² + 0.4² = 0.01 + 0.04 + 0.09 + 0.16 = 0.3
+        // Sum of squares of second matrix: 0.5² + 0.6² + 0.7² + 0.8² + 0.9² + 1.0² = 0.25 + 0.36 + 0.49 + 0.64 + 0.81 + 1.0 = 3.55
+        // Total sum: 0.3 + 3.55 = 3.85
+        // L2 term: 3.85 * (0.01 / 2) = 3.85 * 0.005 = 0.01925
+
+        assert_relative_eq!(l2_term, 0.01925, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_apply_l2_regularization() {
+        // Create sample weights
+        let weights = vec![0.1, 0.2, 0.3, 0.4].into_matrix(2, 2);
+
+        // Test with regularization rate
+        let reg_rate = 0.01;
+        let l2_gradient = Layer::apply_l2_regularization(&weights, Some(reg_rate));
+
+        // Check dimensions
+        assert_eq!(l2_gradient.rows(), weights.rows());
+        assert_eq!(l2_gradient.cols(), weights.cols());
+
+        // Check values: each weight should be multiplied by reg_rate
+        assert_relative_eq!(l2_gradient.get(0, 0), 0.1 * 0.01, epsilon = 1e-10);
+        assert_relative_eq!(l2_gradient.get(0, 1), 0.2 * 0.01, epsilon = 1e-10);
+        assert_relative_eq!(l2_gradient.get(1, 0), 0.3 * 0.01, epsilon = 1e-10);
+        assert_relative_eq!(l2_gradient.get(1, 1), 0.4 * 0.01, epsilon = 1e-10);
+
+        // Test with no regularization
+        let zero_gradient = Layer::apply_l2_regularization(&weights, None);
+
+        // Check all values are zero
+        for i in 0..zero_gradient.rows() {
+            for j in 0..zero_gradient.cols() {
+                assert_relative_eq!(zero_gradient.get(i, j), 0.0, epsilon = 1e-10);
+            }
+        }
     }
 }
