@@ -36,10 +36,8 @@
 /// ```
 use crate::activations::ActivationType;
 use crate::layer::Layer;
-use crate::network_config::{
-    BatchSize, Epochs, LearningRate, Momentum, NetworkConfig, RegularizationRate,
-};
-use crate::regularization::RegularizationType;
+use crate::network_config::{BatchSize, Epochs, LearningRate, Momentum, NetworkConfig};
+use crate::regularization::{RegularizationFunction, RegularizationType};
 use crate::training_history::TrainingHistory;
 use indicatif::{ProgressBar, ProgressStyle};
 use matrix::matrix::Matrix;
@@ -82,9 +80,12 @@ pub struct Network {
     /// Batch size for training
     batch_size: BatchSize,
     /// Optional regularization rate (weight decay)
-    regularization_rate: Option<RegularizationRate>,
+    regularization_rate: Option<f64>,
     /// Type of regularization to use (L1 or L2)
     regularization_type: Option<RegularizationType>,
+    /// Regularization function instance
+    #[serde(skip)]
+    regularization_fn: Option<Box<dyn RegularizationFunction>>,
     /// Training history containing metrics recorded during training
     #[serde(skip)]
     pub training_history: TrainingHistory,
@@ -159,6 +160,19 @@ impl Network {
         let mut data = Vec::with_capacity(network_config.layers.len());
         data.resize(network_config.layers.len(), Matrix::default());
 
+        // Initialize regularization function and rate if configured
+        let (regularization_fn, regularization_rate) = if let (Some(reg_type), Some(rate)) = (
+            network_config.regularization_type,
+            network_config.regularization_rate,
+        ) {
+            (
+                Some(reg_type.create_regularization()),
+                Some(f64::from(rate)),
+            )
+        } else {
+            (None, None)
+        };
+
         Network {
             layers_count: nodes.clone(),
             layers,
@@ -172,8 +186,9 @@ impl Network {
             std_dev: None,
             epochs: network_config.epochs,
             batch_size: network_config.batch_size,
-            regularization_rate: network_config.regularization_rate,
+            regularization_rate,
             regularization_type: network_config.regularization_type,
+            regularization_fn,
             training_history: TrainingHistory::new(),
         }
     }
@@ -252,11 +267,9 @@ impl Network {
             let learning_term = &accumulated_gradients[i] * f64::from(self.learning_rate);
 
             // Calculate regularization gradient if configured
-            let reg_gradient = if let (Some(rate), Some(reg_type)) = (
-                self.regularization_rate.map(|r| f64::from(r)), // FIXME: configure this once?
-                self.regularization_type,
-            ) {
-                let reg_fn = reg_type.create_regularization(); // FIXME: configure this once?
+            let reg_gradient = if let (Some(rate), Some(reg_fn)) =
+                (self.regularization_rate, &self.regularization_fn)
+            {
                 reg_fn.calculate_gradient(&self.weights[i], rate)
             } else {
                 Matrix::zeros(self.weights[i].rows(), self.weights[i].cols())
@@ -348,11 +361,9 @@ impl Network {
         );
 
         // Add regularization term if configured
-        let total_error = if let (Some(rate), Some(reg_type)) = (
-            self.regularization_rate.map(|r| f64::from(r)), // FIXME: configure this once?
-            self.regularization_type,
-        ) {
-            let reg_fn = reg_type.create_regularization(); // FIXME: configure this once?
+        let total_error = if let (Some(rate), Some(reg_fn)) =
+            (self.regularization_rate, &self.regularization_fn)
+        {
             total_error + reg_fn.calculate_term(&self.weights, rate)
         } else {
             total_error
