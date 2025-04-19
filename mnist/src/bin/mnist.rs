@@ -3,11 +3,15 @@ use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use mnist::mnist::{get_actual_digit, load_test_data, load_training_data};
 use mnist::{StandardizationParams, StandardizedMnistData};
-use neural_network::{Network, NetworkConfig, Matrix, TrainingHistory};
 use ndarray::Axis;
+use neural_network::{Matrix, Network, NetworkConfig, TrainingHistory};
 use plotters::prelude::*;
 use serde_json;
-use std::{fs::File, io::Write, time::{Duration, Instant}};
+use std::{
+    fs::File,
+    io::Write,
+    time::{Duration, Instant},
+};
 
 /// A confusion matrix for tracking model predictions vs actual values
 #[derive(Debug, Default)]
@@ -180,19 +184,14 @@ fn test() -> Result<()> {
         .context("Failed to standardize test data")?;
 
     // Combine test data into matrices for batch processing
-    let test_matrix = Matrix::concatenate(
-        &standardised_test_data.iter().collect::<Vec<_>>(),
-        Axis(1)
-    );
+    let test_matrix =
+        Matrix::concatenate(&standardised_test_data.iter().collect::<Vec<_>>(), Axis(1));
 
     // Get predictions for all test data at once
     let output_matrix = network.predict(test_matrix);
 
     // Combine labels into matrix
-    let label_matrix = Matrix::concatenate(
-        &test_data.labels().iter().collect::<Vec<_>>(),
-        Axis(1)
-    );
+    let label_matrix = Matrix::concatenate(&test_data.labels().iter().collect::<Vec<_>>(), Axis(1));
 
     println!("\nTesting network predictions...");
     let total = standardised_test_data.len();
@@ -200,18 +199,17 @@ fn test() -> Result<()> {
     let mut confusion_matrix = ConfusionMatrix::new();
 
     // Process predictions and update confusion matrix
-    (0..output_matrix.cols())
-        .try_for_each(|i| -> Result<()> {
-            let output = output_matrix.col(i);
-            let label = label_matrix.col(i);
-            let predicted = get_actual_digit(&output)
-                .map_err(|e| anyhow!("Failed to get predicted digit: {}", e))?;
-            let actual = get_actual_digit(&label)
-                .map_err(|e| anyhow!("Failed to get actual digit: {}", e))?;
-            confusion_matrix.record(actual, predicted);
-            progress_bar.inc(1);
-            Ok(())
-        })?;
+    (0..output_matrix.cols()).try_for_each(|i| -> Result<()> {
+        let output = output_matrix.col(i);
+        let label = label_matrix.col(i);
+        let predicted = get_actual_digit(&output)
+            .map_err(|e| anyhow!("Failed to get predicted digit: {}", e))?;
+        let actual =
+            get_actual_digit(&label).map_err(|e| anyhow!("Failed to get actual digit: {}", e))?;
+        confusion_matrix.record(actual, predicted);
+        progress_bar.inc(1);
+        Ok(())
+    })?;
 
     progress_bar.finish_with_message("Testing complete");
 
@@ -284,8 +282,8 @@ fn train() -> Result<()> {
 
 /// Saves the training history to a JSON file
 fn save_training_history(history: &TrainingHistory) -> Result<()> {
-    let history_json = serde_json::to_string_pretty(history)
-        .context("Failed to serialize training history")?;
+    let history_json =
+        serde_json::to_string_pretty(history).context("Failed to serialize training history")?;
 
     let history_path = std::env::current_dir()
         .context("Failed to get current directory")?
@@ -294,12 +292,10 @@ fn save_training_history(history: &TrainingHistory) -> Result<()> {
 
     // Create models directory if it doesn't exist
     if let Some(parent) = history_path.parent() {
-        std::fs::create_dir_all(parent)
-            .context("Failed to create models directory")?;
+        std::fs::create_dir_all(parent).context("Failed to create models directory")?;
     }
 
-    let mut file = File::create(&history_path)
-        .context("Failed to create training history file")?;
+    let mut file = File::create(&history_path).context("Failed to create training history file")?;
     file.write_all(history_json.as_bytes())
         .context("Failed to write training history file")?;
 
@@ -307,7 +303,7 @@ fn save_training_history(history: &TrainingHistory) -> Result<()> {
     Ok(())
 }
 
-/// Creates an SVG graph of the training history
+/// Creates an SVG graph of the training history accuracies and losses
 fn create_training_history_graph() -> Result<()> {
     println!("Loading training history...");
 
@@ -318,14 +314,17 @@ fn create_training_history_graph() -> Result<()> {
         .join("training_history.json");
 
     if !history_path.exists() {
-        return Err(anyhow!("Training history file not found at {}", history_path.display()));
+        return Err(anyhow!(
+            "Training history file not found at {}",
+            history_path.display()
+        ));
     }
 
-    let history_json = std::fs::read_to_string(&history_path)
-        .context("Failed to read training history file")?;
+    let history_json =
+        std::fs::read_to_string(&history_path).context("Failed to read training history file")?;
 
-    let history: TrainingHistory = serde_json::from_str(&history_json)
-        .context("Failed to parse training history JSON")?;
+    let history: TrainingHistory =
+        serde_json::from_str(&history_json).context("Failed to parse training history JSON")?;
 
     // Create output directory if it doesn't exist
     let output_dir = std::env::current_dir()
@@ -333,8 +332,7 @@ fn create_training_history_graph() -> Result<()> {
         .join("graphs");
 
     if !output_dir.exists() {
-        std::fs::create_dir(&output_dir)
-            .context("Failed to create graphs directory")?;
+        std::fs::create_dir(&output_dir).context("Failed to create graphs directory")?;
     }
 
     // Create SVG file for the graph
@@ -342,8 +340,7 @@ fn create_training_history_graph() -> Result<()> {
 
     // Set up the plot
     let root = SVGBackend::new(&output_path, (1024, 768)).into_drawing_area();
-    root.fill(&WHITE)
-        .context("Failed to fill drawing area")?;
+    root.fill(&WHITE).context("Failed to fill drawing area")?;
 
     // Determine the ranges for the chart
     let epoch_range = 0.0..(history.accuracies.len() as f64);
@@ -362,14 +359,10 @@ fn create_training_history_graph() -> Result<()> {
         .y_label_area_size(60)
         .right_y_label_area_size(60) // Add space for second scale on right
         .build_cartesian_2d(epoch_range.clone(), 0f64..100f64)
-        .context("Failed to build chart")?;
+        .context("Failed to build chart")?
+        .set_secondary_coord(epoch_range.clone(), 0f64..loss_max); // Add secondary coordinate system for loss
 
-    // Add a second y-axis for loss
-    // We'll scale the loss values to fit in the 0-100 range for display
-    // but show the actual values in the labels
-    let loss_scale = 100.0 / loss_max;
-
-    // Configure the mesh
+    // Configure the mesh for accuracy (left y-axis)
     chart
         .configure_mesh()
         .x_labels(10)
@@ -378,64 +371,33 @@ fn create_training_history_graph() -> Result<()> {
         .y_label_formatter(&accuracy_formatter)
         .x_label_formatter(&x_formatter)
         .x_desc("Epoch")
+        .y_desc("Accuracy (%)")
         .draw()
         .context("Failed to draw mesh")?;
 
-    // Draw a second y-axis on the right for loss
-    // We'll manually draw this
-    let x_range = chart.plotting_area().get_x_range();
-    let y_range = chart.plotting_area().get_y_range();
-
-    // We only need right, bottom, and top coordinates
-    let right = x_range.end;
-    let bottom = y_range.start;
-    let top = y_range.end;
-
-    // Draw the right y-axis line
-    chart.plotting_area().draw(&PathElement::new(
-        vec![(right, bottom), (right, top)],
-        &BLACK.mix(0.5),
-    )).context("Failed to draw right y-axis")?;
-
-    // Draw tick marks and labels for loss axis
-    let num_ticks = 10;
-    for i in 0..=num_ticks {
-        let y_pos = bottom + (top - bottom) * i as f64 / num_ticks as f64;
-        let actual_loss = (i as f64 / num_ticks as f64) * loss_max;
-
-        // Draw tick mark
-        chart.plotting_area().draw(&PathElement::new(
-            vec![(right, y_pos), (right + 5.0, y_pos)],
-            &BLACK.mix(0.5),
-        )).context("Failed to draw tick mark")?;
-
-        // Draw label
-        chart.plotting_area().draw(&Text::new(
-            format!("{:.4}", actual_loss),
-            (right + 10.0, y_pos),
-            ("sans-serif", 15).into_font(),
-        )).context("Failed to draw tick label")?;
-    }
-
-    // Draw the loss axis label
-    chart.plotting_area().draw(&Text::new(
-        "Loss",
-        (right + 40.0, (bottom + top) / 2.0),
-        ("sans-serif", 15).into_font().transform(FontTransform::Rotate90),
-    )).context("Failed to draw loss axis label")?;
+    // Configure the secondary mesh for loss (right y-axis)
+    chart
+        .configure_secondary_axes()
+        .y_labels(10)
+        .y_label_formatter(&|y: &f64| format!("{:.4}", y))
+        .y_desc("Loss")
+        .draw()
+        .context("Failed to draw secondary axes")?;
 
     // Create the accuracy line series
-    let accuracy_points: Vec<(f64, f64)> = history.accuracies
+    let accuracy_points: Vec<(f64, f64)> = history
+        .accuracies
         .iter()
         .enumerate()
         .map(|(i, &acc)| (i as f64, acc))
         .collect();
 
-    // Create the loss line series - scale to fit in the 0-100 range
-    let loss_points: Vec<(f64, f64)> = history.losses
+    // Create the loss line series - no need to scale since we have dual axes
+    let loss_points: Vec<(f64, f64)> = history
+        .losses
         .iter()
         .enumerate()
-        .map(|(i, &loss)| (i as f64, loss * loss_scale))
+        .map(|(i, &loss)| (i as f64, loss))
         .collect();
 
     // Draw the accuracy line
@@ -445,9 +407,9 @@ fn create_training_history_graph() -> Result<()> {
         .label("Accuracy")
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
 
-    // Draw the loss line
+    // Draw the loss line using secondary coordinate system
     chart
-        .draw_series(LineSeries::new(loss_points, &RED))
+        .draw_secondary_series(LineSeries::new(loss_points, &RED))
         .context("Failed to draw loss line")?
         .label("Loss")
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
@@ -471,7 +433,9 @@ fn main() -> Result<()> {
     match args.command {
         Command::Train => train().context("Failed to train network")?,
         Command::Test => test().context("Failed to test network")?,
-        Command::Graph => create_training_history_graph().context("Failed to create training history graph")?,
+        Command::Graph => {
+            create_training_history_graph().context("Failed to create training history graph")?
+        }
     }
 
     Ok(())
