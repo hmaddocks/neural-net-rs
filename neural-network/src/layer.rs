@@ -199,49 +199,6 @@ impl Layer {
             })
             .collect()
     }
-
-    /// Evaluates a prediction from the output layer and determines if it's correct.
-    ///
-    /// # Arguments
-    /// * `target` - Target matrix of shape (output_size x 1) for this sample
-    /// * `output` - Network output matrix of shape (output_size x 1) for this sample
-    ///
-    /// # Returns
-    /// Tuple containing (squared_error, is_prediction_correct)
-    pub fn evaluate_prediction(target: &Matrix, output: &Matrix) -> (f64, bool) {
-        let error = target - output;
-        let error_sum = error.data.iter().fold(0.0, |sum, &x| sum + x * x);
-
-        // Determine if prediction is correct based on classification type
-        let correct = if output.rows() == 1 {
-            // Binary classification - compare thresholded values
-            (output.get(0, 0) >= 0.5) == (target.get(0, 0) >= 0.5)
-        } else {
-            // Multi-class classification - compare indices of maximum values
-            debug_assert!(!output.data.is_empty(), "Output vector should not be empty");
-            debug_assert!(!target.data.is_empty(), "Target vector should not be empty");
-
-            // Find index of maximum value for output and target using iterator methods
-            let predicted = output
-                .data
-                .iter()
-                .enumerate()
-                .filter(|&(_, &val)| !val.is_nan())
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
-                .map_or(0, |(idx, _)| idx); // Default to 0 if empty (should never happen due to debug_assert)
-
-            let actual = target
-                .data
-                .iter()
-                .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
-                .map_or(0, |(idx, _)| idx); // Default to 0 if empty (should never happen due to debug_assert)
-
-            predicted == actual
-        };
-
-        (error_sum, correct)
-    }
 }
 
 impl fmt::Display for Layer {
@@ -408,47 +365,5 @@ mod tests {
 
         // Check that activation function is now present
         assert!(layer.activation_fn.is_some());
-    }
-
-    #[test]
-    fn test_evaluate_prediction() {
-        // Test binary classification
-        let target_binary = vec![1.0].into_matrix(1, 1);
-        let output_binary_correct = vec![0.8].into_matrix(1, 1);
-        let output_binary_incorrect = vec![0.3].into_matrix(1, 1);
-
-        let (error_correct, is_correct) =
-            Layer::evaluate_prediction(&target_binary, &output_binary_correct);
-        assert!(
-            is_correct,
-            "Binary prediction with 0.8 should be considered correct when target is 1.0"
-        );
-        assert_relative_eq!(error_correct, 0.04, epsilon = 1e-10); // (1-0.8)² = 0.04
-
-        let (error_incorrect, is_incorrect) =
-            Layer::evaluate_prediction(&target_binary, &output_binary_incorrect);
-        assert!(
-            !is_incorrect,
-            "Binary prediction with 0.3 should be considered incorrect when target is 1.0"
-        );
-        assert_relative_eq!(error_incorrect, 0.49, epsilon = 1e-10); // (1-0.3)² = 0.49
-
-        // Test multi-class classification
-        let target_multi = vec![0.0, 1.0, 0.0].into_matrix(3, 1);
-        let output_multi_correct = vec![0.1, 0.7, 0.2].into_matrix(3, 1);
-        let output_multi_incorrect = vec![0.1, 0.2, 0.7].into_matrix(3, 1);
-
-        let (_, multi_correct) = Layer::evaluate_prediction(&target_multi, &output_multi_correct);
-        assert!(
-            multi_correct,
-            "Multi-class prediction should be correct when highest value matches target"
-        );
-
-        let (_, multi_incorrect) =
-            Layer::evaluate_prediction(&target_multi, &output_multi_incorrect);
-        assert!(
-            !multi_incorrect,
-            "Multi-class prediction should be incorrect when highest value does not match target"
-        );
     }
 }

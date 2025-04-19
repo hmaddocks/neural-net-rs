@@ -286,7 +286,38 @@ impl Network {
     /// # Returns
     /// Tuple containing (squared_error, is_prediction_correct)
     fn evaluate_sample(&self, target: &Matrix, output: &Matrix) -> (f64, bool) {
-        Layer::evaluate_prediction(target, output)
+        let error = target - output;
+        let error_sum = error.data.iter().fold(0.0, |sum, &x| sum + x * x);
+
+        // Determine if prediction is correct based on classification type
+        let correct = if output.rows() == 1 {
+            // Binary classification - compare thresholded values
+            (output.get(0, 0) >= 0.5) == (target.get(0, 0) >= 0.5)
+        } else {
+            // Multi-class classification - compare indices of maximum values
+            debug_assert!(!output.data.is_empty(), "Output vector should not be empty");
+            debug_assert!(!target.data.is_empty(), "Target vector should not be empty");
+
+            // Find index of maximum value for output and target using iterator methods
+            let predicted = output
+                .data
+                .iter()
+                .enumerate()
+                .filter(|&(_, &val)| !val.is_nan())
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
+                .map_or(0, |(idx, _)| idx); // Default to 0 if empty (should never happen due to debug_assert)
+
+            let actual = target
+                .data
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("NaN comparison"))
+                .map_or(0, |(idx, _)| idx); // Default to 0 if empty (should never happen due to debug_assert)
+
+            predicted == actual
+        };
+
+        (error_sum, correct)
     }
 
     /// Evaluates a batch of samples.
