@@ -1,4 +1,4 @@
-use crate::matrix::Matrix;
+use matrix::Matrix;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::E;
 
@@ -151,10 +151,6 @@ impl ActivationFunction for Softmax {
     }
 }
 
-/// Global instances of activation functions
-pub const SIGMOID: Sigmoid = Sigmoid;
-pub const SOFTMAX: Softmax = Softmax;
-
 /// Wrapper type for serializing activation functions
 #[derive(Serialize, Deserialize)]
 pub struct ActivationWrapper {
@@ -176,8 +172,8 @@ pub trait ActivationFunctionSerialize: ActivationFunction {
         let wrapper: ActivationWrapper =
             serde_json::from_str(json).expect("Failed to deserialize activation function");
         match wrapper.activation_type {
-            ActivationType::Sigmoid => Ok(Box::new(SIGMOID)),
-            ActivationType::Softmax => Ok(Box::new(SOFTMAX)),
+            ActivationType::Sigmoid => Ok(Box::new(Sigmoid)),
+            ActivationType::Softmax => Ok(Box::new(Softmax)),
         }
     }
 }
@@ -190,19 +186,19 @@ impl ActivationFunctionSerialize for Softmax {}
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
-    use matrix::matrix::IntoMatrix;
+    use matrix::IntoMatrix;
 
     #[test]
     fn test_sigmoid_activation() {
         let x = 0.0;
-        let result = SIGMOID.apply(x);
+        let result = Sigmoid.apply(x);
         assert_relative_eq!(result, 0.5, epsilon = 1e-10);
     }
 
     #[test]
     fn test_sigmoid_derivative() {
         let x = 0.5;
-        let result = SIGMOID.derivative(x);
+        let result = Sigmoid.derivative(x);
         assert_relative_eq!(result, 0.25, epsilon = 1e-10);
     }
 
@@ -211,7 +207,7 @@ mod tests {
         let input = vec![0.0, 1.0, -1.0, 2.0].into_matrix(2, 2);
 
         // Test vector function
-        let result = SIGMOID.apply_vector(&input);
+        let result = Sigmoid.apply_vector(&input);
         assert_relative_eq!(result.get(0, 0), 0.5, epsilon = 1e-10);
         assert_relative_eq!(
             result.get(0, 1),
@@ -223,7 +219,7 @@ mod tests {
     #[test]
     fn test_sigmoid_vector_derivative() {
         let output = vec![0.5, 0.7, 0.3, 0.8].into_matrix(2, 2);
-        let derivative = SIGMOID.apply_derivative_vector(&output);
+        let derivative = Sigmoid.apply_derivative_vector(&output);
         assert_relative_eq!(derivative.get(0, 0), 0.25, epsilon = 1e-10);
         assert_relative_eq!(derivative.get(0, 1), 0.7 * (1.0 - 0.7), epsilon = 1e-10);
     }
@@ -232,7 +228,7 @@ mod tests {
     fn test_softmax_activation() {
         // Test with simple input [0.0, 1.0]
         let input = vec![0.0, 1.0].into_matrix(2, 1);
-        let result = SOFTMAX.apply_vector(&input);
+        let result = Softmax.apply_vector(&input);
 
         // For input [0.0, 1.0]:
         // e^0 = 1.0
@@ -253,7 +249,7 @@ mod tests {
     fn test_softmax_derivative() {
         // Test with input [0.0, 1.0]
         let input = vec![0.0, 1.0].into_matrix(2, 1);
-        let derivative = SOFTMAX.apply_derivative_vector(&input);
+        let derivative = Softmax.apply_derivative_vector(&input);
 
         // For input [0.0, 1.0]:
         // softmax(0) ≈ 0.269
@@ -272,19 +268,19 @@ mod tests {
     #[test]
     #[should_panic(expected = "Softmax cannot be applied to scalar values")]
     fn test_softmax_scalar_activation() {
-        SOFTMAX.apply(0.5);
+        Softmax.apply(0.5);
     }
 
     #[test]
     #[should_panic(expected = "Softmax derivative cannot be applied to scalar values")]
     fn test_softmax_scalar_derivative() {
-        SOFTMAX.derivative(0.5);
+        Softmax.derivative(0.5);
     }
 
     #[test]
     fn test_activation_serialization() {
         // Test serialization
-        let json = SIGMOID.to_json();
+        let json = Sigmoid.to_json();
         assert_eq!(json, r#"{"activation_type":"Sigmoid"}"#);
     }
 
@@ -301,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_softmax_batch_operations() {
-        let softmax = SOFTMAX;
+        let softmax = Softmax;
         let input = Matrix::new(3, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
 
         let output = softmax.apply_vector(&input);
@@ -335,7 +331,7 @@ mod tests {
     fn test_softmax_numerical_stability() {
         // Test with large numbers that could cause overflow
         let input = vec![1000.0, 1000.1].into_matrix(2, 1);
-        let result = SOFTMAX.apply_vector(&input);
+        let result = Softmax.apply_vector(&input);
 
         // Should still sum to 1.0
         let sum: f64 = result.data.iter().sum();
@@ -346,7 +342,7 @@ mod tests {
     fn test_softmax_zero_input() {
         // Test with all zeros
         let input = vec![0.0, 0.0].into_matrix(2, 1);
-        let result = SOFTMAX.apply_vector(&input);
+        let result = Softmax.apply_vector(&input);
 
         // Should give equal probabilities
         assert_relative_eq!(result.get(0, 0), 0.5, epsilon = 1e-10);

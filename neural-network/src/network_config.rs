@@ -1,7 +1,7 @@
 use crate::activations::{ActivationFunction, ActivationType, Sigmoid, Softmax};
 use crate::layer::Layer;
-use crate::matrix::Matrix;
 use crate::regularization::{RegularizationFunction, RegularizationType};
+use matrix::Matrix;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs;

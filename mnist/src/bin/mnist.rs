@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
-use mnist::mnist::{get_actual_digit, load_test_data, load_training_data};
+use mnist::{get_actual_digit, load_test_data, load_training_data};
 use mnist::{StandardizationParams, StandardizedMnistData};
 use ndarray::Axis;
 use neural_network::{Matrix, Network, NetworkConfig, TrainingHistory};

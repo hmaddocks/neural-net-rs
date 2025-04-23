@@ -40,7 +40,7 @@ use crate::network_config::{BatchSize, Epochs, LearningRate, Momentum, NetworkCo
 use crate::regularization::{RegularizationFunction, RegularizationType};
 use crate::training_history::TrainingHistory;
 use indicatif::{ProgressBar, ProgressStyle};
-use matrix::matrix::Matrix;
+use matrix::Matrix;
 use ndarray::Axis;
 use rand::rng;
 use rand::seq::SliceRandom;

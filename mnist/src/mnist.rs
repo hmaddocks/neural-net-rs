@@ -6,7 +6,7 @@
 
 use indicatif::style::TemplateError;
 use indicatif::{ProgressBar, ProgressStyle};
-use matrix::matrix::Matrix;
+use matrix::Matrix;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};

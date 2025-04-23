@@ -1,4 +1,5 @@
-pub mod macros;
-pub mod matrix;
+mod macros;
+mod matrix;
 
+pub use matrix::IntoMatrix;
 pub use matrix::Matrix;

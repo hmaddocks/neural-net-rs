@@ -2,7 +2,7 @@
 //!
 //! Each layer consists of a number of nodes and an optional activation function.
 use crate::activations::{ActivationFunction, ActivationType};
-use crate::matrix::Matrix;
+use matrix::Matrix;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -215,7 +215,7 @@ impl fmt::Display for Layer {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
-    use matrix::matrix::IntoMatrix;
+    use matrix::IntoMatrix;
 
     #[test]
     fn test_layer_new_with_activation() {

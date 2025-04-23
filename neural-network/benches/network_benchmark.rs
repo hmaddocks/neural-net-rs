@@ -1,9 +1,6 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use matrix::matrix::Matrix;
-use neural_network::{
-    activations::ActivationType, layer::Layer, network::Network, network_config::NetworkConfig,
-    regularization::RegularizationType,
-};
+use matrix::Matrix;
+use neural_network::{ActivationType, Layer, Network, NetworkConfig, RegularizationType};
 
 fn train_xor_network(c: &mut Criterion) {
     // XOR training data

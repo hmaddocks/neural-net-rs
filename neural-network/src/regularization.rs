@@ -1,4 +1,4 @@
-use crate::matrix::Matrix;
+use matrix::Matrix;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -90,10 +90,6 @@ impl RegularizationFunction for L2 {
     }
 }
 
-/// Global instances of regularization functions
-pub const L1_REG: L1 = L1;
-pub const L2_REG: L2 = L2;
-
 /// Wrapper type for serializing regularization functions
 #[derive(Serialize, Deserialize)]
 pub struct RegularizationWrapper {
@@ -114,8 +110,8 @@ pub trait RegularizationFunctionSerialize: RegularizationFunction {
     fn from_json(json: &str) -> Result<Box<dyn RegularizationFunction>, serde_json::Error> {
         let wrapper: RegularizationWrapper = serde_json::from_str(json)?;
         match wrapper.regularization_type {
-            RegularizationType::L1 => Ok(Box::new(L1_REG)),
-            RegularizationType::L2 => Ok(Box::new(L2_REG)),
+            RegularizationType::L1 => Ok(Box::new(L1)),
+            RegularizationType::L2 => Ok(Box::new(L2)),
         }
     }
 }
@@ -128,7 +124,7 @@ impl RegularizationFunctionSerialize for L2 {}
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
-    use matrix::matrix::IntoMatrix;
+    use matrix::IntoMatrix;
 
     #[test]
     fn test_l1_regularization_term() {
@@ -138,7 +134,7 @@ mod tests {
         ];
 
         let rate = 0.01;
-        let l1_term = L1_REG.calculate_term(&weights, rate);
+        let l1_term = L1.calculate_term(&weights, rate);
 
         // Calculate expected value manually:
         // Sum of absolute values of first matrix: 1 + 2 + 3 + 4 = 10
@@ -154,7 +150,7 @@ mod tests {
         let weights = vec![1.0, -2.0, 3.0, -4.0].into_matrix(2, 2);
         let rate = 0.01;
 
-        let gradient = L1_REG.calculate_gradient(&weights, rate);
+        let gradient = L1.calculate_gradient(&weights, rate);
 
         // Expected gradient: rate * sign(w)
         assert_relative_eq!(gradient.get(0, 0), 0.01, epsilon = 1e-10);
@@ -171,7 +167,7 @@ mod tests {
         ];
 
         let rate = 0.01;
-        let l2_term = L2_REG.calculate_term(&weights, rate);
+        let l2_term = L2.calculate_term(&weights, rate);
 
         // Calculate expected value manually:
         // Sum of squares of first matrix: 1² + 2² + 3² + 4² = 1 + 4 + 9 + 16 = 30
@@ -187,7 +183,7 @@ mod tests {
         let weights = vec![1.0, 2.0, 3.0, 4.0].into_matrix(2, 2);
         let rate = 0.01;
 
-        let gradient = L2_REG.calculate_gradient(&weights, rate);
+        let gradient = L2.calculate_gradient(&weights, rate);
 
         // Expected gradient: rate * w
         assert_relative_eq!(gradient.get(0, 0), 0.01, epsilon = 1e-10);
@@ -199,7 +195,7 @@ mod tests {
     #[test]
     fn test_regularization_serialization() {
         // Test serialization
-        let json = L1_REG.to_json();
+        let json = L1.to_json();
         assert_eq!(json, r#"{"regularization_type":"L1"}"#);
     }
 

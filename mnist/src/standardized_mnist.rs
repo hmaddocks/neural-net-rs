@@ -1,6 +1,6 @@
 use crate::MnistError;
 use indicatif::{ProgressBar, ProgressStyle};
-use matrix::matrix::Matrix;
+use matrix::Matrix;
 use ndarray::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
