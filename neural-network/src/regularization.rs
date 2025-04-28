@@ -2,52 +2,53 @@ use matrix::Matrix;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// Type of regularization function
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum RegularizationType {
     L1,
     L2,
 }
 
 impl RegularizationType {
-    /// Creates a new regularization function instance based on the type
-    pub fn create_regularization(&self) -> Box<dyn RegularizationFunction> {
+    pub fn create_regularization(&self) -> Regularization {
         match self {
-            RegularizationType::L1 => Box::new(L1),
-            RegularizationType::L2 => Box::new(L2),
+            RegularizationType::L1 => Regularization::L1(L1::new(1.0)),
+            RegularizationType::L2 => Regularization::L2(L2::new(1.0)),
         }
     }
 }
 
-impl fmt::Display for RegularizationType {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum Regularization {
+    L1(L1),
+    L2(L2),
+}
+
+impl Regularization {
+    pub fn calculate_term(&self, weights: &[Matrix], rate: f64) -> f64 {
+        match self {
+            Regularization::L1(l1) => l1.calculate_term(weights, rate),
+            Regularization::L2(l2) => l2.calculate_term(weights, rate),
+        }
+    }
+
+    pub fn calculate_gradient(&self, weights: &Matrix, rate: f64) -> Matrix {
+        match self {
+            Regularization::L1(l1) => l1.calculate_gradient(weights, rate),
+            Regularization::L2(l2) => l2.calculate_gradient(weights, rate),
+        }
     }
 }
 
-/// Trait defining the interface for regularization functions.
-///
-/// A regularization function must implement both the regularization term calculation
-/// and the gradient calculation for backpropagation.
-pub trait RegularizationFunction: Send + Sync {
-    /// Calculates the regularization term for a set of weights
-    fn calculate_term(&self, weights: &[Matrix], rate: f64) -> f64;
-
-    /// Calculates the regularization gradient for a weight matrix
-    fn calculate_gradient(&self, weights: &Matrix, rate: f64) -> Matrix;
-
-    /// Returns the type of regularization function
-    fn regularization_type(&self) -> RegularizationType;
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct L1 {
+    rate: f64,
 }
 
-/// L1 regularization (Lasso)
-///
-/// Implements L1 regularization: f(w) = rate * sum(|w|)
-/// with gradient: f'(w) = rate * sign(w)
-#[derive(Debug, Clone, Copy)]
-pub struct L1;
+impl L1 {
+    pub fn new(rate: f64) -> Self {
+        L1 { rate }
+    }
 
-impl RegularizationFunction for L1 {
     fn calculate_term(&self, weights: &[Matrix], rate: f64) -> f64 {
         weights
             .iter()
@@ -59,20 +60,18 @@ impl RegularizationFunction for L1 {
     fn calculate_gradient(&self, weights: &Matrix, rate: f64) -> Matrix {
         weights.map(|x| rate * x.signum())
     }
-
-    fn regularization_type(&self) -> RegularizationType {
-        RegularizationType::L1
-    }
 }
 
-/// L2 regularization (Ridge)
-///
-/// Implements L2 regularization: f(w) = (rate/2) * sum(w^2)
-/// with gradient: f'(w) = rate * w
-#[derive(Debug, Clone, Copy)]
-pub struct L2;
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct L2 {
+    rate: f64,
+}
 
-impl RegularizationFunction for L2 {
+impl L2 {
+    pub fn new(rate: f64) -> Self {
+        L2 { rate }
+    }
+
     fn calculate_term(&self, weights: &[Matrix], rate: f64) -> f64 {
         weights
             .iter()
@@ -84,41 +83,16 @@ impl RegularizationFunction for L2 {
     fn calculate_gradient(&self, weights: &Matrix, rate: f64) -> Matrix {
         weights * rate
     }
-
-    fn regularization_type(&self) -> RegularizationType {
-        RegularizationType::L2
-    }
 }
 
-/// Wrapper type for serializing regularization functions
-#[derive(Serialize, Deserialize)]
-pub struct RegularizationWrapper {
-    regularization_type: RegularizationType,
-}
-
-/// Trait for serializing regularization functions
-pub trait RegularizationFunctionSerialize: RegularizationFunction {
-    /// Serializes a regularization function to a JSON string
-    fn to_json(&self) -> String {
-        serde_json::to_string(&RegularizationWrapper {
-            regularization_type: self.regularization_type(),
-        })
-        .expect("Failed to serialize regularization function")
-    }
-
-    /// Deserializes a regularization function from a JSON string
-    fn from_json(json: &str) -> Result<Box<dyn RegularizationFunction>, serde_json::Error> {
-        let wrapper: RegularizationWrapper = serde_json::from_str(json)?;
-        match wrapper.regularization_type {
-            RegularizationType::L1 => Ok(Box::new(L1)),
-            RegularizationType::L2 => Ok(Box::new(L2)),
+impl fmt::Display for Regularization {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Regularization::L1(l1) => write!(f, "L1({})", l1.rate),
+            Regularization::L2(l2) => write!(f, "L2({})", l2.rate),
         }
     }
 }
-
-// Implement the serialization trait for all regularization functions
-impl RegularizationFunctionSerialize for L1 {}
-impl RegularizationFunctionSerialize for L2 {}
 
 #[cfg(test)]
 mod tests {
@@ -134,7 +108,8 @@ mod tests {
         ];
 
         let rate = 0.01;
-        let l1_term = L1.calculate_term(&weights, rate);
+        let l1 = L1::new(rate);
+        let l1_term = l1.calculate_term(&weights, rate);
 
         // Calculate expected value manually:
         // Sum of absolute values of first matrix: 1 + 2 + 3 + 4 = 10
@@ -150,7 +125,8 @@ mod tests {
         let weights = vec![1.0, -2.0, 3.0, -4.0].into_matrix(2, 2);
         let rate = 0.01;
 
-        let gradient = L1.calculate_gradient(&weights, rate);
+        let l1 = L1::new(rate);
+        let gradient = l1.calculate_gradient(&weights, rate);
 
         // Expected gradient: rate * sign(w)
         assert_relative_eq!(gradient.get(0, 0), 0.01, epsilon = 1e-10);
@@ -167,7 +143,8 @@ mod tests {
         ];
 
         let rate = 0.01;
-        let l2_term = L2.calculate_term(&weights, rate);
+        let l2 = L2::new(rate);
+        let l2_term = l2.calculate_term(&weights, rate);
 
         // Calculate expected value manually:
         // Sum of squares of first matrix: 1² + 2² + 3² + 4² = 1 + 4 + 9 + 16 = 30
@@ -183,7 +160,8 @@ mod tests {
         let weights = vec![1.0, 2.0, 3.0, 4.0].into_matrix(2, 2);
         let rate = 0.01;
 
-        let gradient = L2.calculate_gradient(&weights, rate);
+        let l2 = L2::new(rate);
+        let gradient = l2.calculate_gradient(&weights, rate);
 
         // Expected gradient: rate * w
         assert_relative_eq!(gradient.get(0, 0), 0.01, epsilon = 1e-10);
@@ -192,18 +170,5 @@ mod tests {
         assert_relative_eq!(gradient.get(1, 1), 0.04, epsilon = 1e-10);
     }
 
-    #[test]
-    fn test_regularization_serialization() {
-        // Test serialization
-        let json = L1.to_json();
-        assert_eq!(json, r#"{"regularization_type":"L1"}"#);
-    }
-
-    #[test]
-    fn test_regularization_deserialization() {
-        // Test deserialization
-        let json = r#"{"regularization_type":"L1"}"#;
-        let reg = <L1 as RegularizationFunctionSerialize>::from_json(json);
-        assert_eq!(reg.unwrap().regularization_type(), RegularizationType::L1);
-    }
+    // Removed serialization tests as they were using removed functionality
 }

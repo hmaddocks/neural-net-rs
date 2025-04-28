@@ -9,7 +9,11 @@
 ///
 /// # Example
 /// ```
-/// use neural_network::{network::Network, activations::ActivationType, network_config::{NetworkConfig, LearningRate, Momentum, Epochs, BatchSize}, layer::Layer, regularization::RegularizationType};
+/// use neural_network::Network;
+/// use neural_network::ActivationType;
+/// use neural_network::{NetworkConfig, LearningRate, Momentum, Epochs, BatchSize};
+/// use neural_network::Layer;
+/// use neural_network::RegularizationType;
 /// use tempfile::tempdir;
 ///
 /// let dir = tempdir().unwrap();
@@ -26,8 +30,8 @@
 ///     Some(0.8),
 ///     30,
 ///     32,
-///     Some(0.0001), // L2 regularization rate
 ///     Some(RegularizationType::L2), // Regularization type
+///     Some(0.0001), // L2 regularization rate
 /// ).unwrap();
 ///
 /// // Create and save network
@@ -37,7 +41,7 @@
 use crate::activations::ActivationType;
 use crate::layer::Layer;
 use crate::network_config::{BatchSize, Epochs, LearningRate, Momentum, NetworkConfig};
-use crate::regularization::{RegularizationFunction, RegularizationType};
+use crate::regularization::RegularizationType;
 use crate::training_history::TrainingHistory;
 use indicatif::{ProgressBar, ProgressStyle};
 use matrix::Matrix;
@@ -83,9 +87,6 @@ pub struct Network {
     regularization_rate: Option<f64>,
     /// Type of regularization to use (L1 or L2)
     regularization_type: Option<RegularizationType>,
-    /// Regularization function instance
-    #[serde(skip)]
-    regularization_fn: Option<Box<dyn RegularizationFunction>>,
     /// Training history containing metrics recorded during training
     #[serde(skip)]
     pub training_history: TrainingHistory,
@@ -112,7 +113,7 @@ impl Network {
     ///
     /// # Example
     /// ```
-    /// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig, layer::Layer, regularization::RegularizationType};
+    /// use neural_network::{Network, ActivationType, NetworkConfig, Layer, RegularizationType};
     ///
     /// // Create network configuration for a simple XOR network
     /// let config = NetworkConfig::new(
@@ -125,8 +126,8 @@ impl Network {
     ///     Some(0.8),
     ///     30,
     ///     32,
-    ///     Some(0.0001), // Regularization rate
-    ///     Some(RegularizationType::L2), // Regularization type
+    ///     Some(RegularizationType::L2),
+    ///     Some(0.0001),
     /// ).unwrap();
     ///
     /// let network = Network::new(&config);
@@ -160,18 +161,8 @@ impl Network {
         let mut data = Vec::with_capacity(network_config.layers.len());
         data.resize(network_config.layers.len(), Matrix::default());
 
-        // Initialize regularization function and rate if configured
-        let (regularization_fn, regularization_rate) = if let (Some(reg_type), Some(rate)) = (
-            network_config.regularization_type,
-            network_config.regularization_rate,
-        ) {
-            (
-                Some(reg_type.create_regularization()),
-                Some(f64::from(rate)),
-            )
-        } else {
-            (None, None)
-        };
+        // Initialize regularization rate if configured
+        let regularization_rate = network_config.regularization_rate.map(f64::from);
 
         Network {
             layers_count: nodes.clone(),
@@ -188,7 +179,6 @@ impl Network {
             batch_size: network_config.batch_size,
             regularization_rate,
             regularization_type: network_config.regularization_type,
-            regularization_fn,
             training_history: TrainingHistory::new(),
         }
     }
@@ -267,10 +257,11 @@ impl Network {
             let learning_term = &accumulated_gradients[i] * f64::from(self.learning_rate);
 
             // Calculate regularization gradient if configured
-            let reg_gradient = if let (Some(rate), Some(reg_fn)) =
-                (self.regularization_rate, &self.regularization_fn)
+            let reg_gradient = if let (Some(rate), Some(reg_type)) =
+                (self.regularization_rate, &self.regularization_type)
             {
-                reg_fn.calculate_gradient(&self.weights[i], rate)
+                let reg = reg_type.create_regularization();
+                reg.calculate_gradient(&self.weights[i], rate)
             } else {
                 Matrix::zeros(self.weights[i].rows(), self.weights[i].cols())
             };
@@ -360,16 +351,17 @@ impl Network {
             },
         );
 
-        // Add regularization term if configured
-        let total_error = if let (Some(rate), Some(reg_fn)) =
-            (self.regularization_rate, &self.regularization_fn)
+        // Calculate regularization term if configured
+        let regularization_term = if let (Some(rate), Some(reg_type)) =
+            (self.regularization_rate, &self.regularization_type)
         {
-            total_error + reg_fn.calculate_term(&self.weights, rate)
+            let reg = reg_type.create_regularization();
+            reg.calculate_term(&self.weights, rate)
         } else {
-            total_error
+            0.0
         };
 
-        (total_error, correct_predictions)
+        (total_error + regularization_term, correct_predictions)
     }
 
     /// Process a single batch of training data.
@@ -570,7 +562,8 @@ impl Network {
     ///
     /// # Example
     /// ```
-    /// use neural_network::{network::Network, activations::ActivationType, network_config::NetworkConfig, layer::Layer, network_config::{LearningRate, Momentum}};
+    /// use neural_network::{Network, NetworkConfig, Layer, ActivationType};
+    /// use neural_network::{LearningRate, Momentum};
     /// use tempfile::tempdir;
     ///
     /// let dir = tempdir().unwrap();
@@ -607,7 +600,7 @@ impl Network {
     ///
     /// # Example
     /// ```no_run
-    /// # use neural_network::{network::Network, activations::ActivationType};
+    /// # use neural_network::{Network, ActivationType};
     /// # use tempfile::tempdir;
     /// # let dir = tempdir().unwrap();
     /// # let model_path = dir.path().join("model.json");
@@ -678,8 +671,8 @@ mod tests {
             Some(0.9),
             30,
             32,
-            Some(0.0001),
             Some(RegularizationType::L2),
+            Some(0.0001),
         )
         .unwrap();
 
@@ -698,8 +691,8 @@ mod tests {
             Some(0.9),
             30,
             32,
-            Some(0.0001),
             Some(RegularizationType::L2),
+            Some(0.0001),
         )
         .unwrap();
 
@@ -733,8 +726,8 @@ mod tests {
             Some(0.9),
             30,
             32,
-            Some(0.0001),
             Some(RegularizationType::L2),
+            Some(0.0001),
         )
         .unwrap();
 
@@ -790,8 +783,8 @@ mod tests {
             Some(0.9),
             2000,
             2, // Small batch size for XOR
-            Some(0.0001),
             Some(RegularizationType::L2),
+            Some(0.0001),
         )
         .unwrap();
 
@@ -934,8 +927,8 @@ mod tests {
             Some(0.9),
             1,
             32,
-            Some(0.0001),
             Some(RegularizationType::L2),
+            Some(0.0001),
         )
         .unwrap();
 
@@ -983,8 +976,8 @@ mod tests {
             Some(0.9), // High momentum
             2000,      // More epochs for better convergence
             2,         // Small batch size for testing
-            Some(0.0001),
             Some(RegularizationType::L2),
+            Some(0.0001),
         )
         .unwrap();
 
@@ -1050,8 +1043,8 @@ mod tests {
             Some(0.9),
             1000,
             32,
-            Some(0.0001),
             Some(RegularizationType::L2),
+            Some(0.0001),
         )
         .unwrap();
 
@@ -1077,8 +1070,8 @@ mod tests {
                 config.momentum.map(|m| f64::from(m)),
                 config.epochs.into(),
                 batch_size,
-                config.regularization_rate.map(|r| f64::from(r)),
                 config.regularization_type,
+                config.regularization_rate.map(|r| f64::from(r)),
             )
             .unwrap();
             let mut network = Network::new(&config);
@@ -1221,8 +1214,8 @@ mod tests {
             Some(0.9),
             30,
             32,
-            Some(0.0001),
             Some(RegularizationType::L2),
+            Some(0.0001),
         )
         .unwrap();
 
@@ -1323,8 +1316,8 @@ mod tests {
             Some(0.9),
             30,
             32,
-            Some(0.0001),
             Some(RegularizationType::L2),
+            Some(0.0001),
         )
         .unwrap();
 

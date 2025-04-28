@@ -28,7 +28,7 @@ impl ActivationType {
 /// # Examples
 ///
 /// ```
-/// use neural_network::activations::{ActivationFunction, ActivationType};
+/// use neural_network::{ActivationFunction, ActivationType};
 ///
 /// let sigmoid = ActivationType::Sigmoid.create_activation();
 /// let result = sigmoid.apply(0.5);

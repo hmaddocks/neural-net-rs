@@ -30,8 +30,8 @@ fn train_xor_network(c: &mut Criterion) {
             Some(0.9),
             100,
             2,
-            Some(0.0001),
             Some(RegularizationType::L2),
+            Some(0.0001),
         )
         .unwrap(),
     ];

@@ -18,7 +18,7 @@ use std::ops::{Add, Mul, Sub};
 ///
 /// # Example
 /// ```
-/// use matrix::matrix::Matrix;
+/// use matrix::Matrix;
 ///
 /// // Create a 2x3 matrix
 /// let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
@@ -152,7 +152,7 @@ impl Matrix {
     ///
     /// # Examples
     /// ```
-    /// use matrix::matrix::Matrix;
+    /// use matrix::Matrix;
     /// let m = Matrix::new(2, 2, vec![1.0, 2.0, 3.0, 4.0]);
     /// let result = m.map(|x| x * 2.0);
     /// ```
@@ -351,7 +351,7 @@ impl From<Vec<f64>> for Matrix {
     /// # Examples
     ///
     /// ```
-    /// use matrix::matrix::Matrix;
+    /// use matrix::Matrix;
     ///
     /// let vec = vec![1.0, 2.0, 3.0];
     /// let matrix: Matrix = vec.into();
@@ -376,7 +376,7 @@ impl IntoMatrix for Vec<f64> {
     /// # Examples
     ///
     /// ```
-    /// use matrix::matrix::{Matrix, IntoMatrix};
+    /// use matrix::{Matrix, IntoMatrix};
     ///
     /// let vec = vec![1.0, 2.0, 3.0, 4.0];
     /// let matrix = vec.into_matrix(2, 2);

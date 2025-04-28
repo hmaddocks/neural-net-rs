@@ -82,8 +82,8 @@ impl MnistData {
     ///
     /// # Example
     /// ```
-    /// use mnist::mnist::MnistData;
-    /// use matrix::matrix::Matrix;
+    /// use mnist::MnistData;
+    /// use matrix::Matrix;
     ///
     /// let images = vec![Matrix::new(784, 1, vec![0.5; 784])];
     /// let labels = vec![Matrix::new(10, 1, vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])];

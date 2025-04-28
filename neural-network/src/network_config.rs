@@ -1,6 +1,6 @@
 use crate::activations::{ActivationFunction, ActivationType, Sigmoid, Softmax};
 use crate::layer::Layer;
-use crate::regularization::{RegularizationFunction, RegularizationType};
+use crate::regularization::{Regularization, RegularizationType};
 use matrix::Matrix;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -32,14 +32,6 @@ impl From<RegularizationRate> for f64 {
     }
 }
 
-// impl Mul<RegularizationRate> for f64 {
-//     type Output = f64;
-
-//     fn mul(self, rate: RegularizationRate) -> Self::Output {
-//         self * rate.0
-//     }
-// }
-
 impl Mul<RegularizationRate> for &Matrix {
     type Output = Matrix;
 
@@ -65,6 +57,12 @@ impl TryFrom<f64> for LearningRate {
         } else {
             Err("Learning rate must be greater than 0.0")
         }
+    }
+}
+
+impl Default for LearningRate {
+    fn default() -> Self {
+        Self(0.001)
     }
 }
 
@@ -150,6 +148,12 @@ impl TryFrom<usize> for Epochs {
     }
 }
 
+impl Default for Epochs {
+    fn default() -> Self {
+        Self(30)
+    }
+}
+
 impl From<Epochs> for usize {
     fn from(epochs: Epochs) -> Self {
         epochs.0
@@ -171,6 +175,12 @@ impl TryFrom<usize> for BatchSize {
     }
 }
 
+impl Default for BatchSize {
+    fn default() -> Self {
+        Self(32)
+    }
+}
+
 impl From<BatchSize> for usize {
     fn from(batch_size: BatchSize) -> Self {
         batch_size.0
@@ -185,7 +195,7 @@ impl From<BatchSize> for usize {
 /// # Example
 ///
 /// ```
-/// use neural_network::{network_config::NetworkConfig, layer::Layer, activations::ActivationType, regularization::RegularizationType};
+/// use neural_network::{NetworkConfig, Layer, ActivationType, RegularizationType};
 ///
 /// let config = NetworkConfig::default();
 /// assert_eq!(config.layers, vec![Layer::new(784, Some(ActivationType::Sigmoid)), Layer::new(128, Some(ActivationType::Sigmoid)), Layer::new(10, None)]); // MNIST-like architecture
@@ -220,11 +230,11 @@ pub struct NetworkConfig {
     /// When specified, helps accelerate training and avoid local minima.
     pub momentum: Option<Momentum>,
 
+    /// Optional regularization to use (L1 or L2)
+    pub regularization_type: Option<RegularizationType>,
+
     /// Optional regularization rate (weight decay)
     pub regularization_rate: Option<RegularizationRate>,
-
-    /// Type of regularization to use (L1 or L2)
-    pub regularization_type: Option<RegularizationType>,
 }
 
 impl NetworkConfig {
@@ -249,23 +259,17 @@ impl NetworkConfig {
         momentum: Option<f64>,
         epochs: usize,
         batch_size: usize,
+        regularization: Option<RegularizationType>,
         regularization_rate: Option<f64>,
-        regularization_type: Option<RegularizationType>,
     ) -> Option<Self> {
-        let rr = if let Some(rate) = regularization_rate {
-            Some(RegularizationRate::try_from(rate).ok()?)
-        } else {
-            None
-        };
-
         Some(Self {
             layers,
             learning_rate: LearningRate::try_from(learning_rate).ok()?,
             momentum: momentum.map(|m| Momentum::try_from(m).ok()).flatten(),
             epochs: Epochs::try_from(epochs).ok()?,
             batch_size: BatchSize::try_from(batch_size).ok()?,
-            regularization_rate: rr,
-            regularization_type,
+            regularization_type: regularization,
+            regularization_rate: regularization_rate.map(|r| RegularizationRate(r)),
         })
     }
 
@@ -283,7 +287,7 @@ impl NetworkConfig {
     /// # Example
     ///
     /// ```no_run
-    /// use neural_network::network_config::NetworkConfig;
+    /// use neural_network::NetworkConfig;
     /// use std::path::Path;
     ///
     /// let config = NetworkConfig::load(Path::new("config.json")).unwrap();
@@ -329,8 +333,9 @@ impl NetworkConfig {
     }
 
     /// Returns the regularization function if configured
-    pub fn regularization(&self) -> Option<Box<dyn RegularizationFunction>> {
-        self.regularization_type.map(|t| t.create_regularization())
+    pub fn regularization(&self) -> Option<Regularization> {
+        self.regularization_type
+            .map(|reg_type| reg_type.create_regularization())
     }
 }
 
@@ -357,8 +362,8 @@ impl Default for NetworkConfig {
             epochs: Epochs(10),
             batch_size: BatchSize(32),
             momentum: Some(Momentum(0.9)),
-            regularization_rate: Some(RegularizationRate(0.0001)),
             regularization_type: Some(RegularizationType::L2),
+            regularization_rate: Some(RegularizationRate(0.0001)),
         }
     }
 }
@@ -381,15 +386,10 @@ impl fmt::Display for NetworkConfig {
         }
         writeln!(f, "  Epochs:              {}", usize::from(self.epochs))?;
         writeln!(f, "  Batch Size:          {}", usize::from(self.batch_size))?;
-        if let Some(rate) = self.regularization_rate {
-            write!(f, "  Regularization Rate: {:.4}", f64::from(rate))?;
+        if let Some(reg) = self.regularization_type {
+            write!(f, "  Regularization:      {:?}", reg)?;
         } else {
-            write!(f, "  Regularization Rate: None")?;
-        }
-        if let Some(rt) = self.regularization_type {
-            write!(f, "  Regularization Type: {}", rt)?;
-        } else {
-            write!(f, "  Regularization Type: None")?;
+            write!(f, "  Regularization:      None")?;
         }
         Ok(())
     }
