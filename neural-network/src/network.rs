@@ -10,7 +10,7 @@
 /// # Example
 /// ```
 /// use neural_network::Network;
-/// use neural_network::ActivationType;
+/// use neural_network::Activation;
 /// use neural_network::{NetworkConfig, LearningRate, Momentum, Epochs, BatchSize};
 /// use neural_network::Layer;
 /// use neural_network::RegularizationType;
@@ -22,8 +22,8 @@
 /// // Create network configuration
 /// let config = NetworkConfig::new(
 ///     vec![
-///         Layer::new(2, Some(ActivationType::Sigmoid)),
-///         Layer::new(3, Some(ActivationType::Sigmoid)),
+///         Layer::new(2, Some(Activation::Sigmoid)),
+///         Layer::new(3, Some(Activation::Sigmoid)),
 ///         Layer::new(1, None),
 ///     ],
 ///     0.1,
@@ -38,7 +38,7 @@
 /// let mut network = Network::new(&config);
 /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
 /// ```
-use crate::activations::ActivationType;
+use crate::activations::Activation;
 use crate::layer::Layer;
 use crate::network_config::{BatchSize, Epochs, LearningRate, Momentum, NetworkConfig};
 use crate::regularization::RegularizationType;
@@ -67,7 +67,7 @@ pub struct Network {
     #[serde(skip)]
     data: Vec<Matrix>,
     /// Types of activation functions for serialization
-    activation_types: Vec<ActivationType>,
+    activations: Vec<Activation>,
     /// Learning rate for weight updates
     learning_rate: LearningRate,
     /// Optional momentum coefficient for weight updates
@@ -113,13 +113,13 @@ impl Network {
     ///
     /// # Example
     /// ```
-    /// use neural_network::{Network, ActivationType, NetworkConfig, Layer, RegularizationType};
+    /// use neural_network::{Network, Activation, NetworkConfig, Layer, RegularizationType};
     ///
     /// // Create network configuration for a simple XOR network
     /// let config = NetworkConfig::new(
     ///     vec![
-    ///         Layer::new(2, Some(ActivationType::Sigmoid)),
-    ///         Layer::new(3, Some(ActivationType::Sigmoid)),
+    ///         Layer::new(2, Some(Activation::Sigmoid)),
+    ///         Layer::new(3, Some(Activation::Sigmoid)),
     ///         Layer::new(1, None),
     ///     ],
     ///     0.1,
@@ -169,7 +169,7 @@ impl Network {
             layers,
             weights,
             data,
-            activation_types: network_config.activations_types(),
+            activations: network_config.activations(),
             learning_rate: network_config.learning_rate,
             momentum: network_config.momentum,
             prev_weight_updates,
@@ -562,7 +562,7 @@ impl Network {
     ///
     /// # Example
     /// ```
-    /// use neural_network::{Network, NetworkConfig, Layer, ActivationType};
+    /// use neural_network::{Network, NetworkConfig, Layer, Activation};
     /// use neural_network::{LearningRate, Momentum};
     /// use tempfile::tempdir;
     ///
@@ -572,8 +572,8 @@ impl Network {
     /// // Create network configuration
     /// let mut config = NetworkConfig::default();
     /// config.layers = vec![
-    ///     Layer::new(2, Some(ActivationType::Sigmoid)),
-    ///     Layer::new(3, Some(ActivationType::Sigmoid)),
+    ///     Layer::new(2, Some(Activation::Sigmoid)),
+    ///     Layer::new(3, Some(Activation::Sigmoid)),
     ///     Layer::new(1, None),
     /// ];
     /// config.learning_rate = LearningRate::try_from(0.1).unwrap();
@@ -600,7 +600,7 @@ impl Network {
     ///
     /// # Example
     /// ```no_run
-    /// # use neural_network::{Network, ActivationType};
+    /// # use neural_network::{Network, Activation};
     /// # use tempfile::tempdir;
     /// # let dir = tempdir().unwrap();
     /// # let model_path = dir.path().join("model.json");
@@ -625,8 +625,8 @@ impl Network {
             .iter()
             .enumerate()
             .map(|(i, &size)| {
-                let activation = if i < network.activation_types.len() {
-                    Some(network.activation_types[i])
+                let activation = if i < network.activations.len() {
+                    Some(network.activations[i])
                 } else {
                     None
                 };
@@ -638,13 +638,13 @@ impl Network {
         network.training_history = TrainingHistory::new();
 
         // Verify that we have the correct number of activation functions
-        if network.activation_types.len() != network.layers.len() - 1 {
+        if network.activations.len() != network.layers.len() - 1 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
                     "Invalid number of activation functions. Expected {}, got {}",
                     network.layers.len() - 1,
-                    network.activation_types.len()
+                    network.activations.len()
                 ),
             ));
         }
@@ -663,8 +663,8 @@ mod tests {
     fn create_test_network() -> Network {
         let config = NetworkConfig::new(
             vec![
-                Layer::new(1, Some(ActivationType::Sigmoid)),
-                Layer::new(2, Some(ActivationType::Sigmoid)),
+                Layer::new(1, Some(Activation::Sigmoid)),
+                Layer::new(2, Some(Activation::Sigmoid)),
                 Layer::new(1, None),
             ],
             0.1,
@@ -682,9 +682,9 @@ mod tests {
     fn create_deep_network() -> Network {
         let config = NetworkConfig::new(
             vec![
-                Layer::new(2, Some(ActivationType::Sigmoid)),
-                Layer::new(4, Some(ActivationType::Sigmoid)),
-                Layer::new(3, Some(ActivationType::Sigmoid)),
+                Layer::new(2, Some(Activation::Sigmoid)),
+                Layer::new(4, Some(Activation::Sigmoid)),
+                Layer::new(3, Some(Activation::Sigmoid)),
                 Layer::new(2, None),
             ],
             0.1,
@@ -718,8 +718,8 @@ mod tests {
     fn test_network_creation() {
         let config = NetworkConfig::new(
             vec![
-                Layer::new(2, Some(ActivationType::Sigmoid)),
-                Layer::new(4, Some(ActivationType::Sigmoid)),
+                Layer::new(2, Some(Activation::Sigmoid)),
+                Layer::new(4, Some(Activation::Sigmoid)),
                 Layer::new(1, None),
             ],
             0.1,
@@ -775,8 +775,8 @@ mod tests {
         // Create a network for XOR problem with a fixed seed for deterministic results
         let config = NetworkConfig::new(
             vec![
-                Layer::new(2, Some(ActivationType::Sigmoid)),
-                Layer::new(4, Some(ActivationType::Sigmoid)),
+                Layer::new(2, Some(Activation::Sigmoid)),
+                Layer::new(4, Some(Activation::Sigmoid)),
                 Layer::new(1, None),
             ],
             0.5, // Higher learning rate
@@ -919,8 +919,8 @@ mod tests {
         // Create a simple network with Softmax output layer
         let config = NetworkConfig::new(
             vec![
-                Layer::new(2, Some(ActivationType::Sigmoid)),
-                Layer::new(4, Some(ActivationType::Softmax)),
+                Layer::new(2, Some(Activation::Sigmoid)),
+                Layer::new(4, Some(Activation::Softmax)),
                 Layer::new(3, None),
             ],
             0.1,
@@ -968,8 +968,8 @@ mod tests {
         // Create a network with a more robust architecture
         let config = NetworkConfig::new(
             vec![
-                Layer::new(2, Some(ActivationType::Sigmoid)),
-                Layer::new(4, Some(ActivationType::Sigmoid)),
+                Layer::new(2, Some(Activation::Sigmoid)),
+                Layer::new(4, Some(Activation::Sigmoid)),
                 Layer::new(1, None),
             ],
             0.5,       // Moderate learning rate
@@ -1035,8 +1035,8 @@ mod tests {
     fn test_batch_size_effects() {
         let mut config = NetworkConfig::new(
             vec![
-                Layer::new(2, Some(ActivationType::Sigmoid)),
-                Layer::new(4, Some(ActivationType::Sigmoid)),
+                Layer::new(2, Some(Activation::Sigmoid)),
+                Layer::new(4, Some(Activation::Sigmoid)),
                 Layer::new(1, None),
             ],
             0.8, // Higher learning rate
@@ -1206,8 +1206,8 @@ mod tests {
         // Test multi-class classification
         let config = NetworkConfig::new(
             vec![
-                Layer::new(2, Some(ActivationType::Sigmoid)),
-                Layer::new(3, Some(ActivationType::Sigmoid)),
+                Layer::new(2, Some(Activation::Sigmoid)),
+                Layer::new(3, Some(Activation::Sigmoid)),
                 Layer::new(3, None),
             ],
             0.1,
@@ -1308,8 +1308,8 @@ mod tests {
     fn test_network_serialization_with_regularization() {
         let config = NetworkConfig::new(
             vec![
-                Layer::new(2, Some(ActivationType::Sigmoid)),
-                Layer::new(4, Some(ActivationType::Sigmoid)),
+                Layer::new(2, Some(Activation::Sigmoid)),
+                Layer::new(4, Some(Activation::Sigmoid)),
                 Layer::new(1, None),
             ],
             0.1,

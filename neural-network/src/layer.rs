@@ -1,7 +1,7 @@
 //! Defines the structure of a layer within the neural network.
 //!
 //! Each layer consists of a number of nodes and an optional activation function.
-use crate::activations::{ActivationFunction, ActivationType};
+use crate::activations::Activation;
 use matrix::Matrix;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -10,16 +10,13 @@ use std::fmt;
 ///
 /// Contains the number of nodes (neurons) in the layer and the
 /// type of activation function to be applied to the output of this layer.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Layer {
     /// The number of nodes (neurons) in this layer.
     pub nodes: usize,
     /// The activation function applied to the output of this layer.
     /// If `None`, no activation function is applied (e.g., for the output layer).
-    pub activation: Option<ActivationType>,
-    /// The concrete activation function (not serialized)
-    #[serde(skip)]
-    activation_fn: Option<Box<dyn ActivationFunction>>,
+    pub activation: Option<Activation>,
 }
 
 // Manual Debug implementation since activation_fn doesn't implement Debug
@@ -29,19 +26,6 @@ impl std::fmt::Debug for Layer {
             .field("nodes", &self.nodes)
             .field("activation", &self.activation)
             .finish()
-    }
-}
-
-// Manual Clone implementation since Box<dyn ActivationFunction> doesn't implement Clone
-impl Clone for Layer {
-    fn clone(&self) -> Self {
-        // Create a new Layer with cloned fields
-        // activation_fn will be recreated from activation
-        Self {
-            nodes: self.nodes,
-            activation: self.activation.clone(),
-            activation_fn: self.activation.map(|a_type| a_type.create_activation()),
-        }
     }
 }
 
@@ -55,24 +39,13 @@ impl PartialEq for Layer {
 
 impl Layer {
     /// Creates a new [`Layer`].
-    pub fn new(nodes: usize, activation: Option<ActivationType>) -> Self {
-        let activation_fn = activation.map(|a_type| a_type.create_activation());
-        Self {
-            nodes,
-            activation,
-            activation_fn,
-        }
-    }
-
-    /// Initialize the activation function from the activation type
-    /// This is used after deserializing a Layer
-    pub fn initialize_activation(&mut self) {
-        self.activation_fn = self.activation.map(|a_type| a_type.create_activation());
+    pub fn new(nodes: usize, activation: Option<Activation>) -> Self {
+        Self { nodes, activation }
     }
 
     /// Gets a reference to the activation function if available
-    pub fn get_activation(&self) -> Option<&dyn ActivationFunction> {
-        self.activation_fn.as_deref()
+    pub fn get_activation(&self) -> Option<&Activation> {
+        self.activation.as_ref()
     }
 
     /// Process a layer in feed-forward operation
@@ -86,7 +59,7 @@ impl Layer {
     pub fn process_forward(&self, weight: &Matrix, input: &Matrix) -> Matrix {
         let weighted_input = weight.dot_multiply(input);
 
-        match &self.activation_fn {
+        match &self.activation {
             Some(activation) => activation.apply_vector(&weighted_input),
             None => weighted_input, // No activation for output layer
         }
@@ -117,7 +90,7 @@ impl Layer {
         let propagated_error = weight_no_bias.transpose().dot_multiply(next_layer_delta);
 
         // Apply activation derivative if present
-        if let Some(activation) = &self.activation_fn {
+        if let Some(activation) = &self.activation {
             // Calculate activation derivative for current layer
             let activation_derivative = activation.apply_derivative_vector(current_output);
             propagated_error.elementwise_multiply(&activation_derivative)
@@ -219,10 +192,9 @@ mod tests {
 
     #[test]
     fn test_layer_new_with_activation() {
-        let layer = Layer::new(10, Some(ActivationType::Sigmoid));
+        let layer = Layer::new(10, Some(Activation::Sigmoid));
         assert_eq!(layer.nodes, 10);
-        assert_eq!(layer.activation, Some(ActivationType::Sigmoid));
-        assert!(layer.activation_fn.is_some());
+        assert_eq!(layer.activation, Some(Activation::Sigmoid));
     }
 
     #[test]
@@ -230,13 +202,12 @@ mod tests {
         let layer = Layer::new(5, None);
         assert_eq!(layer.nodes, 5);
         assert_eq!(layer.activation, None);
-        assert!(layer.activation_fn.is_none());
     }
 
     #[test]
     fn test_process_forward() {
         // Create a simple layer with sigmoid activation
-        let layer = Layer::new(2, Some(ActivationType::Sigmoid));
+        let layer = Layer::new(2, Some(Activation::Sigmoid));
 
         // Create sample weights and inputs
         let weights = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6].into_matrix(2, 3); // 2 output nodes, 2 input nodes + 1 bias
@@ -281,7 +252,7 @@ mod tests {
     #[test]
     fn test_compute_hidden_delta() {
         // Create layer with sigmoid activation
-        let layer = Layer::new(2, Some(ActivationType::Sigmoid));
+        let layer = Layer::new(2, Some(Activation::Sigmoid));
 
         // Create test data
         let next_weights = vec![0.1, 0.2, 0.3].into_matrix(1, 3); // 1 output node, 2 input nodes + 1 bias
@@ -349,21 +320,5 @@ mod tests {
         assert_relative_eq!(gradients.get(1, 0), 0.1, epsilon = 1e-10);
         assert_relative_eq!(gradients.get(1, 1), 0.12, epsilon = 1e-10);
         assert_relative_eq!(gradients.get(1, 2), 0.2, epsilon = 1e-10);
-    }
-
-    #[test]
-    fn test_initialize_activation() {
-        // Create layer with activation but without activation function
-        let mut layer = Layer {
-            nodes: 5,
-            activation: Some(ActivationType::Sigmoid),
-            activation_fn: None,
-        };
-
-        // Initialize activation function
-        layer.initialize_activation();
-
-        // Check that activation function is now present
-        assert!(layer.activation_fn.is_some());
     }
 }

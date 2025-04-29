@@ -1,4 +1,4 @@
-use crate::activations::{ActivationFunction, ActivationType, Sigmoid, Softmax};
+use crate::activations::Activation;
 use crate::layer::Layer;
 use crate::regularization::{Regularization, RegularizationType};
 use matrix::Matrix;
@@ -195,17 +195,17 @@ impl From<BatchSize> for usize {
 /// # Example
 ///
 /// ```
-/// use neural_network::{NetworkConfig, Layer, ActivationType, RegularizationType};
+/// use neural_network::{NetworkConfig, Layer, Activation};
 ///
 /// let config = NetworkConfig::default();
-/// assert_eq!(config.layers, vec![Layer::new(784, Some(ActivationType::Sigmoid)), Layer::new(128, Some(ActivationType::Sigmoid)), Layer::new(10, None)]); // MNIST-like architecture
+/// assert_eq!(config.layers, vec![Layer::new(784, Some(Activation::Sigmoid)), Layer::new(128, Some(Activation::Sigmoid)), Layer::new(10, None)]); // MNIST-like architecture
 /// ```
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct NetworkConfig {
     /// A collection of [`Layer`]s in the network, including input and output layers.
     /// For example,
-    /// vec![Layer::new(784, Some(ActivationType::Sigmoid)),
-    ///      Layer::new(128, Some(ActivationType::Sigmoid)),
+    /// vec![Layer::new(784, Some(Activation::Sigmoid)),
+    ///      Layer::new(128, Some(Activation::Sigmoid)),
     ///      Layer::new(10, None)]
     /// represents a network with:
     /// - 784 input neurons (e.g., 28x28 pixels) with sigmoid activation
@@ -310,7 +310,7 @@ impl NetworkConfig {
     ///
     /// Layers without an activation function are filtered out. The resulting vector
     /// contains activation types in order from input to output layers.
-    pub fn activations_types(&self) -> Vec<ActivationType> {
+    pub fn activations(&self) -> Vec<Activation> {
         self.layers
             .iter()
             .filter_map(|layer| layer.activation)
@@ -319,18 +319,18 @@ impl NetworkConfig {
 
     /// Creates a vector of boxed activation functions based on the network's configuration.
     ///
-    /// This method converts each ActivationType into its corresponding activation function
+    /// This method converts each Activation into its corresponding activation function
     /// implementation. The resulting vector contains trait objects that can be used
     /// for forward and backward propagation in the network.
-    pub fn activations(&self) -> Vec<Box<dyn ActivationFunction>> {
-        self.activations_types()
-            .iter()
-            .map(|activation_type| match activation_type {
-                ActivationType::Sigmoid => Box::new(Sigmoid) as Box<dyn ActivationFunction>,
-                ActivationType::Softmax => Box::new(Softmax) as Box<dyn ActivationFunction>,
-            })
-            .collect()
-    }
+    // pub fn activations(&self) -> Vec<Activation> {
+    //     self.activations_types()
+    //         .iter()
+    //         .map(|activation_type| match activation_type {
+    //             Activation::Sigmoid => Box::new(Sigmoid) as Box<dyn ActivationFunction>,
+    //             Activation::Softmax => Box::new(Softmax) as Box<dyn ActivationFunction>,
+    //         })
+    //         .collect()
+    // }
 
     /// Returns the regularization function if configured
     pub fn regularization(&self) -> Option<Regularization> {
@@ -354,8 +354,8 @@ impl Default for NetworkConfig {
     fn default() -> Self {
         Self {
             layers: vec![
-                Layer::new(784, Some(ActivationType::Sigmoid)),
-                Layer::new(128, Some(ActivationType::Sigmoid)),
+                Layer::new(784, Some(Activation::Sigmoid)),
+                Layer::new(128, Some(Activation::Sigmoid)),
                 Layer::new(10, None),
             ],
             learning_rate: LearningRate(0.01),
@@ -513,8 +513,8 @@ mod tests {
         assert_eq!(
             config.layers,
             vec![
-                Layer::new(784, Some(ActivationType::Sigmoid)),
-                Layer::new(200, Some(ActivationType::Sigmoid)),
+                Layer::new(784, Some(Activation::Sigmoid)),
+                Layer::new(200, Some(Activation::Sigmoid)),
                 Layer::new(10, None)
             ]
         );
@@ -554,8 +554,8 @@ mod tests {
         assert_eq!(
             config.layers,
             vec![
-                Layer::new(784, Some(ActivationType::Sigmoid)),
-                Layer::new(128, Some(ActivationType::Sigmoid)),
+                Layer::new(784, Some(Activation::Sigmoid)),
+                Layer::new(128, Some(Activation::Sigmoid)),
                 Layer::new(10, None)
             ]
         );

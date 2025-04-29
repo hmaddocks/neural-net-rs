@@ -6,7 +6,7 @@ mod network_config;
 mod regularization;
 mod training_history;
 
-pub use activations::{ActivationFunction, ActivationType};
+pub use activations::Activation;
 pub use layer::Layer;
 pub use matrix::Matrix;
 pub use network::Network;

@@ -1,6 +1,6 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use matrix::Matrix;
-use neural_network::{ActivationType, Layer, Network, NetworkConfig, RegularizationType};
+use neural_network::{Activation, Layer, Network, NetworkConfig, RegularizationType};
 
 fn train_xor_network(c: &mut Criterion) {
     // XOR training data
@@ -22,8 +22,8 @@ fn train_xor_network(c: &mut Criterion) {
         // Small network
         NetworkConfig::new(
             vec![
-                Layer::new(2, Some(ActivationType::Sigmoid)),
-                Layer::new(4, Some(ActivationType::Softmax)),
+                Layer::new(2, Some(Activation::Sigmoid)),
+                Layer::new(4, Some(Activation::Softmax)),
                 Layer::new(1, None),
             ],
             0.5,

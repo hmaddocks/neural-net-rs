@@ -2,53 +2,33 @@ use matrix::Matrix;
 use serde::{Deserialize, Serialize};
 use std::f64::consts::E;
 
-/// Type of activation function
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub enum ActivationType {
+pub enum Activation {
     Sigmoid,
     Softmax,
 }
 
-impl ActivationType {
-    /// Creates a new activation function instance based on the type
-    pub fn create_activation(&self) -> Box<dyn ActivationFunction> {
+impl Activation {
+    pub fn apply(&self, x: f64) -> f64 {
         match self {
-            ActivationType::Sigmoid => Box::new(Sigmoid),
-            ActivationType::Softmax => Box::new(Softmax),
+            Activation::Sigmoid => Sigmoid.apply(x),
+            Activation::Softmax => Softmax.apply(x),
         }
     }
-}
 
-/// Trait defining the interface for activation functions.
-///
-/// An activation function must implement both scalar and vector operations,
-/// along with their derivatives. The vector operations are optional but
-/// recommended for performance.
-///
-/// # Examples
-///
-/// ```
-/// use neural_network::{ActivationFunction, ActivationType};
-///
-/// let sigmoid = ActivationType::Sigmoid.create_activation();
-/// let result = sigmoid.apply(0.5);
-/// let derivative = sigmoid.derivative(result);
-/// ```
-pub trait ActivationFunction: Send + Sync {
-    /// Applies the activation function to a scalar value
-    fn apply(&self, x: f64) -> f64;
+    pub fn apply_vector(&self, input: &Matrix) -> Matrix {
+        match self {
+            Activation::Sigmoid => Sigmoid.apply_vector(input),
+            Activation::Softmax => Softmax.apply_vector(input),
+        }
+    }
 
-    /// Applies the derivative of the activation function to a scalar value
-    fn derivative(&self, x: f64) -> f64;
-
-    /// Applies the activation function to a matrix
-    fn apply_vector(&self, input: &Matrix) -> Matrix;
-
-    /// Applies the derivative of the activation function to a matrix
-    fn apply_derivative_vector(&self, input: &Matrix) -> Matrix;
-
-    /// Returns the type of activation function
-    fn activation_type(&self) -> ActivationType;
+    pub fn apply_derivative_vector(&self, input: &Matrix) -> Matrix {
+        match self {
+            Activation::Sigmoid => Sigmoid.apply_derivative_vector(input),
+            Activation::Softmax => Softmax.apply_derivative_vector(input),
+        }
+    }
 }
 
 /// Standard sigmoid activation function.
@@ -58,12 +38,12 @@ pub trait ActivationFunction: Send + Sync {
 #[derive(Debug, Clone, Copy)]
 pub struct Sigmoid;
 
-impl ActivationFunction for Sigmoid {
+impl Sigmoid {
     fn apply(&self, x: f64) -> f64 {
         1.0 / (1.0 + E.powf(-x))
     }
 
-    fn derivative(&self, x: f64) -> f64 {
+    fn apply_derivative(&self, x: f64) -> f64 {
         x * (1.0 - x)
     }
 
@@ -75,9 +55,9 @@ impl ActivationFunction for Sigmoid {
         input.map(|x| x * (1.0 - x))
     }
 
-    fn activation_type(&self) -> ActivationType {
-        ActivationType::Sigmoid
-    }
+    // fn activation_type(&self) -> Activation {
+    //     Activation::Sigmoid
+    // }
 }
 
 /// Standard softmax activation function.
@@ -87,12 +67,12 @@ impl ActivationFunction for Sigmoid {
 #[derive(Debug, Clone, Copy)]
 pub struct Softmax;
 
-impl ActivationFunction for Softmax {
+impl Softmax {
     fn apply(&self, _x: f64) -> f64 {
         panic!("Softmax cannot be applied to scalar values")
     }
 
-    fn derivative(&self, _x: f64) -> f64 {
+    fn apply_derivative(&self, _x: f64) -> f64 {
         panic!("Softmax derivative cannot be applied to scalar values")
     }
 
@@ -146,41 +126,10 @@ impl ActivationFunction for Softmax {
         }
     }
 
-    fn activation_type(&self) -> ActivationType {
-        ActivationType::Softmax
-    }
+    // fn activation_type(&self) -> Activation {
+    //     Activation::Softmax
+    // }
 }
-
-/// Wrapper type for serializing activation functions
-#[derive(Serialize, Deserialize)]
-pub struct ActivationWrapper {
-    activation_type: ActivationType,
-}
-
-/// Trait for serializing activation functions
-pub trait ActivationFunctionSerialize: ActivationFunction {
-    /// Serializes an activation function to a JSON string
-    fn to_json(&self) -> String {
-        serde_json::to_string(&ActivationWrapper {
-            activation_type: self.activation_type(),
-        })
-        .expect("Failed to serialize activation function")
-    }
-
-    /// Deserializes an activation function from a JSON string
-    fn from_json(json: &str) -> Result<Box<dyn ActivationFunction>, serde_json::Error> {
-        let wrapper: ActivationWrapper =
-            serde_json::from_str(json).expect("Failed to deserialize activation function");
-        match wrapper.activation_type {
-            ActivationType::Sigmoid => Ok(Box::new(Sigmoid)),
-            ActivationType::Softmax => Ok(Box::new(Softmax)),
-        }
-    }
-}
-
-// Implement the serialization trait for all activation functions
-impl ActivationFunctionSerialize for Sigmoid {}
-impl ActivationFunctionSerialize for Softmax {}
 
 #[cfg(test)]
 mod tests {
@@ -198,7 +147,7 @@ mod tests {
     #[test]
     fn test_sigmoid_derivative() {
         let x = 0.5;
-        let result = Sigmoid.derivative(x);
+        let result = Sigmoid.apply_derivative(x);
         assert_relative_eq!(result, 0.25, epsilon = 1e-10);
     }
 
@@ -274,25 +223,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Softmax derivative cannot be applied to scalar values")]
     fn test_softmax_scalar_derivative() {
-        Softmax.derivative(0.5);
-    }
-
-    #[test]
-    fn test_activation_serialization() {
-        // Test serialization
-        let json = Sigmoid.to_json();
-        assert_eq!(json, r#"{"activation_type":"Sigmoid"}"#);
-    }
-
-    #[test]
-    fn test_activation_deserialization() {
-        // Test deserialization
-        let json = r#"{"activation_type":"Sigmoid"}"#;
-        let activation = <Sigmoid as ActivationFunctionSerialize>::from_json(json);
-        assert_eq!(
-            activation.unwrap().activation_type(),
-            ActivationType::Sigmoid
-        );
+        Softmax.apply_derivative(0.5);
     }
 
     #[test]
