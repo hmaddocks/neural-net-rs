@@ -64,10 +64,17 @@ impl Sigmoid {
     // }
 }
 
-/// Standard softmax activation function.
+/// Standard softmax activation function for multi-class classification.
 ///
 /// Implements the softmax function: f(x) = e^x / sum(e^x)
-/// with derivative: f'(x) = f(x) * (1 - f(x))
+/// 
+/// The derivative is more complex than other activation functions as it produces
+/// a Jacobian matrix where:
+/// - Diagonal elements: f'(x_i, x_i) = f(x_i) * (1 - f(x_i))
+/// - Off-diagonal elements: f'(x_i, x_j) = -f(x_i) * f(x_j)
+///
+/// This implementation includes numerical stability enhancements by subtracting
+/// the maximum value before exponentiation to prevent overflow.
 #[derive(Debug, Clone, Copy)]
 pub struct Softmax;
 

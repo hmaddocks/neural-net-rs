@@ -4,7 +4,9 @@
 /// - Configurable layer sizes
 /// - Custom activation functions with vector operations support
 /// - Momentum-based learning
-/// - Batch training capabilities
+/// - Mini-batch training with optimized vector operations
+/// - Parallel batch processing for improved training performance
+/// - L1 and L2 regularization for preventing overfitting
 /// - Model saving and loading
 ///
 /// # Example
@@ -428,6 +430,14 @@ impl Network {
     }
 
     /// Trains the network on a dataset for a specified number of epochs.
+    ///
+    /// This implementation uses optimized vector operations and parallel batch processing
+    /// for improved performance:
+    /// - Data is processed in mini-batches to improve convergence and training speed
+    /// - Vector operations are used for efficient matrix calculations
+    /// - Parallel processing is employed across CPU cores for batch processing
+    /// - Each thread gets its own network instance to avoid lock contention
+    /// - Networks are synchronized by averaging weights after processing
     ///
     /// # Arguments
     /// * `inputs` - Slice of input matrices
