@@ -6,6 +6,7 @@ use std::f64::consts::E;
 pub enum Activation {
     Sigmoid,
     Softmax,
+    ReLU,
 }
 
 impl Activation {
@@ -13,6 +14,7 @@ impl Activation {
         match self {
             Activation::Sigmoid => Sigmoid.apply(x),
             Activation::Softmax => Softmax.apply(x),
+            Activation::ReLU => ReLU.apply(x),
         }
     }
 
@@ -20,6 +22,7 @@ impl Activation {
         match self {
             Activation::Sigmoid => Sigmoid.apply_vector(input),
             Activation::Softmax => Softmax.apply_vector(input),
+            Activation::ReLU => ReLU.apply_vector(input),
         }
     }
 
@@ -27,6 +30,7 @@ impl Activation {
         match self {
             Activation::Sigmoid => Sigmoid.apply_derivative_vector(input),
             Activation::Softmax => Softmax.apply_derivative_vector(input),
+            Activation::ReLU => ReLU.apply_derivative_vector(input),
         }
     }
 }
@@ -43,9 +47,9 @@ impl Sigmoid {
         1.0 / (1.0 + E.powf(-x))
     }
 
-    fn apply_derivative(&self, x: f64) -> f64 {
-        x * (1.0 - x)
-    }
+    // fn apply_derivative(&self, x: f64) -> f64 {
+    //     x * (1.0 - x)
+    // }
 
     fn apply_vector(&self, input: &Matrix) -> Matrix {
         input.map(|x| 1.0 / (1.0 + E.powf(-x)))
@@ -72,9 +76,9 @@ impl Softmax {
         panic!("Softmax cannot be applied to scalar values")
     }
 
-    fn apply_derivative(&self, _x: f64) -> f64 {
-        panic!("Softmax derivative cannot be applied to scalar values")
-    }
+    // fn apply_derivative(&self, _x: f64) -> f64 {
+    //     panic!("Softmax derivative cannot be applied to scalar values")
+    // }
 
     fn apply_vector(&self, input: &Matrix) -> Matrix {
         // For both vectors and matrices, use column-wise operations
@@ -131,6 +135,27 @@ impl Softmax {
     // }
 }
 
+/// Rectified Linear Unit (ReLU) activation function.
+///
+/// Implements the ReLU function: f(x) = max(0, x)
+/// with derivative: f'(x) = 1 if x > 0, 0 otherwise
+#[derive(Debug, Clone, Copy)]
+pub struct ReLU;
+
+impl ReLU {
+    fn apply(&self, x: f64) -> f64 {
+        x.max(0.0)
+    }
+
+    fn apply_vector(&self, input: &Matrix) -> Matrix {
+        input.map(|x| x.max(0.0))
+    }
+
+    fn apply_derivative_vector(&self, input: &Matrix) -> Matrix {
+        input.map(|x| if x > 0.0 { 1.0 } else { 0.0 })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,12 +169,12 @@ mod tests {
         assert_relative_eq!(result, 0.5, epsilon = 1e-10);
     }
 
-    #[test]
-    fn test_sigmoid_derivative() {
-        let x = 0.5;
-        let result = Sigmoid.apply_derivative(x);
-        assert_relative_eq!(result, 0.25, epsilon = 1e-10);
-    }
+    // #[test]
+    // fn test_sigmoid_derivative() {
+    //     let x = 0.5;
+    //     let result = Sigmoid.apply_derivative(x);
+    //     assert_relative_eq!(result, 0.25, epsilon = 1e-10);
+    // }
 
     #[test]
     fn test_sigmoid_vector_function() {
@@ -220,11 +245,11 @@ mod tests {
         Softmax.apply(0.5);
     }
 
-    #[test]
-    #[should_panic(expected = "Softmax derivative cannot be applied to scalar values")]
-    fn test_softmax_scalar_derivative() {
-        Softmax.apply_derivative(0.5);
-    }
+    // #[test]
+    // #[should_panic(expected = "Softmax derivative cannot be applied to scalar values")]
+    // fn test_softmax_scalar_derivative() {
+    //     Softmax.apply_derivative(0.5);
+    // }
 
     #[test]
     fn test_softmax_batch_operations() {
@@ -278,5 +303,38 @@ mod tests {
         // Should give equal probabilities
         assert_relative_eq!(result.get(0, 0), 0.5, epsilon = 1e-10);
         assert_relative_eq!(result.get(1, 0), 0.5, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_relu_activation() {
+        let x = -1.0;
+        let result = ReLU.apply(x);
+        assert_relative_eq!(result, 0.0, epsilon = 1e-10);
+
+        let x = 2.0;
+        let result = ReLU.apply(x);
+        assert_relative_eq!(result, 2.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_relu_vector_function() {
+        let input = vec![-1.0, 2.0, -3.0, 4.0].into_matrix(2, 2);
+        let result = ReLU.apply_vector(&input);
+
+        assert_relative_eq!(result.get(0, 0), 0.0, epsilon = 1e-10);
+        assert_relative_eq!(result.get(0, 1), 2.0, epsilon = 1e-10);
+        assert_relative_eq!(result.get(1, 0), 0.0, epsilon = 1e-10);
+        assert_relative_eq!(result.get(1, 1), 4.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_relu_vector_derivative() {
+        let input = vec![-1.0, 2.0, -3.0, 4.0].into_matrix(2, 2);
+        let derivative = ReLU.apply_derivative_vector(&input);
+
+        assert_relative_eq!(derivative.get(0, 0), 0.0, epsilon = 1e-10);
+        assert_relative_eq!(derivative.get(0, 1), 1.0, epsilon = 1e-10);
+        assert_relative_eq!(derivative.get(1, 0), 0.0, epsilon = 1e-10);
+        assert_relative_eq!(derivative.get(1, 1), 1.0, epsilon = 1e-10);
     }
 }
