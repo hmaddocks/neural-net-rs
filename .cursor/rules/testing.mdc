@@ -1,0 +1,9 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+## Testing
+
+- ALWAYS write tests for new code.
+- ALWAYS run the tests after every code change and make sure the tests pass.
