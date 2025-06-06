@@ -90,7 +90,7 @@ impl StandardizationParams {
         let total_pixels: Array1<f64> = mnist_data
             .iter()
             .inspect(|_| progress.inc(1))
-            .filter_map(|matrix| matrix.data.as_slice())
+            .filter_map(|matrix| matrix.0.as_slice())
             .flat_map(|slice| slice.iter().copied())
             .collect();
 
@@ -181,7 +181,7 @@ impl<'a> StandardizedMnistData<'a> {
     /// * `MnistError::Io` - If the matrix data cannot be accessed
     pub fn standardize_matrix(&self, matrix: &Matrix) -> Result<Matrix, MnistError> {
         let standardized_data: Vec<f64> = matrix
-            .data
+            .0
             .as_slice()
             .ok_or(MnistError::Io(std::io::Error::new(
                 std::io::ErrorKind::Other,

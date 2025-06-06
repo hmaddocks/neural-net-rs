@@ -47,10 +47,6 @@ impl Sigmoid {
         1.0 / (1.0 + E.powf(-x))
     }
 
-    // fn apply_derivative(&self, x: f64) -> f64 {
-    //     x * (1.0 - x)
-    // }
-
     fn apply_vector(&self, input: &Matrix) -> Matrix {
         input.map(|x| 1.0 / (1.0 + E.powf(-x)))
     }
@@ -58,16 +54,12 @@ impl Sigmoid {
     fn apply_derivative_vector(&self, input: &Matrix) -> Matrix {
         input.map(|x| x * (1.0 - x))
     }
-
-    // fn activation_type(&self) -> Activation {
-    //     Activation::Sigmoid
-    // }
 }
 
 /// Standard softmax activation function for multi-class classification.
 ///
 /// Implements the softmax function: f(x) = e^x / sum(e^x)
-/// 
+///
 /// The derivative is more complex than other activation functions as it produces
 /// a Jacobian matrix where:
 /// - Diagonal elements: f'(x_i, x_i) = f(x_i) * (1 - f(x_i))
@@ -83,13 +75,9 @@ impl Softmax {
         panic!("Softmax cannot be applied to scalar values")
     }
 
-    // fn apply_derivative(&self, _x: f64) -> f64 {
-    //     panic!("Softmax derivative cannot be applied to scalar values")
-    // }
-
     fn apply_vector(&self, input: &Matrix) -> Matrix {
         // For both vectors and matrices, use column-wise operations
-        let mut result = input.data.clone();
+        let mut result = input.0.clone();
 
         // Process each column independently
         for mut col in result.axis_iter_mut(ndarray::Axis(1)) {
@@ -110,7 +98,7 @@ impl Softmax {
             }
         }
 
-        Matrix { data: result }
+        Matrix(result)
     }
 
     fn apply_derivative_vector(&self, input: &Matrix) -> Matrix {
@@ -118,7 +106,7 @@ impl Softmax {
             let softmax_output = self.apply_vector(input);
             let rows = input.rows();
             let probs = softmax_output
-                .data
+                .0
                 .as_slice()
                 .expect("Failed to get softmax output data");
 
@@ -131,15 +119,11 @@ impl Softmax {
                 }
             });
 
-            Matrix { data: result_data }
+            Matrix(result_data)
         } else {
             panic!("Softmax derivative not implemented for matrices with multiple columns")
         }
     }
-
-    // fn activation_type(&self) -> Activation {
-    //     Activation::Softmax
-    // }
 }
 
 /// Rectified Linear Unit (ReLU) activation function.
@@ -175,13 +159,6 @@ mod tests {
         let result = Sigmoid.apply(x);
         assert_relative_eq!(result, 0.5, epsilon = 1e-10);
     }
-
-    // #[test]
-    // fn test_sigmoid_derivative() {
-    //     let x = 0.5;
-    //     let result = Sigmoid.apply_derivative(x);
-    //     assert_relative_eq!(result, 0.25, epsilon = 1e-10);
-    // }
 
     #[test]
     fn test_sigmoid_vector_function() {
@@ -222,7 +199,7 @@ mod tests {
         assert_relative_eq!(result.get(1, 0), 0.731, epsilon = 1e-3);
 
         // Verify probabilities sum to 1
-        let sum: f64 = result.data.iter().sum();
+        let sum: f64 = result.0.iter().sum();
         assert_relative_eq!(sum, 1.0, epsilon = 1e-10);
     }
 
@@ -252,12 +229,6 @@ mod tests {
         Softmax.apply(0.5);
     }
 
-    // #[test]
-    // #[should_panic(expected = "Softmax derivative cannot be applied to scalar values")]
-    // fn test_softmax_scalar_derivative() {
-    //     Softmax.apply_derivative(0.5);
-    // }
-
     #[test]
     fn test_softmax_batch_operations() {
         let softmax = Softmax;
@@ -271,7 +242,7 @@ mod tests {
 
         // Check each column sums to 1
         for col in 0..output.cols() {
-            let sum: f64 = (0..output.rows()).map(|row| output.data[[row, col]]).sum();
+            let sum: f64 = (0..output.rows()).map(|row| output.0[[row, col]]).sum();
             assert!(
                 (sum - 1.0).abs() < 1e-6,
                 "Column {} sum is {}, expected 1.0",
@@ -281,7 +252,7 @@ mod tests {
         }
 
         // Check all values are between 0 and 1
-        for val in output.data.iter() {
+        for val in output.0.iter() {
             assert!(
                 *val >= 0.0 && *val <= 1.0,
                 "Value {} not between 0 and 1",
@@ -297,7 +268,7 @@ mod tests {
         let result = Softmax.apply_vector(&input);
 
         // Should still sum to 1.0
-        let sum: f64 = result.data.iter().sum();
+        let sum: f64 = result.0.iter().sum();
         assert_relative_eq!(sum, 1.0, epsilon = 1e-10);
     }
 

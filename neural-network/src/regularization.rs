@@ -121,10 +121,9 @@ impl L1 {
     /// # Returns
     /// The L1 regularization term
     fn calculate_term(&self, weights: &[Matrix], rate: f64) -> f64 {
-        // Using functional programming constructs as per coding standards
         weights
             .iter()
-            .map(|w| w.data.iter().map(|&x| x.abs()).sum::<f64>())
+            .map(|w| w.0.iter().map(|&x| x.abs()).sum::<f64>())
             .sum::<f64>()
             * rate
     }
@@ -185,10 +184,9 @@ impl L2 {
     /// # Returns
     /// The L2 regularization term
     fn calculate_term(&self, weights: &[Matrix], rate: f64) -> f64 {
-        // Using functional programming constructs as per coding standards
         weights
             .iter()
-            .map(|w| w.data.iter().map(|&x| x * x).sum::<f64>())
+            .map(|w| w.0.iter().map(|&x| x * x).sum::<f64>())
             .sum::<f64>()
             * (rate / 2.0)
     }
