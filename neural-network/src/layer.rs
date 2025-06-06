@@ -99,79 +99,6 @@ impl Layer {
             propagated_error
         }
     }
-
-    /// Computes gradients for a layer during backpropagation
-    ///
-    /// # Arguments
-    /// * `delta` - Delta values for the current layer
-    /// * `previous_output` - Output from the previous layer (with bias term)
-    ///
-    /// # Returns
-    /// Gradient matrix for the current layer's weights
-    pub fn compute_gradients(delta: &Matrix, previous_output: &Matrix) -> Matrix {
-        delta.dot_multiply(&previous_output.transpose())
-    }
-
-    /// Computes the error for the output layer.
-    ///
-    /// # Arguments
-    /// * `outputs` - Output matrix from the network
-    /// * `targets` - Target matrix
-    ///
-    /// # Returns
-    /// The error matrix for the output layer
-    pub fn compute_output_error(outputs: &Matrix, targets: &Matrix) -> Matrix {
-        targets - outputs
-    }
-
-    /// Accumulates gradients for backpropagation across all layers.
-    ///
-    /// # Arguments
-    /// * `weights` - Network weight matrices
-    /// * `layer_outputs` - Cached outputs from each layer
-    /// * `network_layers` - Vector of network layers
-    /// * `outputs` - Final output matrix
-    /// * `targets` - Target matrix
-    ///
-    /// # Returns
-    /// Vector of gradient matrices for each layer, ordered from input to output layer
-    pub fn accumulate_network_gradients(
-        weights: &[Matrix],
-        layer_outputs: &[Matrix],
-        network_layers: &[Layer],
-        outputs: &Matrix,
-        targets: &Matrix,
-    ) -> Vec<Matrix> {
-        // Calculate initial error
-        let error = Self::compute_output_error(outputs, targets);
-
-        // Calculate deltas for all layers
-        let mut deltas = Vec::with_capacity(weights.len());
-        deltas.push(error.clone());
-
-        // Calculate deltas for hidden layers using functional approach
-        let mut prev_delta = error;
-        deltas.extend((0..weights.len() - 1).rev().map(|i| {
-            let weight = &weights[i + 1];
-            let current_output = &layer_outputs[i + 1];
-            let layer = &network_layers[i];
-
-            // Compute delta for hidden layer
-            let delta = layer.compute_hidden_delta(weight, &prev_delta, current_output);
-
-            prev_delta = delta.clone();
-            delta
-        }));
-
-        // Calculate gradients
-        (0..weights.len())
-            .map(|i| {
-                let input_with_bias = layer_outputs[i].augment_with_bias();
-                let delta = &deltas[weights.len() - 1 - i];
-                Self::compute_gradients(delta, &input_with_bias)
-            })
-            .collect()
-    }
 }
 
 impl fmt::Display for Layer {
@@ -298,27 +225,5 @@ mod tests {
         // delta = [0.1, 0.2]ᵀ * [0.5] = [0.05, 0.1]
         assert_relative_eq!(delta.get(0, 0), 0.05, epsilon = 1e-10);
         assert_relative_eq!(delta.get(1, 0), 0.1, epsilon = 1e-10);
-    }
-
-    #[test]
-    fn test_compute_gradients() {
-        // Create test data
-        let delta = vec![0.1, 0.2].into_matrix(2, 1);
-        let prev_output = vec![0.5, 0.6, 1.0].into_matrix(3, 1); // Includes bias
-
-        // Compute gradients
-        let gradients = Layer::compute_gradients(&delta, &prev_output);
-
-        // Verify dimensions
-        assert_eq!(gradients.rows(), 2);
-        assert_eq!(gradients.cols(), 3);
-
-        // Verify calculations (same as before)
-        assert_relative_eq!(gradients.get(0, 0), 0.05, epsilon = 1e-10);
-        assert_relative_eq!(gradients.get(0, 1), 0.06, epsilon = 1e-10);
-        assert_relative_eq!(gradients.get(0, 2), 0.1, epsilon = 1e-10);
-        assert_relative_eq!(gradients.get(1, 0), 0.1, epsilon = 1e-10);
-        assert_relative_eq!(gradients.get(1, 1), 0.12, epsilon = 1e-10);
-        assert_relative_eq!(gradients.get(1, 2), 0.2, epsilon = 1e-10);
     }
 }

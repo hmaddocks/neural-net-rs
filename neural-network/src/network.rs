@@ -229,7 +229,7 @@ impl Network {
             .collect()
     }
 
-    /// Accumulates gradients for backpropagation across a batch.
+    /// Accumulates gradients for backpropagation across all layers.
     ///
     /// # Arguments
     /// * `outputs` - Output matrix where each column is a network output (output_size x batch_size)
@@ -239,14 +239,62 @@ impl Network {
     /// Vector of gradient matrices for each layer, ordered from input to output layer.
     /// Each gradient matrix has the same dimensions as its corresponding weight matrix,
     /// including the bias weights.
-    fn accumulate_gradients(&mut self, outputs: Matrix, targets: Matrix) -> Vec<Matrix> {
-        Layer::accumulate_network_gradients(
-            &self.weights,
-            &self.data,
-            &self.layers,
-            &outputs,
-            &targets,
-        )
+    pub fn accumulate_gradients(&mut self, outputs: &Matrix, targets: &Matrix) -> Vec<Matrix> {
+        // Calculate initial error
+        let error = Self::compute_output_error(outputs, targets);
+
+        // Calculate deltas for all layers
+        let mut deltas = Vec::with_capacity(self.weights.len());
+        deltas.push(error.clone());
+
+        // Calculate deltas for hidden layers using functional approach
+        let mut prev_delta = error;
+        deltas.extend((0..self.weights.len() - 1).rev().map(|i| {
+            let weight = &self.weights[i + 1];
+            let current_output = &self.data[i + 1];
+            let layer = &self.layers[i];
+
+            // Compute delta for hidden layer
+            let delta = layer.compute_hidden_delta(weight, &prev_delta, current_output);
+
+            prev_delta = delta.clone();
+            delta
+        }));
+
+        // Calculate gradients
+        (0..self.weights.len())
+            .map(|i| {
+                let input_with_bias = self.data[i].augment_with_bias();
+                let delta = &deltas[self.weights.len() - 1 - i];
+                Self::compute_gradients(delta, &input_with_bias)
+            })
+            .collect()
+    }
+
+    /// Computes the error for the output layer.
+    ///
+    /// # Arguments
+    /// * `outputs` - Output matrix from the network
+    /// * `targets` - Target matrix
+    ///
+    /// # Returns
+    /// The error matrix for the output layer
+    #[inline]
+    pub fn compute_output_error(outputs: &Matrix, targets: &Matrix) -> Matrix {
+        targets - outputs
+    }
+
+    /// Computes gradients for a layer during backpropagation
+    ///
+    /// # Arguments
+    /// * `delta` - Delta values for the current layer
+    /// * `previous_output` - Output from the previous layer (with bias term)
+    ///
+    /// # Returns
+    /// Gradient matrix for the current layer's weights
+    #[inline]
+    pub fn compute_gradients(delta: &Matrix, previous_output: &Matrix) -> Matrix {
+        delta.dot_multiply(&previous_output.transpose())
     }
 
     /// Updates weights using accumulated gradients from a batch, including regularization.
@@ -394,7 +442,7 @@ impl Network {
         let (batch_error, batch_correct) = self.evaluate_batch(&target_matrix, &outputs);
 
         // Accumulate gradients for entire batch
-        let accumulated_gradients = self.accumulate_gradients(outputs, target_matrix);
+        let accumulated_gradients = self.accumulate_gradients(&outputs, &target_matrix);
 
         // Update weights using accumulated gradients
         self.update_weights(&accumulated_gradients);
@@ -1116,7 +1164,7 @@ mod tests {
         let target = Matrix::from(vec![1.0]);
 
         let output = network.feed_forward(input);
-        let gradients = network.accumulate_gradients(output, target);
+        let gradients = network.accumulate_gradients(&output, &target);
 
         assert_eq!(gradients.len(), network.weights.len());
         for (gradient, weight) in gradients.iter().zip(network.weights.iter()) {
@@ -1150,7 +1198,7 @@ mod tests {
 
         // Test gradient computation
         let target = Matrix::new(2, 3, vec![1.0, 0.0, 1.0, 0.0, 1.0, 0.0]);
-        let gradients = network.accumulate_gradients(output, target);
+        let gradients = network.accumulate_gradients(&output, &target);
 
         // Check gradient dimensions
         assert_eq!(gradients.len(), network.weights.len());
