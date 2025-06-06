@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Training history containing metrics recorded during training
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,7 +14,7 @@ pub struct TrainingHistory {
 }
 
 impl TrainingHistory {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             accuracies: Vec::new(),
             losses: Vec::new(),

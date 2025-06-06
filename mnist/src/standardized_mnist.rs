@@ -136,7 +136,7 @@ impl<'a> StandardizedMnistData<'a> {
     ///
     /// # Returns
     /// * `StandardizedMnistData` - A new StandardizedMnistData with the given StandardizationParams
-    pub fn new(params: &'a StandardizationParams) -> StandardizedMnistData<'a> {
+    pub const fn new(params: &'a StandardizationParams) -> StandardizedMnistData<'a> {
         StandardizedMnistData { params }
     }
 

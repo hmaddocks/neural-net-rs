@@ -21,19 +21,19 @@ struct ConfusionMatrix {
 
 impl ConfusionMatrix {
     /// Creates a new empty confusion matrix
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             matrix: [[0; 10]; 10],
         }
     }
 
     /// Records a prediction in the confusion matrix
-    pub fn record(&mut self, actual: usize, predicted: usize) {
+    pub const fn record(&mut self, actual: usize, predicted: usize) {
         self.matrix[actual][predicted] += 1;
     }
 
     /// Gets the value at a specific position
-    pub fn get(&self, actual: usize, predicted: usize) -> usize {
+    pub const fn get(&self, actual: usize, predicted: usize) -> usize {
         self.matrix[actual][predicted]
     }
 }

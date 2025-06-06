@@ -185,7 +185,11 @@ impl Network {
         }
     }
 
-    pub fn set_standardization_parameters(&mut self, mean: Option<f64>, std_dev: Option<f64>) {
+    pub const fn set_standardization_parameters(
+        &mut self,
+        mean: Option<f64>,
+        std_dev: Option<f64>,
+    ) {
         self.mean = mean;
         self.std_dev = std_dev;
     }

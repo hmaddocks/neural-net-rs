@@ -39,12 +39,12 @@ impl PartialEq for Layer {
 
 impl Layer {
     /// Creates a new [`Layer`].
-    pub fn new(nodes: usize, activation: Option<Activation>) -> Self {
+    pub const fn new(nodes: usize, activation: Option<Activation>) -> Self {
         Self { nodes, activation }
     }
 
     /// Gets a reference to the activation function if available
-    pub fn get_activation(&self) -> Option<&Activation> {
+    pub const fn get_activation(&self) -> Option<&Activation> {
         self.activation.as_ref()
     }
 
