@@ -28,9 +28,7 @@ use std::ops::{Add, Mul, Sub};
 /// let transposed = matrix.transpose();
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Matrix {
-    pub data: Array2<f64>,
-}
+pub struct Matrix(pub Array2<f64>);
 
 impl Matrix {
     /// Creates a new matrix with the specified dimensions and data.
@@ -44,10 +42,9 @@ impl Matrix {
     /// Panics if data.len() != rows * cols
     pub fn new(rows: usize, cols: usize, data: Vec<f64>) -> Self {
         assert_eq!(data.len(), rows * cols, "Invalid matrix dimensions");
-        Matrix {
-            data: Array2::from_shape_vec((rows, cols), data)
-                .expect("Failed to create matrix from data"),
-        }
+        Matrix(
+            Array2::from_shape_vec((rows, cols), data).expect("Failed to create matrix from data"),
+        )
     }
 
     /// Creates a new matrix filled with zeros.
@@ -56,9 +53,7 @@ impl Matrix {
     /// * `rows` - Number of rows in the matrix
     /// * `cols` - Number of columns in the matrix
     pub fn zeros(rows: usize, cols: usize) -> Self {
-        Matrix {
-            data: Array2::zeros((rows, cols)),
-        }
+        Matrix(Array2::zeros((rows, cols)))
     }
 
     /// Creates a new matrix with random weights using Xavier/Glorot initialization.
@@ -76,9 +71,7 @@ impl Matrix {
         // Improved Xavier/Glorot initialization for better convergence
         let scale = (6.0 / (rows + cols) as f64).sqrt();
         let dist = Uniform::new(-scale, scale);
-        Matrix {
-            data: Array2::random((rows, cols), dist),
-        }
+        Matrix(Array2::random((rows, cols), dist))
     }
 
     /// Augments an input matrix with bias terms (adds a row of 1.0s).
@@ -90,9 +83,7 @@ impl Matrix {
     /// A new matrix with an additional row of 1.0s for bias terms
     pub fn augment_with_bias(&self) -> Self {
         let bias_row = Array2::ones((1, self.cols()));
-        Matrix {
-            data: concatenate![Axis(0), self.data, bias_row],
-        }
+        Matrix(concatenate![Axis(0), self.0, bias_row])
     }
 
     /// Performs element-wise multiplication of two matrices.
@@ -108,9 +99,7 @@ impl Matrix {
             (other.rows(), other.cols()),
             "Matrix dimensions must match for elementwise multiplication"
         );
-        Matrix {
-            data: &self.data * &other.data,
-        }
+        Matrix(&self.0 * &other.0)
     }
 
     /// Performs matrix multiplication (dot product).
@@ -127,9 +116,7 @@ impl Matrix {
             other.rows(),
             "Invalid dimensions for matrix multiplication"
         );
-        Matrix {
-            data: self.data.dot(&other.data),
-        }
+        Matrix(self.0.dot(&other.0))
     }
 
     /// Returns a transposed copy of the matrix.
@@ -137,9 +124,7 @@ impl Matrix {
     /// # Returns
     /// A new matrix where rows and columns are swapped
     pub fn transpose(&self) -> Self {
-        Matrix {
-            data: self.data.t().to_owned(),
-        }
+        Matrix(self.0.t().to_owned())
     }
 
     /// Applies a function to each element of the matrix.
@@ -160,14 +145,12 @@ impl Matrix {
     where
         F: Fn(f64) -> f64,
     {
-        Matrix {
-            data: self.data.mapv(func),
-        }
+        Matrix(self.0.mapv(func))
     }
 
     /// Get a view of the matrix
     pub fn view(&self) -> ArrayView2<f64> {
-        self.data.view()
+        self.0.view()
     }
 
     /// Apply a function element-wise with broadcasting
@@ -175,38 +158,28 @@ impl Matrix {
     where
         F: Fn(f64, f64) -> f64,
     {
-        Matrix {
-            data: azip!(&self.data, &other.data).map_collect(|&a, &b| f(a, b)),
-        }
+        Matrix(azip!(&self.0, &other.0).map_collect(|&a, &b| f(a, b)))
     }
 
     /// Sum along specified axis
     pub fn sum_axis(&self, axis: Axis) -> Matrix {
-        Matrix {
-            data: self.data.sum_axis(axis).insert_axis(axis),
-        }
+        Matrix(self.0.sum_axis(axis).insert_axis(axis))
     }
 
     /// Mean along specified axis
     pub fn mean_axis(&self, axis: Axis) -> Matrix {
-        Matrix {
-            data: self.data.mean_axis(axis).unwrap().insert_axis(axis),
-        }
+        Matrix(self.0.mean_axis(axis).unwrap().insert_axis(axis))
     }
 
     /// Concatenate matrices along specified axis
     pub fn concatenate(matrices: &[&Matrix], axis: Axis) -> Matrix {
-        let views: Vec<_> = matrices.iter().map(|m| m.data.view()).collect();
-        Matrix {
-            data: concatenate(axis, &views[..]).unwrap(),
-        }
+        let views: Vec<_> = matrices.iter().map(|m| m.0.view()).collect();
+        Matrix(concatenate(axis, &views[..]).unwrap())
     }
 
     /// Slice the matrix
     pub fn slice(&self, rows: std::ops::Range<usize>, cols: std::ops::Range<usize>) -> Matrix {
-        Matrix {
-            data: self.data.slice(ndarray::s![rows, cols]).to_owned(),
-        }
+        Matrix(self.0.slice(ndarray::s![rows, cols]).to_owned())
     }
 
     /// Create a matrix from a slice
@@ -215,9 +188,10 @@ impl Matrix {
         rows: usize,
         cols: usize,
     ) -> Result<Self, ndarray::ShapeError> {
-        Ok(Matrix {
-            data: Array2::from_shape_vec((rows, cols), slice.to_vec())?,
-        })
+        Ok(Matrix(Array2::from_shape_vec(
+            (rows, cols),
+            slice.to_vec(),
+        )?))
     }
 
     /// Returns the value at the specified position in the matrix.
@@ -229,17 +203,17 @@ impl Matrix {
     /// # Panics
     /// Panics if the indices are out of bounds
     pub fn get(&self, row: usize, col: usize) -> f64 {
-        self.data[[row, col]]
+        self.0[[row, col]]
     }
 
     /// Returns the number of rows in the matrix.
     pub fn rows(&self) -> usize {
-        self.data.nrows()
+        self.0.nrows()
     }
 
     /// Returns the number of columns in the matrix.
     pub fn cols(&self) -> usize {
-        self.data.ncols()
+        self.0.ncols()
     }
 
     /// Get a specific column from the matrix
@@ -250,14 +224,13 @@ impl Matrix {
     /// # Returns
     /// A new Matrix containing the specified column
     pub fn col(&self, col: usize) -> Matrix {
-        Matrix {
-            data: self
-                .data
+        Matrix(
+            self.0
                 .slice(s![.., col])
                 .to_owned()
                 .into_shape_with_order((self.rows(), 1))
                 .unwrap(),
-        }
+        )
     }
 }
 
@@ -280,9 +253,7 @@ impl Add for &Matrix {
             (other.rows(), other.cols()),
             "Cannot add matrices with different dimensions"
         );
-        Matrix {
-            data: &self.data + &other.data,
-        }
+        Matrix(&self.0 + &other.0)
     }
 }
 
@@ -305,9 +276,7 @@ impl Sub for &Matrix {
             (other.rows(), other.cols()),
             "Cannot subtract matrices with different dimensions"
         );
-        Matrix {
-            data: &self.data - &other.data,
-        }
+        Matrix(&self.0 - &other.0)
     }
 }
 
@@ -322,9 +291,7 @@ impl Mul<f64> for &Matrix {
     type Output = Matrix;
 
     fn mul(self, other: f64) -> Self::Output {
-        Matrix {
-            data: &self.data * other,
-        }
+        Matrix(&self.0 * other)
     }
 }
 
@@ -397,7 +364,7 @@ impl IntoMatrix for Vec<f64> {
 /// Formats the matrix for display with tab-separated values and newlines between rows.
 impl fmt::Display for Matrix {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for row in self.data.rows() {
+        for row in self.0.rows() {
             writeln!(
                 f,
                 "{}",
@@ -424,9 +391,9 @@ mod tests {
 
         assert_eq!(matrix.rows(), rows);
         assert_eq!(matrix.cols(), cols);
-        assert_eq!(matrix.data.len(), rows * cols);
+        assert_eq!(matrix.0.len(), rows * cols);
 
-        for &num in matrix.data.iter() {
+        for &num in matrix.0.iter() {
             assert!(num >= -1.0 && num < 1.0);
         }
     }
@@ -709,7 +676,7 @@ mod tests {
         assert_eq!(matrix.rows(), 3);
         assert_eq!(matrix.cols(), 1);
         assert_eq!(
-            matrix.data.into_iter().collect::<Vec<_>>(),
+            matrix.0.into_iter().collect::<Vec<_>>(),
             vec![1.0, 2.0, 3.0]
         );
     }
@@ -722,7 +689,7 @@ mod tests {
         assert_eq!(matrix.rows(), 2);
         assert_eq!(matrix.cols(), 2);
         assert_eq!(
-            matrix.data.into_iter().collect::<Vec<_>>(),
+            matrix.0.into_iter().collect::<Vec<_>>(),
             vec![1.0, 2.0, 3.0, 4.0]
         );
     }
@@ -765,7 +732,7 @@ mod tests {
         assert_eq!(augmented.rows(), 1); // Just the bias row
         assert_eq!(augmented.cols(), 3);
         assert_eq!(
-            augmented.data.into_iter().collect::<Vec<_>>(),
+            augmented.0.into_iter().collect::<Vec<_>>(),
             vec![1.0, 1.0, 1.0]
         );
     }
