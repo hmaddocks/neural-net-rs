@@ -661,10 +661,6 @@ impl Network {
 
         Ok(network)
     }
-
-    fn check_weights_changed(&self, initial: &Matrix, current: &Matrix) -> bool {
-        initial.0 != current.0
-    }
 }
 
 #[cfg(test)]
