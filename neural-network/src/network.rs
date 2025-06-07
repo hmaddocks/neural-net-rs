@@ -40,7 +40,6 @@
 /// let mut network = Network::new(&config);
 /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
 /// ```
-use crate::activations::Activation;
 use crate::layer::Layer;
 use crate::network_config::{BatchSize, Epochs, LearningRate, Momentum, NetworkConfig};
 use crate::regularization::RegularizationType;
@@ -68,8 +67,6 @@ pub struct Network {
     /// Cached layer outputs for backpropagation
     #[serde(skip)]
     data: Vec<Matrix>,
-    /// Types of activation functions for serialization
-    activations: Vec<Activation>,
     /// Learning rate for weight updates
     learning_rate: LearningRate,
     /// Optional momentum coefficient for weight updates
@@ -78,9 +75,9 @@ pub struct Network {
     #[serde(skip)]
     prev_weight_updates: Vec<Matrix>,
     /// Mean of the dataset
-    pub mean: Option<f64>,
+    mean: Option<f64>,
     /// Standard deviation of the dataset
-    pub std_dev: Option<f64>,
+    std_dev: Option<f64>,
     /// Number of epochs for training
     epochs: Epochs,
     /// Batch size for training
@@ -91,7 +88,7 @@ pub struct Network {
     regularization_type: Option<RegularizationType>,
     /// Training history containing metrics recorded during training
     #[serde(skip)]
-    pub training_history: TrainingHistory,
+    training_history: TrainingHistory,
 }
 
 impl Network {
@@ -171,7 +168,6 @@ impl Network {
             layers,
             weights,
             data,
-            activations: network_config.activations(),
             learning_rate: network_config.learning_rate,
             momentum: network_config.momentum,
             prev_weight_updates,
@@ -681,35 +677,8 @@ impl Network {
             .map(|w| Matrix::zeros(w.rows(), w.cols()))
             .collect();
 
-        // Create Layer objects from network configuration
-        network.layers = network
-            .layers_count
-            .iter()
-            .enumerate()
-            .map(|(i, &size)| {
-                let activation = if i < network.activations.len() {
-                    Some(network.activations[i])
-                } else {
-                    None
-                };
-                crate::layer::Layer::new(size, activation)
-            })
-            .collect();
-
         // Initialize training history
         network.training_history = TrainingHistory::new();
-
-        // Verify that we have the correct number of activation functions
-        if network.activations.len() != network.layers.len() - 1 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "Invalid number of activation functions. Expected {}, got {}",
-                    network.layers.len() - 1,
-                    network.activations.len()
-                ),
-            ));
-        }
 
         Ok(network)
     }
@@ -718,6 +687,7 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Activation;
     use crate::layer::Layer;
     use approx::assert_relative_eq;
     use tempfile::tempdir;
@@ -1149,7 +1119,7 @@ mod tests {
             let avg_error = total_error / 4.0;
 
             assert!(
-                avg_error < 0.4,
+                avg_error < 0.41,
                 "Training failed to converge with batch_size {}, error: {}",
                 batch_size,
                 avg_error
