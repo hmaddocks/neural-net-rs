@@ -17,6 +17,7 @@
 /// use neural_network::Layer;
 /// use neural_network::RegularizationType;
 /// use tempfile::tempdir;
+/// use std::path::PathBuf;
 ///
 /// let dir = tempdir().unwrap();
 /// let model_path = dir.path().join("model.json");
@@ -38,7 +39,7 @@
 ///
 /// // Create and save network
 /// let mut network = Network::new(&config);
-/// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
+/// network.save(&model_path).expect("Failed to save model");
 /// ```
 use crate::layer::Layer;
 use crate::network_config::{BatchSize, Epochs, LearningRate, Momentum, NetworkConfig};
@@ -51,6 +52,7 @@ use rand::rng;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use std::io;
+use std::path::PathBuf;
 use std::time::Instant;
 
 /// A feed-forward neural network with configurable layers and activation functions.
@@ -627,6 +629,7 @@ impl Network {
     /// use neural_network::{Network, NetworkConfig, Layer, Activation};
     /// use neural_network::{LearningRate, Momentum};
     /// use tempfile::tempdir;
+    /// use std::path::PathBuf;
     ///
     /// let dir = tempdir().unwrap();
     /// let model_path = dir.path().join("model.json");
@@ -643,13 +646,12 @@ impl Network {
     ///
     /// // Create and save network
     /// let mut network = Network::new(&config);
-    /// network.save(model_path.to_str().unwrap()).expect("Failed to save model");
+    /// network.save(&model_path).expect("Failed to save model");
     /// ```
-    pub fn save(&self, path: &str) -> io::Result<()> {
-        // Use ? operator for more idiomatic error handling
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        std::fs::write(path, json)
+    pub fn save(&self, path: &PathBuf) -> io::Result<()> {
+        let file = std::fs::File::create(path)?;
+        serde_json::to_writer_pretty(file, self)?;
+        Ok(())
     }
 
     /// Loads a trained network from a JSON file.
@@ -917,7 +919,7 @@ mod tests {
 
         // Save the network
         original_network
-            .save(file_path.to_str().unwrap())
+            .save(&file_path)
             .expect("Failed to save network");
 
         // Load the network

@@ -268,15 +268,15 @@ fn train() -> Result<()> {
     save_training_history(training_history)?;
 
     println!("Saving trained network...");
-    let network_json = serde_json::to_string(&network).context("Failed to serialize network")?;
+    // let network_json = serde_json::to_string(&network).context("Failed to serialize network")?;
     let model_path = std::env::current_dir()
         .context("Failed to get current directory")?
         .join("models")
         .join("trained_network.json");
 
-    let mut file = File::create(&model_path).context("Failed to create model file")?;
-    file.write_all(network_json.as_bytes())
-        .context("Failed to write model file")?;
+    network
+        .save(&model_path)
+        .context("Failed to save trained network")?;
     println!("Network trained and saved to {}", model_path.display());
     Ok(())
 }
