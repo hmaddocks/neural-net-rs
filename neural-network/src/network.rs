@@ -133,7 +133,7 @@ impl Network {
         let layer_pairs: Vec<_> = nodes.windows(2).collect();
 
         // Create layers from config
-        let layers: Vec<_> = network_config.layers.iter().cloned().collect();
+        let layers = network_config.layers.iter().cloned().collect();
 
         // Fill weights with random values
         let weights = layer_pairs
@@ -243,7 +243,7 @@ impl Network {
         let mut deltas = Vec::with_capacity(self.weights.len());
         deltas.push(error.clone());
 
-        // Calculate deltas for hidden layers using functional approach
+        // Calculate deltas for hidden layers
         let mut prev_delta = error;
         deltas.extend((0..self.weights.len() - 1).rev().map(|i| {
             let weight = &self.weights[i + 1];
@@ -302,33 +302,37 @@ impl Network {
     /// Regularization is applied by adding a penalty term based on the selected regularization type.
     fn update_weights(&mut self, accumulated_gradients: &[Matrix]) {
         // Apply summed gradients (not averaged by batch size)
-        for i in 0..self.weights.len() {
-            // Calculate weight updates with momentum
-            let learning_term = &accumulated_gradients[i] * f64::from(self.learning_rate);
+        self.weights
+            .iter_mut()
+            .zip(accumulated_gradients.iter())
+            .zip(self.prev_weight_updates.iter_mut())
+            .for_each(|((weight, gradient), prev_update)| {
+                // Calculate weight updates with momentum
+                let learning_term = gradient * f64::from(self.learning_rate);
 
-            // Calculate regularization gradient if configured
-            let reg_gradient = if let (Some(rate), Some(reg_type)) =
-                (self.regularization_rate, &self.regularization_type)
-            {
-                let reg = reg_type.create_regularization();
-                reg.calculate_gradient(&self.weights[i], rate)
-            } else {
-                Matrix::zeros(self.weights[i].rows(), self.weights[i].cols())
-            };
+                // Calculate regularization gradient if configured
+                let reg_gradient = if let (Some(rate), Some(reg_type)) =
+                    (self.regularization_rate, &self.regularization_type)
+                {
+                    let reg = reg_type.create_regularization();
+                    reg.calculate_gradient(weight, rate)
+                } else {
+                    Matrix::zeros(weight.rows(), weight.cols())
+                };
 
-            // Combine accumulated gradients with regularization
-            let total_update = &learning_term + &reg_gradient;
+                // Combine accumulated gradients with regularization
+                let total_update = &learning_term + &reg_gradient;
 
-            if let Some(momentum) = self.momentum {
-                let momentum_term = &self.prev_weight_updates[i].map(|x| x * f64::from(momentum));
-                self.prev_weight_updates[i] = &total_update + momentum_term;
-            } else {
-                self.prev_weight_updates[i] = total_update;
-            }
+                // Update previous weight updates with momentum if configured
+                *prev_update = if let Some(momentum) = self.momentum {
+                    &total_update + &(&*prev_update * momentum)
+                } else {
+                    total_update
+                };
 
-            // Update weights
-            self.weights[i] = &self.weights[i] + &self.prev_weight_updates[i];
-        }
+                // Update weights
+                *weight = &*weight + prev_update;
+            });
     }
 
     /// Evaluates a single sample from a batch and returns its error and correctness.

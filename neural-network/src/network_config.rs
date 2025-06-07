@@ -9,9 +9,6 @@ use std::ops::{Div, Mul};
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct LearningRate(f64);
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct RegularizationRate(f64);
 
 impl TryFrom<f64> for RegularizationRate {
@@ -48,6 +45,15 @@ impl Div<f64> for RegularizationRate {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct LearningRate(f64);
+
+impl Default for LearningRate {
+    fn default() -> Self {
+        Self(0.001)
+    }
+}
+
 impl TryFrom<f64> for LearningRate {
     type Error = &'static str;
 
@@ -57,12 +63,6 @@ impl TryFrom<f64> for LearningRate {
         } else {
             Err("Learning rate must be greater than 0.0")
         }
-    }
-}
-
-impl Default for LearningRate {
-    fn default() -> Self {
-        Self(0.001)
     }
 }
 
@@ -125,11 +125,19 @@ impl From<Momentum> for f64 {
     }
 }
 
-impl Mul<Momentum> for f64 {
-    type Output = f64;
+impl Mul<Momentum> for &Matrix {
+    type Output = Matrix;
 
-    fn mul(self, momentum: Momentum) -> Self::Output {
-        self * f64::from(momentum)
+    fn mul(self, lr: Momentum) -> Self::Output {
+        self * lr.0
+    }
+}
+
+impl Mul<&mut Matrix> for Momentum {
+    type Output = Matrix;
+
+    fn mul(self, matrix: &mut Matrix) -> Self::Output {
+        &*matrix * self.0
     }
 }
 

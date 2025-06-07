@@ -29,6 +29,16 @@ impl std::fmt::Debug for Layer {
     }
 }
 
+impl fmt::Display for Layer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{{ nodes: {}, activation: {:?} }}",
+            self.nodes, self.activation
+        )
+    }
+}
+
 // Manual PartialEq implementation since Box<dyn ActivationFunction> doesn't implement PartialEq
 impl PartialEq for Layer {
     fn eq(&self, other: &Self) -> bool {
@@ -98,16 +108,6 @@ impl Layer {
             // For layers with no activation function, just return the propagated error
             propagated_error
         }
-    }
-}
-
-impl fmt::Display for Layer {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{{ nodes: {}, activation: {:?} }}",
-            self.nodes, self.activation
-        )
     }
 }
 
