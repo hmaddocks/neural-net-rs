@@ -190,6 +190,10 @@ impl Network {
         self.std_dev = std_dev;
     }
 
+    pub const fn standardization_parameters(&self) -> (Option<f64>, Option<f64>) {
+        (self.mean, self.std_dev)
+    }
+
     /// Creates mini-batches from input and target data.
     ///
     /// # Arguments

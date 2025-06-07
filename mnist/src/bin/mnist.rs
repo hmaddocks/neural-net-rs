@@ -172,12 +172,13 @@ fn test() -> Result<()> {
     let network =
         Network::load(model_path).map_err(|e| anyhow!("Failed to load trained network: {}", e))?;
 
-    let standardized_params = if let (Some(mean), Some(std_dev)) = (network.mean, network.std_dev) {
-        StandardizationParams::new(mean, std_dev)
-    } else {
-        StandardizationParams::build(&test_data.images())
-            .map_err(|e| anyhow!("Failed to build standardization parameters: {}", e))?
-    };
+    let standardized_params =
+        if let (Some(mean), Some(std_dev)) = network.standardization_parameters() {
+            StandardizationParams::new(mean, std_dev)
+        } else {
+            StandardizationParams::build(&test_data.images())
+                .map_err(|e| anyhow!("Failed to build standardization parameters: {}", e))?
+        };
 
     let standardised_test_data = StandardizedMnistData::new(&standardized_params)
         .standardize(&test_data.images())
