@@ -57,10 +57,7 @@ use std::time::Instant;
 #[derive(Serialize, Deserialize)]
 #[serde(crate = "serde")]
 pub struct Network {
-    /// Sizes of each layer in the network, including input and output layers
-    layers_count: Vec<usize>,
     /// Network layers
-    #[serde(skip)]
     layers: Vec<Layer>,
     /// Weight matrices between layers, including bias weights
     weights: Vec<Matrix>,
@@ -164,7 +161,6 @@ impl Network {
         let regularization_rate = network_config.regularization_rate.map(f64::from);
 
         Network {
-            layers_count: nodes.clone(),
             layers,
             weights,
             data,
@@ -769,7 +765,6 @@ mod tests {
 
         let network = Network::new(&config);
 
-        assert_eq!(network.layers_count, vec![2, 4, 1]);
         assert_eq!(network.weights[0].rows(), 4);
         assert_eq!(network.weights[0].cols(), 3); // 2 inputs + 1 bias
         assert_eq!(network.weights[1].rows(), 1);
