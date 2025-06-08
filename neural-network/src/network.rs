@@ -310,7 +310,7 @@ impl Network {
             .zip(self.prev_weight_updates.iter_mut())
             .for_each(|((weight, gradient), prev_update)| {
                 // Calculate weight updates with momentum
-                let learning_term = gradient * f64::from(self.learning_rate);
+                let learning_term = gradient * *self.learning_rate;
 
                 // Calculate regularization gradient if configured
                 let reg_gradient = if let (Some(rate), Some(reg_type)) =
@@ -327,7 +327,7 @@ impl Network {
 
                 // Update previous weight updates with momentum if configured
                 *prev_update = if let Some(momentum) = self.momentum {
-                    &total_update + &(&*prev_update * momentum)
+                    &total_update + &(&*prev_update * *momentum)
                 } else {
                     total_update
                 };

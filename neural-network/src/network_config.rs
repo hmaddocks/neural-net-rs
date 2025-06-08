@@ -1,11 +1,10 @@
 use crate::activations::Activation;
 use crate::layer::Layer;
 use crate::regularization::{Regularization, RegularizationType};
-use matrix::Matrix;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs;
-use std::ops::{Div, Mul};
+use std::ops::Deref;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -26,22 +25,6 @@ impl TryFrom<f64> for RegularizationRate {
 impl From<RegularizationRate> for f64 {
     fn from(rate: RegularizationRate) -> Self {
         rate.0
-    }
-}
-
-impl Mul<RegularizationRate> for &Matrix {
-    type Output = Matrix;
-
-    fn mul(self, rate: RegularizationRate) -> Self::Output {
-        self * rate.0
-    }
-}
-
-impl Div<f64> for RegularizationRate {
-    type Output = f64;
-
-    fn div(self, value: f64) -> Self::Output {
-        self.0 / value
     }
 }
 
@@ -72,35 +55,11 @@ impl From<LearningRate> for f64 {
     }
 }
 
-impl Mul<LearningRate> for f64 {
-    type Output = f64;
+impl Deref for LearningRate {
+    type Target = f64;
 
-    fn mul(self, lr: LearningRate) -> Self::Output {
-        self * lr.0
-    }
-}
-
-impl Mul<LearningRate> for Matrix {
-    type Output = Matrix;
-
-    fn mul(self, lr: LearningRate) -> Self::Output {
-        &self * lr.0
-    }
-}
-
-impl Mul<LearningRate> for &Matrix {
-    type Output = Matrix;
-
-    fn mul(self, lr: LearningRate) -> Self::Output {
-        self * lr.0
-    }
-}
-
-impl Mul<Matrix> for LearningRate {
-    type Output = Matrix;
-
-    fn mul(self, matrix: Matrix) -> Self::Output {
-        &matrix * self.0
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -125,19 +84,11 @@ impl From<Momentum> for f64 {
     }
 }
 
-impl Mul<Momentum> for &Matrix {
-    type Output = Matrix;
+impl Deref for Momentum {
+    type Target = f64;
 
-    fn mul(self, lr: Momentum) -> Self::Output {
-        self * lr.0
-    }
-}
-
-impl Mul<&mut Matrix> for Momentum {
-    type Output = Matrix;
-
-    fn mul(self, matrix: &mut Matrix) -> Self::Output {
-        &*matrix * self.0
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -156,15 +107,15 @@ impl TryFrom<usize> for Epochs {
     }
 }
 
-impl Default for Epochs {
-    fn default() -> Self {
-        Self(30)
-    }
-}
-
 impl From<Epochs> for usize {
     fn from(epochs: Epochs) -> Self {
         epochs.0
+    }
+}
+
+impl Default for Epochs {
+    fn default() -> Self {
+        Self(30)
     }
 }
 
@@ -183,15 +134,15 @@ impl TryFrom<usize> for BatchSize {
     }
 }
 
-impl Default for BatchSize {
-    fn default() -> Self {
-        Self(32)
-    }
-}
-
 impl From<BatchSize> for usize {
     fn from(batch_size: BatchSize) -> Self {
         batch_size.0
+    }
+}
+
+impl Default for BatchSize {
+    fn default() -> Self {
+        Self(32)
     }
 }
 
