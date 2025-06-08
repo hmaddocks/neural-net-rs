@@ -305,7 +305,7 @@ fn save_training_history(history: &TrainingHistory) -> Result<()> {
 }
 
 /// Creates an SVG graph of the training history accuracies and losses
-fn create_training_history_graph() -> Result<()> {
+fn graph() -> Result<()> {
     println!("Loading training history...");
 
     // Load training history from JSON file
@@ -428,20 +428,6 @@ fn create_training_history_graph() -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
-    let args = Args::parse();
-
-    match args.command {
-        Command::Train => train().context("Failed to train network")?,
-        Command::Test => test().context("Failed to test network")?,
-        Command::Graph => {
-            create_training_history_graph().context("Failed to create training history graph")?
-        }
-    }
-
-    Ok(())
-}
-
 #[derive(clap::Parser)]
 #[command(name = "mnist", about = "MNIST dataset processing", long_about = None)]
 struct Args {
@@ -458,4 +444,16 @@ enum Command {
     Test,
     /// Create an SVG graph of training history accuracies and losses
     Graph,
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+
+    match args.command {
+        Command::Train => train().context("Failed to train network")?,
+        Command::Test => test().context("Failed to test network")?,
+        Command::Graph => graph().context("Failed to create training history graph")?,
+    }
+
+    Ok(())
 }
