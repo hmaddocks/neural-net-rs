@@ -1,10 +1,11 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
+use matrix::Matrix;
 use mnist::{get_actual_digit, load_test_data, load_training_data};
 use mnist::{StandardizationParams, StandardizedMnistData};
 use ndarray::Axis;
-use neural_network::{Matrix, Network, NetworkConfig, TrainingHistory};
+use neural_network::{Network, NetworkConfig, TrainingHistory};
 use plotters::prelude::*;
 use serde_json;
 use std::{

@@ -1,6 +1,6 @@
-use ndarray::{Array2, ArrayView2, Axis, azip, concatenate, s};
-use ndarray_rand::RandomExt;
+use ndarray::{azip, concatenate, s, Array2, ArrayView2, Axis};
 use ndarray_rand::rand_distr::Uniform;
+use ndarray_rand::RandomExt;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, Mul, Sub};
@@ -149,7 +149,7 @@ impl Matrix {
     }
 
     /// Get a view of the matrix
-    pub fn view(&self) -> ArrayView2<f64> {
+    pub fn view(&self) -> ArrayView2<'_, f64> {
         self.0.view()
     }
 

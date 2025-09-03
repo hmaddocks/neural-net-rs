@@ -1,9 +1,7 @@
-cargo-features=["edition2024"]
-
 [package]
+edition = "2021"
 name = "neural-network"
 version = "0.1.0"
-edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -17,6 +15,7 @@ ndarray = { version = "0.16", features = ["serde", "rayon"] }
 rayon = "1.8"
 rand = "0.9.0"
 indicatif = "0.17.11"
+tempfile = "3.10.1"
 
 [dev-dependencies]
 tempfile = "3.10.1"

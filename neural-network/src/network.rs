@@ -693,8 +693,8 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Activation;
     use crate::layer::Layer;
+    use crate::Activation;
     use approx::assert_relative_eq;
     use tempfile::tempdir;
 

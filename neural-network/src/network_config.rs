@@ -146,6 +146,42 @@ impl Default for BatchSize {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Mean(f64);
+
+impl From<Mean> for f64 {
+    fn from(mean: Mean) -> Self {
+        mean.0
+    }
+}
+
+impl From<f64> for Mean {
+    fn from(value: f64) -> Self {
+        Mean(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StdDev(f64);
+
+impl TryFrom<f64> for StdDev {
+    type Error = &'static str;
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        if value <= 0.0 {
+            Err("Standard deviation must be positive")
+        } else {
+            Ok(StdDev(value))
+        }
+    }
+}
+
+impl From<StdDev> for f64 {
+    fn from(std_dev: StdDev) -> Self {
+        std_dev.0
+    }
+}
+
 /// Configuration for a neural network.
 ///
 /// This struct holds all the parameters needed to define and train a neural network,

@@ -3,33 +3,27 @@ use indicatif::{ProgressBar, ProgressStyle};
 use matrix::Matrix;
 use ndarray::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Mean(f64);
+#[derive(Debug, Copy, Clone)]
+struct Mean(f64);
+
+impl From<f64> for Mean {
+    fn from(mean: f64) -> Self {
+        Mean(mean)
+    }
+}
 
 impl From<Mean> for f64 {
     fn from(mean: Mean) -> Self {
         mean.0
     }
 }
-
-impl From<f64> for Mean {
-    fn from(value: f64) -> Self {
-        Mean(value)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct StdDev(f64);
+#[derive(Debug, Copy, Clone)]
+struct StdDev(f64);
 
 impl TryFrom<f64> for StdDev {
     type Error = &'static str;
-
     fn try_from(value: f64) -> Result<Self, Self::Error> {
-        if value <= 0.0 {
-            Err("Standard deviation must be positive")
-        } else {
-            Ok(StdDev(value))
-        }
+        Ok(StdDev(value))
     }
 }
 
