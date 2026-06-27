@@ -9,20 +9,14 @@
 
 extern crate ndarray;
 
-/// Placeholder until the tensor type is implemented in a follow-up task.
-pub const CRATE_NAME: &str = "autograd";
+mod tensor;
+
+pub use tensor::Tensor;
 
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
     use ndarray::array;
-
-    use super::CRATE_NAME;
-
-    #[test]
-    fn crate_is_registered_in_workspace() {
-        assert_eq!(CRATE_NAME, "autograd");
-    }
 
     #[test]
     fn ndarray_blas_matmul_is_available() {
