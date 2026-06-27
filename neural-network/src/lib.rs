@@ -17,7 +17,7 @@ mod training_history;
 
 pub use activations::Activation;
 pub use layer::Layer;
-pub use network::Network;
+pub use network::{BackpropEngine, Network};
 pub use network_config::{BatchSize, Epochs, LearningRate, Momentum, NetworkConfig};
 pub use regularization::RegularizationType;
 pub use training_history::TrainingHistory;

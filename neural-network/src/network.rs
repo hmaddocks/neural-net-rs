@@ -1,3 +1,7 @@
+use crate::autograd_forward::{
+    backward_with_output_delta, column_batch_to_row_batch, extract_weight_gradients,
+    layer_params_from_weight,
+};
 /// Neural network implementation using a feed-forward architecture with backpropagation.
 ///
 /// This module provides a flexible neural network implementation that supports:
@@ -42,10 +46,6 @@
 /// network.save(&model_path).expect("Failed to save model");
 /// ```
 use crate::layer::Layer;
-use crate::autograd_forward::{
-    backward_with_output_delta, column_batch_to_row_batch, extract_weight_gradients,
-    layer_params_from_weight,
-};
 use crate::network_config::{BatchSize, Epochs, LearningRate, Momentum, NetworkConfig};
 use crate::regularization::RegularizationType;
 use crate::training_history::TrainingHistory;
@@ -58,6 +58,22 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::PathBuf;
 use std::time::Instant;
+
+/// Selects which backpropagation implementation [`Network::train`] uses.
+///
+/// The manual path ([`BackpropEngine::Manual`]) remains the default until MNIST
+/// parity (~97.35%) is confirmed against the autograd core. Switch to
+/// [`BackpropEngine::Autograd`] only for parity checks or after the review gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(crate = "serde")]
+pub enum BackpropEngine {
+    /// Hand-written backprop via [`Network::accumulate_gradients`] and
+    /// [`Layer::compute_hidden_delta`].
+    #[default]
+    Manual,
+    /// Shared autograd core via [`Network::accumulate_gradients_autograd`].
+    Autograd,
+}
 
 /// A feed-forward neural network with configurable layers and activation functions.
 #[derive(Serialize, Deserialize)]
@@ -92,6 +108,9 @@ pub struct Network {
     /// Training history containing metrics recorded during training
     #[serde(skip)]
     training_history: TrainingHistory,
+    /// Backpropagation engine used during training (defaults to manual until parity).
+    #[serde(default)]
+    backprop_engine: BackpropEngine,
 }
 
 impl Network {
@@ -180,7 +199,18 @@ impl Network {
             regularization_rate,
             regularization_type: network_config.regularization_type,
             training_history: TrainingHistory::new(),
+            backprop_engine: BackpropEngine::Manual,
         }
+    }
+
+    /// Returns the backpropagation engine used by [`Network::train`].
+    pub const fn backprop_engine(&self) -> BackpropEngine {
+        self.backprop_engine
+    }
+
+    /// Sets the backpropagation engine used by [`Network::train`].
+    pub const fn set_backprop_engine(&mut self, engine: BackpropEngine) {
+        self.backprop_engine = engine;
     }
 
     pub const fn set_standardization_parameters(
@@ -241,6 +271,9 @@ impl Network {
     /// Vector of gradient matrices for each layer, ordered from input to output layer.
     /// Each gradient matrix has the same dimensions as its corresponding weight matrix,
     /// including the bias weights.
+    ///
+    /// Retained as the production training path until MNIST parity with autograd is
+    /// confirmed. Prefer [`Network::accumulate_gradients_autograd`] only for parity checks.
     pub fn accumulate_gradients(&mut self, outputs: &Matrix, targets: &Matrix) -> Vec<Matrix> {
         // Calculate initial error
         let error = Self::compute_output_error(outputs, targets);
@@ -495,14 +528,20 @@ impl Network {
         let input_matrix = Matrix::concatenate(&batch_inputs, Axis(1));
         let target_matrix = Matrix::concatenate(&batch_targets, Axis(1));
 
-        // Feed forward entire batch at once
-        let outputs = self.feed_forward(input_matrix);
+        let outputs = match self.backprop_engine {
+            BackpropEngine::Manual => self.feed_forward(input_matrix),
+            BackpropEngine::Autograd => self.feed_forward_autograd(input_matrix),
+        };
 
         // Evaluate batch results
         let (batch_error, batch_correct) = self.evaluate_batch(&target_matrix, &outputs);
 
-        // Accumulate gradients for entire batch
-        let accumulated_gradients = self.accumulate_gradients(&outputs, &target_matrix);
+        let accumulated_gradients = match self.backprop_engine {
+            BackpropEngine::Manual => self.accumulate_gradients(&outputs, &target_matrix),
+            BackpropEngine::Autograd => {
+                self.accumulate_gradients_autograd(&outputs, &target_matrix)
+            }
+        };
 
         // Update weights using accumulated gradients
         self.update_weights(&accumulated_gradients);
@@ -1420,6 +1459,55 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_default_backprop_engine_is_manual() {
+        let network = create_test_network();
+        assert_eq!(network.backprop_engine(), BackpropEngine::Manual);
+    }
+
+    #[test]
+    fn test_backprop_engine_serialization_roundtrip() {
+        let mut network = create_test_network();
+        network.set_backprop_engine(BackpropEngine::Autograd);
+
+        let json = serde_json::to_string(&network).unwrap();
+        let restored: Network = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.backprop_engine(), BackpropEngine::Autograd);
+    }
+
+    #[test]
+    fn test_backprop_engine_deserializes_without_field() {
+        let network = create_test_network();
+        let mut value = serde_json::to_value(&network).unwrap();
+        value.as_object_mut().unwrap().remove("backprop_engine");
+
+        let restored: Network = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.backprop_engine(), BackpropEngine::Manual);
+    }
+
+    #[test]
+    fn test_train_epoch_with_autograd_engine() {
+        let mut network = create_test_network();
+        network.set_backprop_engine(BackpropEngine::Autograd);
+
+        let inputs = vec![
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.5]),
+        ];
+        let targets = vec![
+            Matrix::from(vec![0.0]),
+            Matrix::from(vec![1.0]),
+            Matrix::from(vec![0.5]),
+        ];
+
+        let (total_error, correct_predictions) = network.train_epoch(&inputs, &targets, 3);
+
+        assert!(total_error >= 0.0);
+        assert!(correct_predictions <= inputs.len());
     }
 
     #[test]

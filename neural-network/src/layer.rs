@@ -75,7 +75,9 @@ impl Layer {
         }
     }
 
-    /// Computes the delta for a hidden layer during backpropagation
+    /// Computes the delta for a hidden layer during backpropagation.
+    ///
+    /// Part of the manual backprop path; kept until autograd MNIST parity is confirmed.
     ///
     /// # Arguments
     /// * `next_layer_weights` - Weight matrix of the next layer
