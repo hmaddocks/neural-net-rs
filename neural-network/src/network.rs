@@ -652,6 +652,10 @@ impl Network {
 
     /// Performs forward propagation for a batch of inputs, storing intermediate layer outputs.
     ///
+    /// Manual feed-forward pass (used by [`BackpropEngine::Manual`] training).
+    ///
+    /// Results match [`Network::feed_forward_autograd`] for the same weights.
+    ///
     /// # Arguments
     /// * `inputs` - Input matrix where each column is a sample (input_size x batch_size)
     ///
@@ -659,7 +663,7 @@ impl Network {
     /// Output matrix where each column is the network's output for the corresponding input
     /// (output_size x batch_size). Intermediate layer outputs are stored in self.data
     /// for use in backpropagation.
-    fn feed_forward(&mut self, inputs: Matrix) -> Matrix {
+    pub fn feed_forward(&mut self, inputs: Matrix) -> Matrix {
         assert!(
             self.layers[0].nodes == inputs.rows(),
             "Invalid number of inputs. Expected {}, got {}",
