@@ -100,14 +100,27 @@ cargo run --bin mnist -- graph
 
 #### GPT (character-level language model)
 
-The `gpt` binary trains a minimal GPT transformer on a text dataset and generates
-new samples. It must be run from the workspace root so it can find `data/names.txt`.
+The `gpt` binary trains a minimal GPT transformer on a names dataset and generates
+new samples. Training and inference are separate subcommands — you train once,
+save a checkpoint, then generate from it as many times as you like without retraining.
+Run from the workspace root so it can find `data/names.txt`.
 
 ```bash
-# Train the model and generate 20 sample names
-cargo run --bin gpt --release
+# Train for 1 000 steps and save a checkpoint (default: models/gpt_weights.json)
+cargo run --bin gpt --release -- train
+
+# Generate 20 names from the saved checkpoint
+cargo run --bin gpt --release -- generate
+
+# Generate with custom options
+cargo run --bin gpt --release -- generate --num-samples 50 --temperature 0.8 --seed 42
+
+# Use a custom data file or checkpoint path
+cargo run --bin gpt --release -- train   --data data/names.txt --output models/my_run.json
+cargo run --bin gpt --release -- generate --weights models/my_run.json
 ```
 
-The binary trains for 1 000 steps on `data/names.txt` using a single-layer
-transformer (n\_embd=16, block\_size=16, 4 attention heads), then generates
-20 hallucinated names at temperature 0.5. Expected runtime: ~15 s on an M1 Mac.
+The model is a single-layer transformer (n\_embd=16, block\_size=16, 4 attention heads)
+trained with Adam + linear LR decay. Expected training time: ~15 s on an M1 Mac.
+The checkpoint stores the full model config, tokenizer vocabulary, and all weight
+matrices as a plain JSON file — no dataset needed at generation time.

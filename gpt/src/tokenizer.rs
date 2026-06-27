@@ -137,6 +137,24 @@ impl Tokenizer {
     pub fn bos_token(&self) -> usize {
         self.bos_token
     }
+
+    /// Reconstruct a tokenizer from a pre-sorted character list.
+    ///
+    /// Characters must appear in the same sorted order used when the tokenizer
+    /// was originally built (see [`Tokenizer::from_docs`]).  The BOS token is
+    /// always assigned the next available ID (`chars.len()`).
+    pub fn from_chars(chars: Vec<char>) -> Self {
+        let char_to_id: HashMap<char, usize> =
+            chars.iter().enumerate().map(|(i, &c)| (c, i)).collect();
+        let bos_token = chars.len();
+        let vocab_size = chars.len() + 1;
+        Self {
+            char_to_id,
+            id_to_char: chars,
+            bos_token,
+            vocab_size,
+        }
+    }
 }
 
 #[cfg(test)]

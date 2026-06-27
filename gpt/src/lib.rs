@@ -10,6 +10,7 @@ pub mod matrix;
 pub mod model;
 pub mod neural_network;
 pub mod optimizer;
+pub mod persistence;
 pub mod tokenizer;
 pub mod value;
 
