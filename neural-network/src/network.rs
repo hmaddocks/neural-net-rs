@@ -886,6 +886,15 @@ mod tests {
         Network::new(&config)
     }
 
+    const BACKPROP_ENGINES: [BackpropEngine; 2] =
+        [BackpropEngine::Manual, BackpropEngine::Autograd];
+
+    fn network_with_engine(config: &NetworkConfig, engine: BackpropEngine) -> Network {
+        let mut network = Network::new(config);
+        network.set_backprop_engine(engine);
+        network
+    }
+
     // Helper functions for tests
     fn compute_error(network: &Network, inputs: &[Matrix], targets: &[Matrix]) -> f64 {
         // Use functional approach with iterator and sum
@@ -1002,25 +1011,21 @@ mod tests {
 
     #[test]
     fn test_xor_training() {
-        // Create a network for XOR problem with a fixed seed for deterministic results
         let config = NetworkConfig::new(
             vec![
                 Layer::new(2, Some(Activation::Sigmoid)),
                 Layer::new(4, Some(Activation::Sigmoid)),
                 Layer::new(1, None),
             ],
-            0.5, // Higher learning rate
+            0.5,
             Some(0.9),
             2000,
-            2, // Small batch size for XOR
+            2,
             Some(RegularizationType::L2),
             Some(0.0001),
         )
         .unwrap();
 
-        let mut network = Network::new(&config);
-
-        // XOR training data
         let inputs = vec![
             Matrix::from(vec![0.0, 0.0]),
             Matrix::from(vec![0.0, 1.0]),
@@ -1033,17 +1038,6 @@ mod tests {
             Matrix::from(vec![1.0]),
             Matrix::from(vec![0.0]),
         ];
-
-        // Train the network and get history
-        let history = network.train(&inputs, &targets);
-
-        // Extract the final accuracy value before using network again
-        let final_accuracy = match history.accuracies.last() {
-            Some(acc) => *acc,
-            None => 0.0,
-        };
-
-        // Test the network - collect test inputs
         let test_inputs = vec![
             Matrix::from(vec![0.0, 1.0]),
             Matrix::from(vec![1.0, 0.0]),
@@ -1051,53 +1045,39 @@ mod tests {
             Matrix::from(vec![1.0, 1.0]),
         ];
 
-        // Collect outputs after training completes
-        let output_01 = network.predict(test_inputs[0].clone()).get(0, 0);
-        let output_10 = network.predict(test_inputs[1].clone()).get(0, 0);
-        let output_00 = network.predict(test_inputs[2].clone()).get(0, 0);
-        let output_11 = network.predict(test_inputs[3].clone()).get(0, 0);
+        for engine in BACKPROP_ENGINES {
+            let mut network = network_with_engine(&config, engine);
+            let history = network.train(&inputs, &targets);
 
-        // Verify that the training actually improved
-        assert!(
-            final_accuracy > 0.5,
-            "XOR training should achieve better than 50% accuracy"
-        );
+            let final_accuracy = history.accuracies.last().copied().unwrap_or(0.0);
+            assert!(
+                final_accuracy > 0.5,
+                "XOR training with {engine:?} should achieve better than 50% accuracy"
+            );
 
-        // Use a small epsilon for floating point comparisons
-        let epsilon = 1e-6;
+            let output_01 = network.predict(test_inputs[0].clone()).get(0, 0);
+            let output_10 = network.predict(test_inputs[1].clone()).get(0, 0);
+            let output_00 = network.predict(test_inputs[2].clone()).get(0, 0);
+            let output_11 = network.predict(test_inputs[3].clone()).get(0, 0);
+            let epsilon = 1e-6;
 
-        // The pattern learned should have these relationships
-        // Check that 0,1 output is higher than 0,0 output
-        assert!(
-            output_01 > output_00 - epsilon,
-            "Failed relationship check: output(0,1)={} should be > output(0,0)={}",
-            output_01,
-            output_00
-        );
-
-        // Check that 1,0 output is higher than 0,0 output
-        assert!(
-            output_10 > output_00 - epsilon,
-            "Failed relationship check: output(1,0)={} should be > output(0,0)={}",
-            output_10,
-            output_00
-        );
-
-        // Check that 0,1 output is higher than 1,1 output (with tolerance)
-        assert!(
-            output_01 >= output_11 - epsilon,
-            "Failed relationship check: output(0,1)={} should be >= output(1,1)={}",
-            output_01,
-            output_11
-        );
-
-        // Check that 1,0 output is higher than 1,1 output (with tolerance)
-        assert!(
-            output_10 >= output_11 - epsilon,
-            "Failed relationship check: output(1,0)={} should be >= output(1,1)={}",
-            output_10,
-            output_11
-        );
+            assert!(
+                output_01 > output_00 - epsilon,
+                "{engine:?}: output(0,1)={output_01} should be > output(0,0)={output_00}"
+            );
+            assert!(
+                output_10 > output_00 - epsilon,
+                "{engine:?}: output(1,0)={output_10} should be > output(0,0)={output_00}"
+            );
+            assert!(
+                output_01 >= output_11 - epsilon,
+                "{engine:?}: output(0,1)={output_01} should be >= output(1,1)={output_11}"
+            );
+            assert!(
+                output_10 >= output_11 - epsilon,
+                "{engine:?}: output(1,0)={output_10} should be >= output(1,1)={output_11}"
+            );
+        }
     }
 
     #[test]
@@ -1146,7 +1126,6 @@ mod tests {
 
     #[test]
     fn test_softmax_backpropagation() {
-        // Create a simple network with Softmax output layer
         let config = NetworkConfig::new(
             vec![
                 Layer::new(2, Some(Activation::Sigmoid)),
@@ -1162,35 +1141,32 @@ mod tests {
         )
         .unwrap();
 
-        let mut network = Network::new(&config);
-
-        // Simple 3-class classification problem
         let inputs = vec![
-            Matrix::from(vec![0.0, 0.0]), // Class 0
-            Matrix::from(vec![1.0, 0.0]), // Class 1
-            Matrix::from(vec![0.0, 1.0]), // Class 2
+            Matrix::from(vec![0.0, 0.0]),
+            Matrix::from(vec![1.0, 0.0]),
+            Matrix::from(vec![0.0, 1.0]),
         ];
 
         let targets = vec![
-            Matrix::from(vec![1.0, 0.0, 0.0]), // One-hot encoding for class 0
-            Matrix::from(vec![0.0, 1.0, 0.0]), // One-hot encoding for class 1
-            Matrix::from(vec![0.0, 0.0, 1.0]), // One-hot encoding for class 2
+            Matrix::from(vec![1.0, 0.0, 0.0]),
+            Matrix::from(vec![0.0, 1.0, 0.0]),
+            Matrix::from(vec![0.0, 0.0, 1.0]),
         ];
 
-        // This should not panic with dimension mismatch
-        network.train(&inputs, &targets);
+        for engine in BACKPROP_ENGINES {
+            let mut network = network_with_engine(&config, engine);
+            network.train(&inputs, &targets);
 
-        // Test forward pass dimensions
-        let output = network.predict(Matrix::from(inputs[0].clone()));
-        assert_eq!(output.rows(), 3);
-        assert_eq!(output.cols(), 1);
+            let output = network.predict(Matrix::from(inputs[0].clone()));
+            assert_eq!(output.rows(), 3);
+            assert_eq!(output.cols(), 1);
 
-        // Verify output is valid probability distribution
-        let sum: f64 = output.0.iter().sum();
-        assert_relative_eq!(sum, 1.0, epsilon = 1e-6);
-        output.0.iter().for_each(|&x| {
-            assert!(x >= 0.0 && x <= 1.0);
-        });
+            let sum: f64 = output.0.iter().sum();
+            assert_relative_eq!(sum, 1.0, epsilon = 1e-6);
+            output.0.iter().for_each(|&x| {
+                assert!(x >= 0.0 && x <= 1.0);
+            });
+        }
     }
 
     #[test]
@@ -1210,8 +1186,6 @@ mod tests {
             Some(0.0001),
         )
         .unwrap();
-
-        let mut network = Network::new(&config);
 
         // Create a simple dataset with clear separation
         let inputs = vec![
@@ -1242,23 +1216,22 @@ mod tests {
             );
         }
 
-        // Train the network
-        network.train(&inputs, &targets);
+        for engine in BACKPROP_ENGINES {
+            let mut network = network_with_engine(&config, engine);
+            network.train(&inputs, &targets);
 
-        // Test predictions with a more lenient error threshold
-        let mut total_error = 0.0;
-        for (input, target) in inputs.iter().zip(targets.iter()) {
-            let output = network.feed_forward(input.clone());
-            let error = (target.get(0, 0) - output.get(0, 0)).abs();
-            total_error += error;
+            let mut total_error = 0.0;
+            for (input, target) in inputs.iter().zip(targets.iter()) {
+                let output = network.feed_forward(input.clone());
+                total_error += (target.get(0, 0) - output.get(0, 0)).abs();
+            }
+
+            let avg_error = total_error / 4.0;
+            assert!(
+                avg_error < 0.45,
+                "Prediction error too large with {engine:?}: {avg_error}"
+            );
         }
-
-        let avg_error = total_error / 4.0;
-        assert!(
-            avg_error < 0.45,
-            "Prediction error too large: {}",
-            avg_error
-        );
     }
 
     #[test]
@@ -1327,17 +1300,27 @@ mod tests {
 
     #[test]
     fn test_gradient_computation() {
-        let mut network = create_test_network();
         let input = Matrix::from(vec![0.5]);
         let target = Matrix::from(vec![1.0]);
 
-        let output = network.feed_forward(input);
-        let gradients = network.accumulate_gradients(&output, &target);
+        for engine in BACKPROP_ENGINES {
+            let mut network = create_test_network();
+            network.set_backprop_engine(engine);
 
-        assert_eq!(gradients.len(), network.weights.len());
-        for (gradient, weight) in gradients.iter().zip(network.weights.iter()) {
-            assert_eq!(gradient.rows(), weight.rows());
-            assert_eq!(gradient.cols(), weight.cols());
+            let output = match engine {
+                BackpropEngine::Manual => network.feed_forward(input.clone()),
+                BackpropEngine::Autograd => network.feed_forward_autograd(input.clone()),
+            };
+            let gradients = match engine {
+                BackpropEngine::Manual => network.accumulate_gradients(&output, &target),
+                BackpropEngine::Autograd => network.accumulate_gradients_autograd(&output, &target),
+            };
+
+            assert_eq!(gradients.len(), network.weights.len());
+            for (gradient, weight) in gradients.iter().zip(network.weights.iter()) {
+                assert_eq!(gradient.rows(), weight.rows());
+                assert_eq!(gradient.cols(), weight.cols());
+            }
         }
     }
 
@@ -1493,28 +1476,6 @@ mod tests {
     }
 
     #[test]
-    fn test_train_epoch_with_autograd_engine() {
-        let mut network = create_test_network();
-        network.set_backprop_engine(BackpropEngine::Autograd);
-
-        let inputs = vec![
-            Matrix::from(vec![0.0]),
-            Matrix::from(vec![1.0]),
-            Matrix::from(vec![0.5]),
-        ];
-        let targets = vec![
-            Matrix::from(vec![0.0]),
-            Matrix::from(vec![1.0]),
-            Matrix::from(vec![0.5]),
-        ];
-
-        let (total_error, correct_predictions) = network.train_epoch(&inputs, &targets, 3);
-
-        assert!(total_error >= 0.0);
-        assert!(correct_predictions <= inputs.len());
-    }
-
-    #[test]
     fn test_batch_processing() {
         let mut network = create_deep_network();
 
@@ -1551,15 +1512,22 @@ mod tests {
 
     #[test]
     fn test_batch_training_convergence() {
-        let mut network = create_test_network();
         let inputs = vec![Matrix::from(vec![0.0]), Matrix::from(vec![1.0])];
         let targets = vec![Matrix::from(vec![1.0]), Matrix::from(vec![0.0])];
 
-        let initial_error = compute_error(&network, &inputs, &targets);
-        network.train(&inputs, &targets);
-        let final_error = compute_error(&network, &inputs, &targets);
+        for engine in BACKPROP_ENGINES {
+            let mut network = create_test_network();
+            network.set_backprop_engine(engine);
 
-        assert!(final_error < initial_error, "Training should reduce error");
+            let initial_error = compute_error(&network, &inputs, &targets);
+            network.train(&inputs, &targets);
+            let final_error = compute_error(&network, &inputs, &targets);
+
+            assert!(
+                final_error < initial_error,
+                "Training with {engine:?} should reduce error"
+            );
+        }
     }
 
     #[test]
@@ -1637,8 +1605,6 @@ mod tests {
 
     #[test]
     fn test_train_epoch() {
-        let mut network = create_test_network();
-
         let inputs = vec![
             Matrix::from(vec![0.0]),
             Matrix::from(vec![1.0]),
@@ -1652,59 +1618,57 @@ mod tests {
             Matrix::from(vec![0.3]),
         ];
 
-        let (total_error, correct_predictions) = network.train_epoch(&inputs, &targets, 2);
+        for engine in BACKPROP_ENGINES {
+            let mut network = create_test_network();
+            network.set_backprop_engine(engine);
 
-        assert!(total_error >= 0.0, "Total error should be non-negative");
-        assert!(
-            correct_predictions <= inputs.len(),
-            "Correct predictions should not exceed dataset size"
-        );
-        // assert!(duration.as_secs_f64() > 0.0, "Duration should be positive");
+            let (total_error, correct_predictions) = network.train_epoch(&inputs, &targets, 2);
 
-        // Test with different batch sizes
-        let batch_sizes = [1, 2, 4];
-        for &batch_size in &batch_sizes {
-            let (error, predictions) = network.train_epoch(&inputs, &targets, batch_size);
+            assert!(total_error >= 0.0, "Total error should be non-negative");
             assert!(
-                error >= 0.0,
-                "Error should be non-negative for batch size {}",
-                batch_size
+                correct_predictions <= inputs.len(),
+                "Correct predictions should not exceed dataset size"
             );
-            assert!(
-                predictions <= inputs.len(),
-                "Predictions should not exceed dataset size for batch size {}",
-                batch_size
-            );
+
+            for &batch_size in &[1, 2, 4] {
+                let (error, predictions) = network.train_epoch(&inputs, &targets, batch_size);
+                assert!(
+                    error >= 0.0,
+                    "Error should be non-negative for batch size {batch_size} with {engine:?}"
+                );
+                assert!(
+                    predictions <= inputs.len(),
+                    "Predictions should not exceed dataset size for batch size {batch_size} with {engine:?}"
+                );
+            }
         }
     }
 
     #[test]
     fn test_training_integration() {
-        let mut network = create_test_network();
         let inputs = vec![Matrix::from(vec![0.0]), Matrix::from(vec![1.0])];
         let targets = vec![Matrix::from(vec![1.0]), Matrix::from(vec![0.0])];
 
-        // Record initial state
-        let initial_weights: Vec<Matrix> = network.weights.iter().cloned().collect();
+        for engine in BACKPROP_ENGINES {
+            let mut network = create_test_network();
+            network.set_backprop_engine(engine);
+            let initial_weights: Vec<Matrix> = network.weights.iter().cloned().collect();
 
-        // Train for a few epochs
-        network.train(&inputs, &targets);
+            network.train(&inputs, &targets);
 
-        // Verify weights have been updated
-        for (initial, current) in initial_weights.iter().zip(network.weights.iter()) {
+            for (initial, current) in initial_weights.iter().zip(network.weights.iter()) {
+                assert!(
+                    initial.0 != current.0,
+                    "Weights should be updated during training with {engine:?}"
+                );
+            }
+
+            let final_error = compute_error(&network, &inputs, &targets);
             assert!(
-                initial.0 != current.0,
-                "Weights should be updated during training"
+                final_error < 1.0,
+                "Error should decrease after training with {engine:?}, got {final_error}"
             );
         }
-
-        // Verify error decreases
-        let final_error = compute_error(&network, &inputs, &targets);
-        assert!(
-            final_error < 1.0,
-            "Error should decrease after training, got {}",
-            final_error
-        );
     }
 
     #[test]

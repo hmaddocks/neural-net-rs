@@ -207,6 +207,7 @@ mod tests {
 
     #[test]
     fn test_mnist_accuracy_meets_baseline_oracle() {
+        let _lock = crate::test_sync::integration_lock();
         if !oracle_fixtures_available() {
             eprintln!("Skipping MNIST accuracy oracle: fixtures not available");
             return;
@@ -223,6 +224,7 @@ mod tests {
 
     #[test]
     fn test_confusion_matrix_matches_baseline_oracle() {
+        let _lock = crate::test_sync::integration_lock();
         if !oracle_fixtures_available() {
             eprintln!("Skipping MNIST confusion matrix oracle: fixtures not available");
             return;

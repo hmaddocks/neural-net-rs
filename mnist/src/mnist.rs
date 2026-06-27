@@ -287,9 +287,15 @@ fn get_mnist_dir() -> Result<PathBuf, MnistError> {
 /// Loads the standard MNIST training dataset
 pub fn load_training_data() -> Result<MnistData, MnistError> {
     let mnist_dir = get_mnist_dir()?;
+    load_training_data_from_dir(&mnist_dir)
+}
+
+/// Loads the MNIST training dataset from a specific directory.
+pub fn load_training_data_from_dir(data_dir: impl AsRef<Path>) -> Result<MnistData, MnistError> {
+    let data_dir = data_dir.as_ref();
     MnistData::load_mnist_data(
-        mnist_dir.join("train-images-idx3-ubyte"),
-        mnist_dir.join("train-labels-idx1-ubyte"),
+        data_dir.join("train-images-idx3-ubyte"),
+        data_dir.join("train-labels-idx1-ubyte"),
     )
 }
 
