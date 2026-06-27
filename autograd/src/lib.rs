@@ -1,7 +1,7 @@
 //! Tensor-level reverse-mode automatic differentiation.
 //!
 //! This crate provides an arena-based autograd engine backed by [`ndarray`]. Tensors are
-//! stored as `Array2<f64>` nodes in a computation graph; ops record edges and `backward`
+//! stored as `Array2<f64>` nodes in a computation graph; ops record edges and [`Graph::backward`]
 //! runs reverse-mode autodiff. It is the shared numerical core for both the MLP and GPT
 //! models in this workspace.
 
@@ -9,8 +9,12 @@
 
 extern crate ndarray;
 
+mod broadcast;
+mod graph;
+mod ops;
 mod tensor;
 
+pub use graph::{Graph, Node, TensorId};
 pub use tensor::Tensor;
 
 #[cfg(test)]

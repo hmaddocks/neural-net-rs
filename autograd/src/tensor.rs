@@ -5,8 +5,8 @@ use std::fmt;
 /// A dense rank-2 tensor used as the numeric payload in the autograd graph.
 ///
 /// Tensors wrap [`Array2<f64>`] and provide shape-safe construction and access.
-/// Gradients and graph edges live on arena nodes (added in a follow-up task); this type
-/// holds forward-pass values only.
+/// Forward values and gradients for autograd live in a [`Graph`] arena, referenced by
+/// [`TensorId`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Tensor(Array2<f64>);
 
