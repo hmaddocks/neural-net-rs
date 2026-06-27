@@ -89,9 +89,14 @@ Network architecture and hyperparameters are read from `config.json` in the work
 
 ```bash
 # Train the network and save the model to models/trained_network.json
+# (default: manual backprop — the original hand-written path)
 cargo run --bin mnist --release -- train
 
-# Test the saved model and print accuracy metrics
+# Train on the shared autograd core (parity / experimental; slower than manual)
+cargo run --bin mnist --release -- train --backprop-engine autograd
+
+# Test the saved model and print accuracy metrics (inference only; same command
+# whether the model was trained with manual or autograd backprop)
 cargo run --bin mnist --release -- test
 
 # Render a training-history graph to graphs/training_history.svg
