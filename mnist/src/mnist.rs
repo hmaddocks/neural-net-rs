@@ -117,8 +117,7 @@ impl MnistData {
         let style = ProgressStyle::default_bar()
             .template(
                 "{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos:>7}/{len:7} {msg}",
-            )
-            .map_err(|e| e)?
+            )?
             .progress_chars("##-");
 
         let images_progress = multi_progress.add(ProgressBar::new(0));
@@ -134,6 +133,10 @@ impl MnistData {
 
     pub fn len(&self) -> usize {
         self.images.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.images.is_empty()
     }
 
     pub fn images(&self) -> &[Matrix] {
@@ -174,10 +177,7 @@ impl MnistData {
         path: impl AsRef<Path>,
         progress: &ProgressBar,
     ) -> Result<Vec<Matrix>, MnistError> {
-        let mut file = match File::open(path) {
-            Ok(file) => file,
-            Err(e) => return Err(e.into()),
-        };
+        let mut file = File::open(path)?;
 
         let magic_number = Self::read_u32(&mut file)?;
         if magic_number != IMAGE_MAGIC_NUMBER {
@@ -238,10 +238,7 @@ impl MnistData {
         path: impl AsRef<Path>,
         progress: &ProgressBar,
     ) -> Result<Vec<Matrix>, MnistError> {
-        let mut file = match File::open(path) {
-            Ok(file) => file,
-            Err(e) => return Err(e.into()),
-        };
+        let mut file = File::open(path)?;
 
         let magic_number = Self::read_u32(&mut file)?;
         if magic_number != LABEL_MAGIC_NUMBER {

@@ -7,7 +7,6 @@ use mnist::{StandardizationParams, StandardizedMnistData};
 use ndarray::Axis;
 use neural_network::{Network, NetworkConfig, TrainingHistory};
 use plotters::prelude::*;
-use serde_json;
 use std::{
     fs::File,
     io::Write,
@@ -125,7 +124,7 @@ fn print_metrics(confusion_matrix: &ConfusionMatrix, total: usize) {
     println!("-------|----------|-----------|---------|----------");
 
     for digit in 0..10 {
-        let metrics = calculate_metrics(&confusion_matrix, digit);
+        let metrics = calculate_metrics(confusion_matrix, digit);
         println!(
             "   {}   |  {:.1}%   |   {:.1}%   |  {:.1}%  |   {:.1}%",
             digit,
@@ -177,12 +176,12 @@ fn test() -> Result<()> {
         if let (Some(mean), Some(std_dev)) = network.standardization_parameters() {
             StandardizationParams::new(mean, std_dev)
         } else {
-            StandardizationParams::build(&test_data.images())
+            StandardizationParams::build(test_data.images())
                 .map_err(|e| anyhow!("Failed to build standardization parameters: {}", e))?
         };
 
     let standardised_test_data = StandardizedMnistData::new(&standardized_params)
-        .standardize(&test_data.images())
+        .standardize(test_data.images())
         .context("Failed to standardize test data")?;
 
     // Combine test data into matrices for batch processing
@@ -226,7 +225,7 @@ fn train() -> Result<()> {
     println!("Loading MNIST training data...");
     let mnist_data = load_training_data().context("Failed to load training data")?;
 
-    let standardized_params = StandardizationParams::build(&mnist_data.images())
+    let standardized_params = StandardizationParams::build(mnist_data.images())
         .map_err(|e| anyhow!("Failed to build standardization parameters: {}", e))?;
     println!(
         "Standardizing MNIST data, mean: {:.4}, std_dev: {:.4}...",
@@ -234,7 +233,7 @@ fn train() -> Result<()> {
         standardized_params.std_dev()
     );
     let standardized_data =
-        StandardizedMnistData::new(&standardized_params).standardize(&mnist_data.images())?;
+        StandardizedMnistData::new(&standardized_params).standardize(mnist_data.images())?;
 
     println!("Loading network configuration...");
     let config_path = std::env::current_dir()
@@ -255,7 +254,7 @@ fn train() -> Result<()> {
 
     println!("Training network...");
     let start_time = Instant::now();
-    let training_history = network.train(&standardized_data, &mnist_data.labels());
+    let training_history = network.train(&standardized_data, mnist_data.labels());
 
     let total_duration = start_time.elapsed();
     println!(
@@ -407,20 +406,20 @@ fn graph() -> Result<()> {
         .draw_series(LineSeries::new(accuracy_points, &BLUE))
         .context("Failed to draw accuracy line")?
         .label("Accuracy")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE));
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], BLUE));
 
     // Draw the loss line using secondary coordinate system
     chart
         .draw_secondary_series(LineSeries::new(loss_points, &RED))
         .context("Failed to draw loss line")?
         .label("Loss")
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RED));
 
     // Draw the legend
     chart
         .configure_series_labels()
-        .background_style(&WHITE.mix(0.8))
-        .border_style(&BLACK)
+        .background_style(WHITE.mix(0.8))
+        .border_style(BLACK)
         .margin(10)
         .draw()
         .context("Failed to draw legend")?;

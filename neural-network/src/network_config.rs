@@ -260,11 +260,11 @@ impl NetworkConfig {
         Some(Self {
             layers,
             learning_rate: LearningRate::try_from(learning_rate).ok()?,
-            momentum: momentum.map(|m| Momentum::try_from(m).ok()).flatten(),
+            momentum: momentum.and_then(|m| Momentum::try_from(m).ok()),
             epochs: Epochs::try_from(epochs).ok()?,
             batch_size: BatchSize::try_from(batch_size).ok()?,
             regularization_type: regularization,
-            regularization_rate: regularization_rate.map(|r| RegularizationRate(r)),
+            regularization_rate: regularization_rate.map(RegularizationRate),
         })
     }
 
@@ -312,11 +312,11 @@ impl NetworkConfig {
             .collect()
     }
 
-    /// Creates a vector of boxed activation functions based on the network's configuration.
-    ///
-    /// This method converts each Activation into its corresponding activation function
-    /// implementation. The resulting vector contains trait objects that can be used
-    /// for forward and backward propagation in the network.
+    // Creates a vector of boxed activation functions based on the network's configuration.
+    //
+    // This method converts each Activation into its corresponding activation function
+    // implementation. The resulting vector contains trait objects that can be used
+    // for forward and backward propagation in the network.
     // pub fn activations(&self) -> Vec<Activation> {
     //     self.activations_types()
     //         .iter()

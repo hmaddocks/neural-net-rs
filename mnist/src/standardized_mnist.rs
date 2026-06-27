@@ -74,8 +74,7 @@ impl StandardizationParams {
         let style = ProgressStyle::default_bar()
             .template(
                 "{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos:>7}/{len:7} {msg}",
-            )
-            .map_err(|e| e)?
+            )?
             .progress_chars("##-");
         progress.set_style(style);
         progress.set_message("Processing matrices for standardization...");
@@ -147,8 +146,7 @@ impl<'a> StandardizedMnistData<'a> {
         let style = ProgressStyle::default_bar()
             .template(
                 "{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos:>7}/{len:7} {msg}",
-            )
-            .map_err(|e| e)?
+            )?
             .progress_chars("##-");
         progress.set_style(style);
         progress.set_message("Standardizing matrices...");
@@ -177,8 +175,7 @@ impl<'a> StandardizedMnistData<'a> {
         let standardized_data: Vec<f64> = matrix
             .0
             .as_slice()
-            .ok_or(MnistError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            .ok_or(MnistError::Io(std::io::Error::other(
                 "Failed to access matrix data",
             )))?
             .iter()

@@ -135,7 +135,7 @@ impl Network {
         let layer_pairs: Vec<_> = nodes.windows(2).collect();
 
         // Create layers from config
-        let layers = network_config.layers.iter().cloned().collect();
+        let layers = network_config.layers.to_vec();
 
         // Fill weights with random values
         let weights = layer_pairs
@@ -508,7 +508,7 @@ impl Network {
         let progress_bar = ProgressBar::new(num_epochs as u64);
         let style = ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos}/{len} epochs | Accuracy: {msg}")
-            .map_err(|e| Box::new(e))
+            .map_err(Box::new)
             .expect("Failed to set progress bar style")
             .progress_chars("#>-");
         progress_bar.set_style(style);

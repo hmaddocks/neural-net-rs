@@ -24,7 +24,6 @@ criterion = "0.5"
 [[bench]]
 name = "network_benchmark"
 harness = false
-debug = true
 
 [lints]
 workspace = true
