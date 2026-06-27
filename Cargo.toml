@@ -2,3 +2,6 @@
 
 members = ["autograd", "matrix", "neural-network", "mnist", "gpt"]
 resolver = "2"
+
+[workspace.lints.clippy]
+all = "warn"

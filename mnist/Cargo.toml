@@ -20,6 +20,9 @@ anyhow = "1.0"
 clap = { version = "4.0", features = ["derive"] }
 plotters = { version = "0.3.7", features = ["svg_backend"] }
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "mnist"
 path = "src/bin/mnist.rs"
