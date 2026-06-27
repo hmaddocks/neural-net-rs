@@ -6,13 +6,13 @@ use rand::RngExt;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 
-const INPUTS: [[f64; 2]; 4] = [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]];
-const TARGETS: [f64; 4] = [0.0, 1.0, 1.0, 0.0];
+pub(crate) const INPUTS: [[f64; 2]; 4] = [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]];
+pub(crate) const TARGETS: [f64; 4] = [0.0, 1.0, 1.0, 0.0];
 const PARAM_COUNT: usize = 4;
 
 /// A two-layer ReLU network for the XOR problem: 2 → 8 → 1.
 pub struct XorMlp {
-    graph: Graph,
+    pub(crate) graph: Graph,
     w1: TensorId,
     b1: TensorId,
     w2: TensorId,
@@ -37,6 +37,21 @@ impl XorMlp {
             w2,
             b2,
         }
+    }
+
+    /// Creates a network with deterministic weights for gradient cross-checks.
+    pub fn from_fixed_weights() -> Self {
+        Self::new(123)
+    }
+
+    /// Returns references to the four parameter tensors.
+    pub fn weights(&self) -> (&Array2<f64>, &Array2<f64>, &Array2<f64>, &Array2<f64>) {
+        (
+            self.graph.data(self.w1),
+            self.graph.data(self.b1),
+            self.graph.data(self.w2),
+            self.graph.data(self.b2),
+        )
     }
 
     /// Runs full-batch training and returns the final mean squared error.
@@ -75,6 +90,35 @@ impl XorMlp {
         let predictions = self.graph.data(output).clone();
         self.graph.clear_computation_graph(PARAM_COUNT);
         predictions
+    }
+
+    /// Runs forward pass and backward for MSE loss; returns parameter gradients.
+    #[allow(dead_code)]
+    pub(crate) fn parameter_gradients(
+        &mut self,
+        inputs: &Array2<f64>,
+        neg_targets: &Array2<f64>,
+    ) -> (Array2<f64>, Array2<f64>, Array2<f64>, Array2<f64>) {
+        self.graph.zero_grad();
+        let predictions = self.forward_internal(inputs);
+        let neg_targets_id = self.graph.leaf(neg_targets.clone());
+        let diff = self.graph.add(predictions, neg_targets_id);
+        let squared = self.graph.mul(diff, diff);
+        let loss = self.graph.sum(squared);
+        self.graph.backward(loss);
+
+        let grads = (
+            self.graph.grad(self.w1).clone(),
+            self.graph.grad(self.b1).clone(),
+            self.graph.grad(self.w2).clone(),
+            self.graph.grad(self.b2).clone(),
+        );
+        self.graph.clear_computation_graph(PARAM_COUNT);
+        grads
+    }
+
+    pub(crate) fn forward_internal(&mut self, inputs: &Array2<f64>) -> TensorId {
+        self.forward(inputs)
     }
 
     fn forward(&mut self, inputs: &Array2<f64>) -> TensorId {

@@ -185,6 +185,19 @@ mod tests {
     }
 
     #[test]
+    fn sigmoid_matches_central_difference() {
+        let input = array![[-1.0, 0.5], [2.0, -0.25]];
+        let autograd = autograd_grad(input.clone(), |graph, x| graph.sigmoid(x));
+        let numeric = central_difference(
+            |value| value.mapv(|element| 1.0 / (1.0 + (-element).exp())).sum(),
+            &input,
+            DEFAULT_EPSILON,
+        );
+
+        assert!(gradients_match(&autograd, &numeric, DEFAULT_TOLERANCE));
+    }
+
+    #[test]
     fn log_matches_central_difference() {
         let input = array![[1.0, 2.0], [3.0, 4.5]];
         let autograd = autograd_grad(input.clone(), |graph, x| graph.log(x));

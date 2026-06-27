@@ -12,6 +12,7 @@ extern crate ndarray;
 mod broadcast;
 mod gradient_check;
 mod graph;
+mod manual_backprop;
 mod ops;
 mod tensor;
 mod xor;

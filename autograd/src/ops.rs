@@ -92,6 +92,23 @@ impl Graph {
         )
     }
 
+    /// Sigmoid activation applied elementwise.
+    pub fn sigmoid(&mut self, input: TensorId) -> TensorId {
+        let input_data = self.data(input).clone();
+        let output = input_data.mapv(|value| 1.0 / (1.0 + (-value).exp()));
+
+        self.op(
+            output,
+            vec![input],
+            Some(Box::new(move |graph, id| {
+                let grad_out = graph.grad(id).clone();
+                let sigmoid_out = graph.data(id).clone();
+                let local = sigmoid_out.mapv(|value| value * (1.0 - value));
+                graph.add_grad(input, &(&grad_out * &local));
+            })),
+        )
+    }
+
     /// Natural logarithm applied elementwise.
     pub fn log(&mut self, input: TensorId) -> TensorId {
         let input_data = self.data(input).clone();
