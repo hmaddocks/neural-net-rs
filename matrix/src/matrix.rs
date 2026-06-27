@@ -1,6 +1,5 @@
-use ndarray::{azip, concatenate, s, Array2, ArrayView2, Axis};
-use ndarray_rand::rand_distr::Uniform;
-use ndarray_rand::RandomExt;
+use ndarray::{Array2, ArrayView2, Axis, azip, concatenate, s};
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, Mul, Sub};
@@ -70,8 +69,10 @@ impl Matrix {
     pub fn random(rows: usize, cols: usize) -> Self {
         // Improved Xavier/Glorot initialization for better convergence
         let scale = (6.0 / (rows + cols) as f64).sqrt();
-        let dist = Uniform::new(-scale, scale);
-        Matrix(Array2::random((rows, cols), dist))
+        let mut rng = rand::rng();
+        Matrix(Array2::from_shape_fn((rows, cols), |_| {
+            rng.random_range(-scale..scale)
+        }))
     }
 
     /// Augments an input matrix with bias terms (adds a row of 1.0s).

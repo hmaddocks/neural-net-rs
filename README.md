@@ -82,7 +82,32 @@ cargo build
 
 ### Usage
 
-`cargo run --bin mnist --release -- train`
-`cargo run --bin mnist --release -- test`
+#### MNIST (feed-forward MLP)
 
-`cargo run --bin mnist -- graph`
+The `mnist` binary trains a configurable MLP on the MNIST handwritten-digit dataset.
+Network architecture and hyperparameters are read from `config.json` in the working directory.
+
+```bash
+# Train the network and save the model to models/trained_network.json
+cargo run --bin mnist --release -- train
+
+# Test the saved model and print accuracy metrics
+cargo run --bin mnist --release -- test
+
+# Render a training-history graph to graphs/training_history.svg
+cargo run --bin mnist -- graph
+```
+
+#### GPT (character-level language model)
+
+The `gpt` binary trains a minimal GPT transformer on a text dataset and generates
+new samples. It must be run from the workspace root so it can find `data/names.txt`.
+
+```bash
+# Train the model and generate 20 sample names
+cargo run --bin gpt --release
+```
+
+The binary trains for 1 000 steps on `data/names.txt` using a single-layer
+transformer (n\_embd=16, block\_size=16, 4 attention heads), then generates
+20 hallucinated names at temperature 0.5. Expected runtime: ~15 s on an M1 Mac.
