@@ -128,17 +128,22 @@ impl Graph {
         &self.nodes[id.0].children
     }
 
-    /// Performs reverse-mode autodiff from `output`.
+    /// Performs reverse-mode autodiff from `output`, seeding its gradient with `seed`.
     ///
-    /// This builds a topological ordering of the graph, seeds the output gradient with
-    /// ones, then walks nodes in reverse calling each stored backward rule.
-    pub fn backward(&mut self, output: TensorId) {
+    /// Use this when the upstream loss defines an output delta directly (as in
+    /// neural-net-rs's `(targets - outputs)` convention) instead of deriving it from
+    /// a scalar loss.
+    pub fn backward_with_seed(&mut self, output: TensorId, seed: Array2<f64>) {
+        assert_eq!(
+            seed.raw_dim(),
+            self.data(output).raw_dim(),
+            "seed gradient shape must match output shape"
+        );
+
         let mut topo = Vec::new();
         let mut visited = vec![false; self.nodes.len()];
 
         Self::build_topo(self, output, &mut visited, &mut topo);
-
-        let seed = Array2::ones(self.data(output).raw_dim());
         self.set_grad(output, seed);
 
         for &id in topo.iter().rev() {
@@ -148,6 +153,15 @@ impl Graph {
                 self.nodes[id.0].backward = Some(backward);
             }
         }
+    }
+
+    /// Performs reverse-mode autodiff from `output`.
+    ///
+    /// This builds a topological ordering of the graph, seeds the output gradient with
+    /// ones, then walks nodes in reverse calling each stored backward rule.
+    pub fn backward(&mut self, output: TensorId) {
+        let seed = Array2::ones(self.data(output).raw_dim());
+        self.backward_with_seed(output, seed);
     }
 
     fn build_topo(graph: &Graph, id: TensorId, visited: &mut [bool], topo: &mut Vec<TensorId>) {
@@ -239,6 +253,19 @@ mod tests {
         graph.add_grad(id, &array![[1.5, 1.5]]);
 
         assert_relative_eq!(graph.grad(id).sum(), 4.0);
+    }
+
+    #[test]
+    fn backward_with_seed_propagates_custom_output_delta() {
+        let mut graph = Graph::new();
+        let w = graph.leaf(array![[1.0], [2.0]]);
+        let x = graph.leaf(array![[3.0, 4.0], [5.0, 6.0]]);
+        let y = graph.matmul(x, w);
+        let seed = array![[0.5], [1.5]];
+        graph.backward_with_seed(y, seed);
+
+        assert_relative_eq!(graph.grad(w)[(0, 0)], 9.0);
+        assert_relative_eq!(graph.grad(w)[(1, 0)], 11.0);
     }
 
     #[test]

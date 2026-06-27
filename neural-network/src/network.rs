@@ -42,6 +42,10 @@
 /// network.save(&model_path).expect("Failed to save model");
 /// ```
 use crate::layer::Layer;
+use crate::autograd_forward::{
+    backward_with_output_delta, column_batch_to_row_batch, extract_weight_gradients,
+    layer_params_from_weight,
+};
 use crate::network_config::{BatchSize, Epochs, LearningRate, Momentum, NetworkConfig};
 use crate::regularization::RegularizationType;
 use crate::training_history::TrainingHistory;
@@ -267,6 +271,60 @@ impl Network {
                 Self::compute_gradients(delta, &input_with_bias)
             })
             .collect()
+    }
+
+    /// Accumulates weight gradients via reverse-mode autodiff on the shared core.
+    ///
+    /// Requires `self.data[0]` to hold the batch input from a prior
+    /// [`Network::feed_forward`] or [`Network::feed_forward_autograd`] call. Returns
+    /// gradients in the same augmented weight layout as [`Network::accumulate_gradients`].
+    pub fn accumulate_gradients_autograd(
+        &mut self,
+        outputs: &Matrix,
+        targets: &Matrix,
+    ) -> Vec<Matrix> {
+        let mut graph = autograd::Graph::new();
+        let params: Vec<_> = self
+            .weights
+            .iter()
+            .map(|weight| layer_params_from_weight(&mut graph, weight))
+            .collect();
+
+        let input_row = graph.leaf(column_batch_to_row_batch(&self.data[0]));
+        let mut current = input_row;
+        let mut final_linear = current;
+
+        for (index, ((_, layer), param)) in self
+            .weights
+            .iter()
+            .zip(self.layers.iter())
+            .zip(params.iter())
+            .enumerate()
+        {
+            let (linear, output) = layer.forward_autograd_from_row(&mut graph, param, current);
+            if index == self.weights.len() - 1 {
+                final_linear = linear;
+            }
+            current = output;
+        }
+
+        backward_with_output_delta(&mut graph, final_linear, outputs, targets);
+        extract_weight_gradients(&graph, &params, &self.weights)
+    }
+
+    #[cfg(test)]
+    fn replace_weights(&mut self, weights: Vec<Matrix>) {
+        self.weights = weights;
+    }
+
+    #[cfg(test)]
+    fn test_weights(&self) -> &[Matrix] {
+        &self.weights
+    }
+
+    #[cfg(test)]
+    fn test_layers(&self) -> &[Layer] {
+        &self.layers
     }
 
     /// Computes the error for the output layer.
@@ -1237,6 +1295,130 @@ mod tests {
         for (gradient, weight) in gradients.iter().zip(network.weights.iter()) {
             assert_eq!(gradient.rows(), weight.rows());
             assert_eq!(gradient.cols(), weight.cols());
+        }
+    }
+
+    #[test]
+    fn test_accumulate_gradients_autograd_fixed_sigmoid_weights() {
+        use ndarray::array;
+
+        let config = NetworkConfig::new(
+            vec![
+                Layer::new(2, Some(Activation::Sigmoid)),
+                Layer::new(4, Some(Activation::Sigmoid)),
+                Layer::new(1, None),
+            ],
+            0.1,
+            Some(0.9),
+            30,
+            32,
+            Some(RegularizationType::L2),
+            Some(0.0001),
+        )
+        .unwrap();
+
+        let mut network = Network::new(&config);
+        network.replace_weights(vec![
+            Matrix(array![
+                [0.1, 0.2, 0.3],
+                [0.4, -0.2, 0.5],
+                [-0.1, 0.3, 0.2],
+                [0.6, -0.4, 0.1]
+            ]),
+            Matrix(array![[0.2, -0.1, 0.4, 0.3, 0.5]]),
+        ]);
+
+        let input = Matrix(array![[0.0, 0.0, 1.0, 1.0], [0.0, 1.0, 0.0, 1.0]]);
+        let target = Matrix(array![[0.0, 1.0, 1.0, 0.0]]);
+
+        let output = network.feed_forward(input.clone());
+        let predict_out = network.predict_autograd(input.clone());
+        assert_relative_eq!(output.get(0, 0), predict_out.get(0, 0), epsilon = 1e-10);
+
+        let autograd = network.accumulate_gradients_autograd(&output, &target);
+        let manual = network.accumulate_gradients(&output, &target);
+
+        let input_aug = {
+            let mut with_bias = input.0.clone();
+            let bias = ndarray::Array2::ones((1, input.cols()));
+            with_bias
+                .append(ndarray::Axis(0), bias.view())
+                .expect("append bias");
+            Matrix(with_bias)
+        };
+        let hidden_out =
+            network.test_layers()[0].process_forward(&network.test_weights()[0], &input_aug);
+        let hidden_aug = {
+            let mut with_bias = hidden_out.0.clone();
+            let bias = ndarray::Array2::ones((1, hidden_out.cols()));
+            with_bias
+                .append(ndarray::Axis(0), bias.view())
+                .expect("append bias");
+            Matrix(with_bias)
+        };
+        let expected_w2 = (&target.0 - &output.0).dot(&hidden_aug.0.t());
+        assert_relative_eq!(manual[1].get(0, 0), expected_w2[(0, 0)], epsilon = 1e-9);
+        assert_relative_eq!(autograd[1].get(0, 0), expected_w2[(0, 0)], epsilon = 1e-9);
+
+        for (manual_grad, autograd_grad) in manual.iter().zip(autograd.iter()) {
+            for row in 0..manual_grad.rows() {
+                for col in 0..manual_grad.cols() {
+                    assert_relative_eq!(
+                        manual_grad.get(row, col),
+                        autograd_grad.get(row, col),
+                        epsilon = 1e-9
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_accumulate_gradients_autograd_matches_manual() {
+        let mut network = create_test_network();
+        let input = Matrix::from(vec![0.5]);
+        let target = Matrix::from(vec![1.0]);
+
+        let output = network.feed_forward(input);
+        let manual = network.accumulate_gradients(&output, &target);
+        let autograd = network.accumulate_gradients_autograd(&output, &target);
+
+        assert_eq!(manual.len(), autograd.len());
+        for (manual_grad, autograd_grad) in manual.iter().zip(autograd.iter()) {
+            assert_eq!(manual_grad.rows(), autograd_grad.rows());
+            assert_eq!(manual_grad.cols(), autograd_grad.cols());
+            for row in 0..manual_grad.rows() {
+                for col in 0..manual_grad.cols() {
+                    assert_relative_eq!(
+                        manual_grad.get(row, col),
+                        autograd_grad.get(row, col),
+                        epsilon = 1e-9
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_accumulate_gradients_autograd_deep_network_batch() {
+        let mut network = create_deep_network();
+        let input = Matrix::new(2, 3, vec![0.5, 0.3, 0.7, 0.2, 0.8, 0.4]);
+        let target = Matrix::new(2, 3, vec![1.0, 0.0, 1.0, 0.0, 1.0, 0.0]);
+
+        let output = network.feed_forward(input);
+        let manual = network.accumulate_gradients(&output, &target);
+        let autograd = network.accumulate_gradients_autograd(&output, &target);
+
+        for (manual_grad, autograd_grad) in manual.iter().zip(autograd.iter()) {
+            for row in 0..manual_grad.rows() {
+                for col in 0..manual_grad.cols() {
+                    assert_relative_eq!(
+                        manual_grad.get(row, col),
+                        autograd_grad.get(row, col),
+                        epsilon = 1e-9
+                    );
+                }
+            }
         }
     }
 
