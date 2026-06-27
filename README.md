@@ -6,8 +6,8 @@ I've merged everything into the `main` branch now so you can ignore this...
 
 ~~There are two interesting branches~~
 
-* `main` This is my "stream of consciousness" code that poured out of me one weekend. It became overly complicated because I added multithreading half way through then tried to back it out. Threading isn't the best way to optimise neural networks. Not immediately anyway.
-* `mnist` This was a new start where I concentrate on getting the code correct first. I'm pretty happy where this code is and I'll use this branch as the basis for future development.
+- `main` This is my "stream of consciousness" code that poured out of me one weekend. It became overly complicated because I added multithreading half way through then tried to back it out. Threading isn't the best way to optimise neural networks. Not immediately anyway.
+- `mnist` This was a new start where I concentrate on getting the code correct first. I'm pretty happy where this code is and I'll use this branch as the basis for future development.
 
 ## MNIST
 
@@ -62,9 +62,9 @@ neural-net-rs is a Rust-based neural network framework designed for educational 
 
 ## Features
 
-* **Educational Focus:** neural-net-rs is created with the primary goal of helping users understand the fundamentals of neural networks in Rust.
-* **Simplicity:** The framework prioritizes simplicity to facilitate a smooth learning experience for beginners in deep learning.
-* **Flexibility:** While keeping things simple, neural-net-rs is designed to be flexible, allowing users to experiment with different neural network architectures.
+- **Educational Focus:** neural-net-rs is created with the primary goal of helping users understand the fundamentals of neural networks in Rust.
+- **Simplicity:** The framework prioritizes simplicity to facilitate a smooth learning experience for beginners in deep learning.
+- **Flexibility:** While keeping things simple, neural-net-rs is designed to be flexible, allowing users to experiment with different neural network architectures.
 
 ## Getting Started
 
@@ -79,3 +79,10 @@ git clone https://github.com/your-username/neural-net-rs.git
 cd neural-net-rs
 cargo build
 ```
+
+### Usage
+
+`cargo run --bin mnist --release -- train`
+`cargo run --bin mnist --release -- test`
+
+`cargo run --bin mnist -- graph`
