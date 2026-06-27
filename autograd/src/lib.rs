@@ -14,10 +14,12 @@ mod gradient_check;
 mod graph;
 mod ops;
 mod tensor;
+mod xor;
 
 pub use gradient_check::{DEFAULT_EPSILON, DEFAULT_TOLERANCE, central_difference, gradients_match};
 pub use graph::{Graph, Node, TensorId};
 pub use tensor::Tensor;
+pub use xor::XorMlp;
 
 #[cfg(test)]
 mod tests {

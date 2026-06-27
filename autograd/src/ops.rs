@@ -160,6 +160,22 @@ impl Graph {
             })),
         )
     }
+
+    /// Sums all elements into a `(1, 1)` scalar tensor.
+    pub fn sum(&mut self, input: TensorId) -> TensorId {
+        let total = self.data(input).sum();
+        let output = Array2::from_elem((1, 1), total);
+
+        self.op(
+            output,
+            vec![input],
+            Some(Box::new(move |graph, id| {
+                let grad_scalar = graph.grad(id)[(0, 0)];
+                let broadcast = Array2::ones(graph.data(input).raw_dim()) * grad_scalar;
+                graph.add_grad(input, &broadcast);
+            })),
+        )
+    }
 }
 
 fn softmax_forward(input: &Array2<f64>) -> Array2<f64> {
