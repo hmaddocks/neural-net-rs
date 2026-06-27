@@ -1,4 +1,4 @@
 [workspace]
 
-members = ["matrix", "neural-network", "mnist"]
+members = ["matrix", "neural-network", "mnist", "gpt"]
 resolver = "2"
