@@ -10,10 +10,12 @@
 extern crate ndarray;
 
 mod broadcast;
+mod gradient_check;
 mod graph;
 mod ops;
 mod tensor;
 
+pub use gradient_check::{DEFAULT_EPSILON, DEFAULT_TOLERANCE, central_difference, gradients_match};
 pub use graph::{Graph, Node, TensorId};
 pub use tensor::Tensor;
 

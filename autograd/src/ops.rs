@@ -230,7 +230,7 @@ fn rmsnorm_backward(
         for col in 0..input.ncols() {
             let value = input[(row, col)];
             let grad = grad_output[(row, col)];
-            grad_input[(row, col)] = scale * grad - (2.0 / width) * scale_cubed * dot * value;
+            grad_input[(row, col)] = scale * grad - (scale_cubed / width) * dot * value;
         }
     }
     grad_input
