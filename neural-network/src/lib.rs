@@ -8,6 +8,7 @@ extern crate serde_json;
 extern crate tempfile;
 // Modules
 mod activations;
+mod autograd_forward;
 mod layer;
 mod network;
 mod network_config;

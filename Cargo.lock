@@ -1453,6 +1453,7 @@ name = "neural-network"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "autograd",
  "criterion",
  "derive_builder",
  "indicatif",

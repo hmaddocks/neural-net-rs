@@ -616,6 +616,54 @@ impl Network {
             })
     }
 
+    /// Performs forward propagation through the autograd engine without storing
+    /// intermediate outputs. Results match [`Network::predict`] for the same weights.
+    pub fn predict_autograd(&self, inputs: Matrix) -> Matrix {
+        assert!(
+            self.layers[0].nodes == inputs.rows(),
+            "Invalid number of inputs. Expected {}, got {}",
+            self.layers[0].nodes,
+            inputs.rows()
+        );
+
+        let mut graph = autograd::Graph::new();
+        self.weights
+            .iter()
+            .enumerate()
+            .fold(inputs, |current, (i, weight)| {
+                let with_bias = current.augment_with_bias();
+                self.layers[i].process_forward_autograd(&mut graph, weight, &with_bias)
+            })
+    }
+
+    /// Performs forward propagation through autograd, storing intermediate layer
+    /// outputs in `self.data` for use in backpropagation.
+    ///
+    /// Results match [`Network::feed_forward`] for the same weights.
+    pub fn feed_forward_autograd(&mut self, inputs: Matrix) -> Matrix {
+        assert!(
+            self.layers[0].nodes == inputs.rows(),
+            "Invalid number of inputs. Expected {}, got {}",
+            self.layers[0].nodes,
+            inputs.rows()
+        );
+
+        let mut graph = autograd::Graph::new();
+        self.data = Vec::with_capacity(self.weights.len() + 1);
+        self.data.push(inputs.clone());
+
+        self.weights
+            .iter()
+            .enumerate()
+            .fold(inputs, |current, (i, weight)| {
+                let with_bias = current.augment_with_bias();
+                let output =
+                    self.layers[i].process_forward_autograd(&mut graph, weight, &with_bias);
+                self.data.push(output.clone());
+                output
+            })
+    }
+
     /// Saves the trained network to a JSON file.
     ///
     /// # Arguments
@@ -693,8 +741,8 @@ impl Network {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layer::Layer;
     use crate::Activation;
+    use crate::layer::Layer;
     use approx::assert_relative_eq;
     use tempfile::tempdir;
 
@@ -796,7 +844,7 @@ mod tests {
         let input = Matrix::from(vec![0.5]);
 
         let output_ff = network.feed_forward(input.clone());
-        let output_predict = network.predict(input);
+        let output_predict = network.predict(input.clone());
 
         assert_eq!(output_ff.rows(), output_predict.rows());
         assert_eq!(output_ff.cols(), output_predict.cols());
@@ -805,6 +853,50 @@ mod tests {
             output_predict.get(0, 0),
             epsilon = 1e-10
         );
+    }
+
+    #[test]
+    fn test_predict_autograd_matches_manual() {
+        let network = create_test_network();
+        let input = Matrix::from(vec![0.5]);
+
+        let manual = network.predict(input.clone());
+        let autograd = network.predict_autograd(input);
+
+        assert_relative_eq!(manual.get(0, 0), autograd.get(0, 0), epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_feed_forward_autograd_matches_manual() {
+        let mut network = create_test_network();
+        let input = Matrix::from(vec![0.5]);
+
+        let manual = network.feed_forward(input.clone());
+        let autograd = network.feed_forward_autograd(input);
+
+        assert_relative_eq!(manual.get(0, 0), autograd.get(0, 0), epsilon = 1e-10);
+        assert_eq!(network.data.len(), 3);
+    }
+
+    #[test]
+    fn test_autograd_forward_deep_network_batch() {
+        let mut network = create_deep_network();
+        let input = Matrix::new(2, 3, vec![0.5, 0.3, 0.7, 0.2, 0.8, 0.4]);
+
+        let manual = network.feed_forward(input.clone());
+        let autograd = network.feed_forward_autograd(input);
+
+        assert_eq!(manual.rows(), autograd.rows());
+        assert_eq!(manual.cols(), autograd.cols());
+        for row in 0..manual.rows() {
+            for col in 0..manual.cols() {
+                assert_relative_eq!(
+                    manual.get(row, col),
+                    autograd.get(row, col),
+                    epsilon = 1e-10
+                );
+            }
+        }
     }
 
     #[test]
