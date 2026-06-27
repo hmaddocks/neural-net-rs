@@ -3,15 +3,55 @@
 //! These utilities compare reverse-mode gradients against central-difference
 //! approximations. They are the regression oracle for every op in Phase 1.
 
+//! Finite-difference gradient checks for validating autograd backward rules.
+//!
+//! These utilities compare reverse-mode gradients against central-difference
+//! approximations. They are the regression oracle for every op in Phase 1.
+//!
+//! # Example
+//!
+//! ```
+//! use autograd::{Graph, central_difference, gradients_match, DEFAULT_EPSILON, DEFAULT_TOLERANCE};
+//! use ndarray::array;
+//!
+//! let input = array![[2.0, 3.0]];
+//! let mut graph = Graph::new();
+//! let x = graph.leaf(input.clone());
+//! let y = graph.relu(x);
+//! graph.backward(y);
+//! let autograd = graph.grad(x).clone();
+//!
+//! let numeric = central_difference(
+//!     |value| value.mapv(|v| v.max(0.0)).sum(),
+//!     &input,
+//!     DEFAULT_EPSILON,
+//! );
+//! assert!(gradients_match(&autograd, &numeric, DEFAULT_TOLERANCE));
+//! ```
+
 use ndarray::Array2;
 
 /// Default perturbation for central-difference gradient checks.
 pub const DEFAULT_EPSILON: f64 = 1e-6;
 
-/// Default relative tolerance when comparing autograd and numerical gradients.
+/// Default absolute tolerance when comparing autograd and numerical gradients.
 pub const DEFAULT_TOLERANCE: f64 = 1e-4;
 
 /// Computes a central-difference gradient for a scalar loss `f(input)`.
+///
+/// Perturbs each element of `input` by `±epsilon` and evaluates `loss` to estimate
+/// `∂loss/∂input`. Slower than autograd but useful as an independent correctness check.
+///
+/// # Example
+///
+/// ```
+/// use autograd::central_difference;
+/// use ndarray::array;
+///
+/// let input = array![[1.0, 2.0]];
+/// let grad = central_difference(|x| x.mapv(|v| v * v).sum(), &input, 1e-7);
+/// assert!((grad[(0, 0)] - 2.0).abs() < 1e-5);
+/// ```
 pub fn central_difference<F>(mut loss: F, input: &Array2<f64>, epsilon: f64) -> Array2<f64>
 where
     F: FnMut(&Array2<f64>) -> f64,
@@ -30,6 +70,8 @@ where
 }
 
 /// Returns whether every element of `autograd` and `numerical` agree within `tolerance`.
+///
+/// Shapes must match. Comparison is elementwise absolute difference, not relative error.
 pub fn gradients_match(autograd: &Array2<f64>, numerical: &Array2<f64>, tolerance: f64) -> bool {
     if autograd.dim() != numerical.dim() {
         return false;

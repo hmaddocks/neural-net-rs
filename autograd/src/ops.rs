@@ -4,8 +4,17 @@ use ndarray::Array2;
 
 const RMSNORM_EPS: f64 = 1e-5;
 
+/// Differentiable operations on [`Graph`].
+///
+/// Each method performs the forward pass, records child edges, and registers a backward
+/// rule. All methods take and return [`TensorId`] handles; read values with
+/// [`Graph::data`] and gradients with [`Graph::grad`] after [`Graph::backward`].
 impl Graph {
-    /// Matrix multiplication: `(m, k) @ (k, n) -> (m, n)`.
+    /// Matrix multiplication: `(m, k) @ (k, n) → (m, n)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `left` columns ≠ `right` rows.
     pub fn matmul(&mut self, left: TensorId, right: TensorId) -> TensorId {
         let left_data = self.data(left);
         let right_data = self.data(right);
@@ -29,7 +38,14 @@ impl Graph {
         )
     }
 
-    /// Elementwise addition with broadcasting.
+    /// Elementwise addition with NumPy-style 2-D broadcasting.
+    ///
+    /// A `(1, n)` row vector broadcasts across rows; an `(m, 1)` column broadcasts across
+    /// columns.
+    ///
+    /// # Panics
+    ///
+    /// Panics when shapes are incompatible for broadcasting.
     pub fn add(&mut self, left: TensorId, right: TensorId) -> TensorId {
         let left_data = self.data(left);
         let right_data = self.data(right);
@@ -50,7 +66,11 @@ impl Graph {
         )
     }
 
-    /// Elementwise multiplication with broadcasting.
+    /// Elementwise multiplication with NumPy-style 2-D broadcasting.
+    ///
+    /// # Panics
+    ///
+    /// Panics when shapes are incompatible for broadcasting.
     pub fn mul(&mut self, left: TensorId, right: TensorId) -> TensorId {
         let left_data = self.data(left);
         let right_data = self.data(right);
@@ -74,7 +94,7 @@ impl Graph {
         )
     }
 
-    /// ReLU activation applied elementwise.
+    /// ReLU activation: `max(0, x)` applied elementwise.
     pub fn relu(&mut self, input: TensorId) -> TensorId {
         let input_data = self.data(input).clone();
         let output = input_data.mapv(|value| value.max(0.0));
@@ -92,7 +112,7 @@ impl Graph {
         )
     }
 
-    /// Sigmoid activation applied elementwise.
+    /// Sigmoid activation: `1 / (1 + exp(-x))` applied elementwise.
     pub fn sigmoid(&mut self, input: TensorId) -> TensorId {
         let input_data = self.data(input).clone();
         let output = input_data.mapv(|value| 1.0 / (1.0 + (-value).exp()));
@@ -110,6 +130,8 @@ impl Graph {
     }
 
     /// Natural logarithm applied elementwise.
+    ///
+    /// Inputs must be strictly positive for correct gradients.
     pub fn log(&mut self, input: TensorId) -> TensorId {
         let input_data = self.data(input).clone();
         let output = input_data.mapv(f64::ln);
@@ -142,7 +164,10 @@ impl Graph {
         )
     }
 
-    /// Softmax applied independently to each row (last axis).
+    /// Softmax applied independently to each row.
+    ///
+    /// For input shape `(batch, features)`, each row sums to 1. Uses the subtract-max trick
+    /// for numerical stability.
     pub fn softmax(&mut self, input: TensorId) -> TensorId {
         let input_data = self.data(input).clone();
         let output = softmax_forward(&input_data);
@@ -159,6 +184,8 @@ impl Graph {
     }
 
     /// RMS normalization applied independently to each row.
+    ///
+    /// Each row is scaled by `1 / sqrt(mean(x²) + ε)` with `ε = 1e-5`.
     pub fn rmsnorm(&mut self, input: TensorId) -> TensorId {
         let input_data = self.data(input).clone();
         let output = rmsnorm_forward(&input_data);
@@ -179,6 +206,8 @@ impl Graph {
     }
 
     /// Sums all elements into a `(1, 1)` scalar tensor.
+    ///
+    /// The backward pass broadcasts the scalar gradient to every input element.
     pub fn sum(&mut self, input: TensorId) -> TensorId {
         let total = self.data(input).sum();
         let output = Array2::from_elem((1, 1), total);

@@ -2,6 +2,11 @@ use ndarray::Array2;
 use std::fmt;
 
 /// A unique identifier for a node in the computation graph arena.
+///
+/// [`TensorId`]s are returned by [`Graph::leaf`] and every op method on [`Graph`].
+/// They remain valid until [`Graph::clear_computation_graph`] truncates the arena past
+/// their index. Parameter leaves should be created first so their ids stay stable across
+/// training steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TensorId(usize);
 
@@ -9,8 +14,13 @@ pub struct TensorId(usize);
 pub(crate) type BackwardFn = Box<dyn Fn(&mut Graph, TensorId)>;
 
 /// A node in the tensor computation graph.
+///
+/// Nodes are stored in a [`Graph`] arena. Leaf nodes hold parameters or inputs; op nodes
+/// store their forward value, accumulated gradient, child links, and an optional backward
+/// callback invoked by [`Graph::backward`]. Inspect values through [`Graph::data`],
+/// [`Graph::grad`], and [`Graph::children`].
 pub struct Node {
-    /// Forward-pass value.
+    /// Forward-pass value for this node.
     data: Array2<f64>,
     /// Accumulated gradient from reverse-mode autodiff.
     grad: Array2<f64>,

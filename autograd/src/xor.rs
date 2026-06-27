@@ -1,4 +1,8 @@
-//! Tiny XOR MLP trained end-to-end on the autograd engine.
+//! End-to-end XOR training example built on the autograd engine.
+//!
+//! [`XorMlp`] is a reference integration test: a two-layer ReLU network (2 → 8 → 1) trained
+//! with full-batch SGD and MSE loss `sum((y - t)²)`. It demonstrates the standard training
+//! loop pattern documented on the crate root.
 
 use crate::graph::{Graph, TensorId};
 use ndarray::Array2;
@@ -11,6 +15,9 @@ pub(crate) const TARGETS: [f64; 4] = [0.0, 1.0, 1.0, 0.0];
 const PARAM_COUNT: usize = 4;
 
 /// A two-layer ReLU network for the XOR problem: 2 → 8 → 1.
+///
+/// Owns a [`Graph`] with four parameter leaves (`w1`, `b1`, `w2`, `b2`). Use [`XorMlp::train`]
+/// for a full training run or inspect weights with [`XorMlp::weights`].
 pub struct XorMlp {
     pub(crate) graph: Graph,
     w1: TensorId,
@@ -39,12 +46,14 @@ impl XorMlp {
         }
     }
 
-    /// Creates a network with deterministic weights for gradient cross-checks.
+    /// Creates a network with deterministic weights (seed `123`) for gradient cross-checks.
     pub fn from_fixed_weights() -> Self {
         Self::new(123)
     }
 
-    /// Returns references to the four parameter tensors.
+    /// Returns references to `(w1, b1, w2, b2)` parameter arrays.
+    ///
+    /// Shapes: `w1` is `(2, 8)`, `b1` is `(1, 8)`, `w2` is `(8, 1)`, `b2` is `(1, 1)`.
     pub fn weights(&self) -> (&Array2<f64>, &Array2<f64>, &Array2<f64>, &Array2<f64>) {
         (
             self.graph.data(self.w1),
@@ -55,6 +64,8 @@ impl XorMlp {
     }
 
     /// Runs full-batch training and returns the final mean squared error.
+    ///
+    /// Uses loss `sum((y - t)²)` with effective learning rate `lr / (2 * batch_size)`.
     pub fn train(&mut self, epochs: usize, learning_rate: f64) -> f64 {
         let inputs = xor_inputs();
         let neg_targets = xor_neg_targets();
