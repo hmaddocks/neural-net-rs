@@ -1,10 +1,9 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use clap::Parser;
-use indicatif::{ProgressBar, ProgressStyle};
-use matrix::Matrix;
-use mnist::{get_actual_digit, load_test_data, load_training_data};
-use mnist::{StandardizationParams, StandardizedMnistData};
-use ndarray::Axis;
+use mnist::{
+    ConfusionMatrix, StandardizationParams, StandardizedMnistData, evaluate_confusion_matrix,
+    load_test_data, load_training_data,
+};
 use neural_network::{Network, NetworkConfig, TrainingHistory};
 use plotters::prelude::*;
 use std::{
@@ -13,73 +12,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// A confusion matrix for tracking model predictions vs actual values
-#[derive(Debug, Default)]
-struct ConfusionMatrix {
-    matrix: [[usize; 10]; 10],
-}
-
-impl ConfusionMatrix {
-    /// Creates a new empty confusion matrix
-    pub const fn new() -> Self {
-        Self {
-            matrix: [[0; 10]; 10],
-        }
-    }
-
-    /// Records a prediction in the confusion matrix
-    pub const fn record(&mut self, actual: usize, predicted: usize) {
-        self.matrix[actual][predicted] += 1;
-    }
-
-    /// Gets the value at a specific position
-    pub const fn get(&self, actual: usize, predicted: usize) -> usize {
-        self.matrix[actual][predicted]
-    }
-}
-
-impl std::fmt::Display for ConfusionMatrix {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // write confusion matrix
-        writeln!(f, "\nConfusion Matrix:")?;
-        writeln!(f, "      Predicted →")?;
-        writeln!(
-            f,
-            "Actual     0    1    2    3    4    5    6    7    8    9"
-        )?;
-        writeln!(
-            f,
-            "  ↓   +--------------------------------------------------"
-        )?;
-        for i in 0..10 {
-            write!(f, "  {}   |", i)?;
-            for j in 0..10 {
-                write!(f, " {:4}", self.get(i, j))?;
-            }
-            writeln!(f)?;
-        }
-        Ok(())
-    }
-}
-
 /// Metrics for a single digit classification
 struct DigitMetrics {
     accuracy: f64,
     precision: f64,
     recall: f64,
     f1: f64,
-}
-
-/// Helper function to create a consistent progress bar style
-fn create_progress_bar(total: u64) -> Result<ProgressBar> {
-    let pb = ProgressBar::new(total);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:80.cyan/blue}] {pos}/{len} ({percent}%)")
-            .context("Failed to set progress bar template")?
-            .progress_chars("#>-")
-    );
-    Ok(pb)
 }
 
 /// Calculates metrics for a digit from the confusion matrix
@@ -172,51 +110,12 @@ fn test() -> Result<()> {
     let network =
         Network::load(model_path).map_err(|e| anyhow!("Failed to load trained network: {}", e))?;
 
-    let standardized_params =
-        if let (Some(mean), Some(std_dev)) = network.standardization_parameters() {
-            StandardizationParams::new(mean, std_dev)
-        } else {
-            StandardizationParams::build(test_data.images())
-                .map_err(|e| anyhow!("Failed to build standardization parameters: {}", e))?
-        };
-
-    let standardised_test_data = StandardizedMnistData::new(&standardized_params)
-        .standardize(test_data.images())
-        .context("Failed to standardize test data")?;
-
-    // Combine test data into matrices for batch processing
-    let test_matrix =
-        Matrix::concatenate(&standardised_test_data.iter().collect::<Vec<_>>(), Axis(1));
-
-    // Get predictions for all test data at once
-    let output_matrix = network.predict(test_matrix);
-
-    // Combine labels into matrix
-    let label_matrix = Matrix::concatenate(&test_data.labels().iter().collect::<Vec<_>>(), Axis(1));
-
     println!("\nTesting network predictions...");
-    let total = standardised_test_data.len();
-    let progress_bar = create_progress_bar(total as u64)?;
-    let mut confusion_matrix = ConfusionMatrix::new();
+    let confusion_matrix = evaluate_confusion_matrix(&network, &test_data)
+        .map_err(|e| anyhow!("Failed to evaluate confusion matrix: {}", e))?;
 
-    // Process predictions and update confusion matrix
-    (0..output_matrix.cols()).try_for_each(|i| -> Result<()> {
-        let output = output_matrix.col(i);
-        let label = label_matrix.col(i);
-        let predicted = get_actual_digit(&output)
-            .map_err(|e| anyhow!("Failed to get predicted digit: {}", e))?;
-        let actual =
-            get_actual_digit(&label).map_err(|e| anyhow!("Failed to get actual digit: {}", e))?;
-        confusion_matrix.record(actual, predicted);
-        progress_bar.inc(1);
-        Ok(())
-    })?;
-
-    progress_bar.finish_with_message("Testing complete");
-
-    println!("{}", confusion_matrix);
-
-    print_metrics(&confusion_matrix, total);
+    println!("{confusion_matrix}");
+    print_metrics(&confusion_matrix, test_data.len());
 
     Ok(())
 }

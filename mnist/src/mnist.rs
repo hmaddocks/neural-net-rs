@@ -50,7 +50,9 @@ pub enum MnistError {
     #[error("Label matrix is empty")]
     EmptyLabelMatrix,
     /// Error for label matrix with incorrect dimensions
-    #[error("Label matrix has incorrect dimensions: expected {expected_rows}x{expected_cols}, got {actual_rows}x{actual_cols}")]
+    #[error(
+        "Label matrix has incorrect dimensions: expected {expected_rows}x{expected_cols}, got {actual_rows}x{actual_cols}"
+    )]
     InvalidLabelDimensions {
         expected_rows: usize,
         expected_cols: usize,
@@ -294,9 +296,15 @@ pub fn load_training_data() -> Result<MnistData, MnistError> {
 /// Loads the standard MNIST test dataset
 pub fn load_test_data() -> Result<MnistData, MnistError> {
     let mnist_dir = get_mnist_dir()?;
+    load_test_data_from_dir(&mnist_dir)
+}
+
+/// Loads the MNIST test dataset from a specific directory.
+pub fn load_test_data_from_dir(data_dir: impl AsRef<Path>) -> Result<MnistData, MnistError> {
+    let data_dir = data_dir.as_ref();
     MnistData::load_mnist_data(
-        mnist_dir.join("t10k-images-idx3-ubyte"),
-        mnist_dir.join("t10k-labels-idx1-ubyte"),
+        data_dir.join("t10k-images-idx3-ubyte"),
+        data_dir.join("t10k-labels-idx1-ubyte"),
     )
 }
 
