@@ -3,7 +3,7 @@
  * Pixel convention: black background = 0.0, white digit = 1.0 (matches MNIST training data).
  */
 
-const DEBOUNCE_MS = 75;
+const PREDICT_INTERVAL_MS = 50;
 const INK_THRESHOLD = 15;
 const BRUSH_WIDTH = 22;
 
@@ -18,12 +18,15 @@ const confusionSection = document.getElementById("confusion-section");
 const confusionSummary = document.getElementById("confusion-summary");
 const confusionTableContainer = document.getElementById("confusion-table-container");
 
-const drawContext = drawCanvas.getContext("2d", { willReadFrequently: true });
+const drawContext = drawCanvas.getContext("2d");
 const previewContext = previewCanvas.getContext("2d", { willReadFrequently: true });
-const cropContext = cropCanvas.getContext("2d", { willReadFrequently: true });
+const cropContext = cropCanvas.getContext("2d");
 
 let drawing = false;
-let debounceTimer = null;
+let lastX = null;
+let lastY = null;
+let lastPredictAt = 0;
+let pendingPredictTimer = null;
 let requestSequence = 0;
 
 const chart = createChart(chartCanvas);
@@ -40,48 +43,93 @@ drawContext.lineWidth = BRUSH_WIDTH;
 drawCanvas.addEventListener("pointerdown", (event) => {
   drawing = true;
   drawCanvas.setPointerCapture(event.pointerId);
-  plotPoint(event);
-  schedulePredict();
+  startStroke(event);
+  schedulePredict(true);
 });
 
 drawCanvas.addEventListener("pointermove", (event) => {
   if (!drawing) {
     return;
   }
-  plotPoint(event);
-  schedulePredict();
+  extendStroke(event);
+  schedulePredict(false);
 });
 
 drawCanvas.addEventListener("pointerup", () => {
   drawing = false;
-  schedulePredict();
+  lastX = null;
+  lastY = null;
+  schedulePredict(true);
 });
 
 drawCanvas.addEventListener("pointercancel", () => {
   drawing = false;
+  lastX = null;
+  lastY = null;
 });
 
 clearButton.addEventListener("click", clearAll);
 
-function plotPoint(event) {
+function canvasCoords(event) {
   const rect = drawCanvas.getBoundingClientRect();
-  const scaleX = drawCanvas.width / rect.width;
-  const scaleY = drawCanvas.height / rect.height;
-  const x = (event.clientX - rect.left) * scaleX;
-  const y = (event.clientY - rect.top) * scaleY;
+  return {
+    x: (event.clientX - rect.left) * (drawCanvas.width / rect.width),
+    y: (event.clientY - rect.top) * (drawCanvas.height / rect.height),
+  };
+}
 
+function startStroke(event) {
+  const { x, y } = canvasCoords(event);
+  lastX = x;
+  lastY = y;
+
+  drawContext.fillStyle = "#ffffff";
   drawContext.beginPath();
   drawContext.arc(x, y, BRUSH_WIDTH / 2, 0, Math.PI * 2);
-  drawContext.fillStyle = "#ffffff";
   drawContext.fill();
 }
 
-function schedulePredict() {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(runPredict, DEBOUNCE_MS);
+function extendStroke(event) {
+  const { x, y } = canvasCoords(event);
+
+  drawContext.beginPath();
+  drawContext.moveTo(lastX, lastY);
+  drawContext.lineTo(x, y);
+  drawContext.stroke();
+
+  lastX = x;
+  lastY = y;
+}
+
+function schedulePredict(immediate) {
+  if (immediate) {
+    clearTimeout(pendingPredictTimer);
+    pendingPredictTimer = null;
+    void runPredict();
+    return;
+  }
+
+  const now = performance.now();
+  const elapsed = now - lastPredictAt;
+  const wait = PREDICT_INTERVAL_MS - elapsed;
+
+  if (wait <= 0) {
+    clearTimeout(pendingPredictTimer);
+    pendingPredictTimer = null;
+    void runPredict();
+    return;
+  }
+
+  if (!pendingPredictTimer) {
+    pendingPredictTimer = setTimeout(() => {
+      pendingPredictTimer = null;
+      void runPredict();
+    }, wait);
+  }
 }
 
 async function runPredict() {
+  lastPredictAt = performance.now();
   const pixels = cropScaleToNormalizedArray(drawContext, cropContext, previewContext);
   if (!pixels) {
     resetChart();
@@ -242,7 +290,7 @@ function createChart(canvas) {
     options: {
       responsive: false,
       maintainAspectRatio: false,
-      animation: { duration: 150 },
+      animation: false,
       plugins: {
         legend: { display: false },
         datalabels: {
@@ -265,7 +313,7 @@ function updateChart(probabilities, prediction) {
   chart.data.datasets[0].backgroundColor = probabilities.map((_, index) =>
     index === prediction ? "#1b875b" : "#247abf",
   );
-  chart.update();
+  chart.update("none");
 
   const confidence = (probabilities[prediction] * 100).toFixed(1);
   predictionEl.textContent = `Prediction: ${prediction} (${confidence}%)`;
@@ -274,13 +322,18 @@ function updateChart(probabilities, prediction) {
 function resetChart() {
   chart.data.datasets[0].data = Array(10).fill(0);
   chart.data.datasets[0].backgroundColor = "#247abf";
-  chart.update();
+  chart.update("none");
   predictionEl.textContent = "";
 }
 
 function clearAll() {
   requestSequence += 1;
-  clearTimeout(debounceTimer);
+  clearTimeout(pendingPredictTimer);
+  pendingPredictTimer = null;
+  lastPredictAt = 0;
+  drawing = false;
+  lastX = null;
+  lastY = null;
   drawContext.fillStyle = "#000000";
   drawContext.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
   previewContext.fillStyle = "#000000";
