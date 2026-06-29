@@ -1,6 +1,13 @@
 [workspace]
 
-members = ["autograd", "matrix", "neural-network", "mnist", "gpt"]
+members = [
+    "autograd",
+    "matrix",
+    "neural-network",
+    "mnist",
+    "mnist-demo",
+    "gpt",
+]
 resolver = "2"
 
 [workspace.lints.clippy]

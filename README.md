@@ -103,6 +103,23 @@ cargo run --bin mnist --release -- test
 cargo run --bin mnist -- graph
 ```
 
+#### MNIST live demo (local presentation)
+
+The `mnist-demo` binary serves a browser UI for drawing digits and running live
+inference against the trained MLP. Run from the workspace root so it can find
+`models/trained_network.json`.
+
+```bash
+# Train first if you do not have a checkpoint yet
+cargo run --bin mnist --release -- train
+
+# Start the demo (opens http://127.0.0.1:8765 in your browser on macOS)
+cargo run --bin mnist-demo --release -- --open
+```
+
+Draw on the canvas — probabilities update live while you draw (75 ms debounce).
+Press Ctrl+C to stop the server when finished.
+
 #### GPT (character-level language model)
 
 The `gpt` binary trains a minimal GPT transformer on a names dataset and generates

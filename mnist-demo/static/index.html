@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>neural-net-rs MNIST Demo</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: system-ui, sans-serif;
+      }
+
+      body {
+        margin: 2rem auto;
+        max-width: 1100px;
+        padding: 0 1rem;
+      }
+
+      h1 {
+        font-size: 1.5rem;
+        margin-bottom: 0.25rem;
+      }
+
+      .subtitle {
+        color: #555;
+        margin-bottom: 1.5rem;
+      }
+
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+
+      th,
+      td {
+        padding: 0.75rem;
+        text-align: center;
+        vertical-align: top;
+      }
+
+      canvas {
+        border: 1px solid #aaa;
+        touch-action: none;
+      }
+
+      #draw-canvas {
+        background: #000;
+        cursor: crosshair;
+      }
+
+      #preview-canvas {
+        image-rendering: auto;
+        width: 140px;
+        height: 140px;
+      }
+
+      #chart-canvas {
+        width: 100%;
+        max-width: 520px;
+        height: 300px;
+      }
+
+      button {
+        margin-top: 0.75rem;
+        padding: 0.5rem 1rem;
+        font-size: 1rem;
+      }
+
+      #prediction {
+        font-size: 1.25rem;
+        margin-top: 0.75rem;
+        min-height: 1.5rem;
+      }
+
+      #status {
+        color: #666;
+        margin-top: 1rem;
+        min-height: 1.25rem;
+      }
+
+      #status.error {
+        color: #b00020;
+      }
+
+      .confusion-section {
+        margin-top: 2.5rem;
+      }
+
+      .confusion-section h2 {
+        font-size: 1.15rem;
+        margin-bottom: 0.25rem;
+      }
+
+      .confusion-section p {
+        color: #555;
+        margin-top: 0;
+        margin-bottom: 1rem;
+      }
+
+      .confusion-table {
+        width: auto;
+        margin: 0 auto;
+        font-size: 0.85rem;
+      }
+
+      .confusion-table th,
+      .confusion-table td {
+        padding: 0.35rem 0.5rem;
+        border: 1px solid #ddd;
+        min-width: 2.25rem;
+      }
+
+      .confusion-table th {
+        background: #f5f5f5;
+        font-weight: 600;
+      }
+
+      .confusion-table td.corner {
+        background: #f5f5f5;
+        font-weight: 600;
+      }
+
+      .confusion-table td.cell {
+        color: #111;
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+  </head>
+  <body>
+    <h1>MNIST Inference Demo</h1>
+    <p class="subtitle">
+      Draw a digit — probabilities update live as you draw (~97% test accuracy MLP).
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Draw a digit</th>
+          <th>Auto cropped &amp; scaled</th>
+          <th>Probability result</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <canvas
+              id="draw-canvas"
+              width="280"
+              height="280"
+              aria-label="Draw a digit"
+            ></canvas>
+            <div>
+              <button id="clear" type="button">Clear</button>
+            </div>
+          </td>
+          <td>
+            <canvas id="preview-canvas" width="28" height="28"></canvas>
+            <canvas id="crop-canvas" width="28" height="28" hidden></canvas>
+          </td>
+          <td>
+            <canvas id="chart-canvas"></canvas>
+            <div id="prediction"></div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div id="status"></div>
+
+    <section class="confusion-section" id="confusion-section" hidden>
+      <h2>Test-set confusion matrix</h2>
+      <p id="confusion-summary"></p>
+      <div id="confusion-table-container"></div>
+    </section>
+
+    <script type="module" src="/index.js"></script>
+  </body>
+</html>
