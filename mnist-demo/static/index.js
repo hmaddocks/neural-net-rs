@@ -177,7 +177,7 @@ function cropScaleToNormalizedArray(mainContext, cropCtx, previewCtx) {
 
   const { x, y, width, height } = bounds;
 
-  const paddedSize = Math.ceil(Math.max(width, height) * 1.2);
+  const paddedSize = Math.ceil(Math.max(width, height) * 1.05);
   cropCtx.canvas.width = paddedSize;
   cropCtx.canvas.height = paddedSize;
   configureSmoothScaling(cropCtx);
