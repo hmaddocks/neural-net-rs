@@ -1,25 +1,16 @@
 # neural-net-rs
 
-This code was originally forked from [neural-net-rs](https://github.com/codemoonsxyz/neural-net-rs). It has been changed and extended so much that it no longer bears any resemblance to the original code. I would like to thank the original author for their work and for inspiring me to extend this project.
-
-I've merged everything into the `main` branch now so you can ignore this...
-
-~~There are two interesting branches~~
-
-- `main` This is my "stream of consciousness" code that poured out of me one weekend. It became overly complicated because I added multithreading half way through then tried to back it out. Threading isn't the best way to optimise neural networks. Not immediately anyway.
-- `mnist` This was a new start where I concentrate on getting the code correct first. I'm pretty happy where this code is and I'll use this branch as the basis for future development.
-
 ## MNIST
 
-This code (currently) implements a neural network to train and test on the MNIST dataset of handwritten digits. The network has three layers: an input layer, a hidden layer, and an output layer. The activation function is the original sigmoid function and a learning rate of 0.01. Here are the most recent training statistics:
+This code implements a neural network to train and test on the MNIST dataset of
+handwritten digits. The network architecture and hyperparameters are fully
+configurable via `config.json`: you can specify any number of layers, the node
+count and activation function per layer (Sigmoid, ReLU, or Softmax), learning
+rate, number of epochs, mini-batch size, optional momentum, and optional L1/L2
+regularization. Here are the some recent training statistics:
 
 ```text
-"layers": [784, 200, 10],
-"activation": "Sigmoid",
-"learning_rate": 0.01,
-"momentum": 0.5
-
-Confusion Matrix:
+"Confusion Matrix:
            Predicted
 Actual     0    1    2    3    4    5    6    7    8    9
       +--------------------------------------------------
@@ -52,19 +43,32 @@ Overall Accuracy: 97.35%
 
 ```
 
-I don't know if this is good or bad :) Training took about 20 minutes on the 60,000 images
+I don't know if this is good or bad :) Training took about 20 minutes on the
+60,000 images
 
 ---
 
-neural-net-rs is a Rust-based neural network framework designed for educational purposes. This project aims to provide a simple yet informative implementation of neural networks in the Rust programming language.
+neural-net-rs is a Rust-based neural network framework designed for educational
+purposes. This project aims to provide a simple yet informative implementation
+of neural networks in the Rust programming language.
 
 [![Neural Net Rust](https://img.youtube.com/vi/DKbz9pNXVdE/0.jpg)](https://www.youtube.com/watch?v=DKbz9pNXVdE)
 
 ## Features
 
-- **Educational Focus:** neural-net-rs is created with the primary goal of helping users understand the fundamentals of neural networks in Rust.
-- **Simplicity:** The framework prioritizes simplicity to facilitate a smooth learning experience for beginners in deep learning.
-- **Flexibility:** While keeping things simple, neural-net-rs is designed to be flexible, allowing users to experiment with different neural network architectures.
+- **Educational Focus:** neural-net-rs is created with the primary goal of
+  helping users understand the fundamentals of neural networks in Rust.
+- **Simplicity:** The framework prioritizes simplicity to facilitate a smooth
+  learning experience for beginners in deep learning.
+- **Flexibility:** While keeping things simple, neural-net-rs is designed to be
+  flexible, allowing users to experiment with different neural network architectures.
+
+This code was originally forked from
+[neural-net-rs](https://github.com/codemoonsxyz/neural-net-rs). It has been
+changed and extended so much that it no longer bears any resemblance to the
+original code. I would like to thank the original author for their work and for
+inspiring me to extend this project.
+
 
 ## Getting Started
 
@@ -85,7 +89,8 @@ cargo build
 #### MNIST (feed-forward MLP)
 
 The `mnist` binary trains a configurable MLP on the MNIST handwritten-digit dataset.
-Network architecture and hyperparameters are read from `config.json` in the working directory.
+Network architecture and hyperparameters are read from `config.json` in the
+working directory.
 
 ```bash
 # Train the network and save the model to models/trained_network.json
@@ -142,7 +147,7 @@ cargo run --bin gpt --release -- train   --data data/names.txt --output models/m
 cargo run --bin gpt --release -- generate --weights models/my_run.json
 ```
 
-The model is a single-layer transformer (n\_embd=16, block\_size=16, 4 attention heads)
-trained with Adam + linear LR decay. Expected training time: ~15 s on an M1 Mac.
-The checkpoint stores the full model config, tokenizer vocabulary, and all weight
-matrices as a plain JSON file — no dataset needed at generation time.
+The model is a single-layer transformer (n\_embd=16, block\_size=16, 4 attention
+heads) trained with Adam + linear LR decay. Expected training time: ~15 s on an
+M1 Mac. The checkpoint stores the full model config, tokenizer vocabulary, and
+all weight matrices as a plain JSON file — no dataset needed at generation time.
