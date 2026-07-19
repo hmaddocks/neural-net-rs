@@ -6,6 +6,8 @@
 const PREDICT_INTERVAL_MS = 50;
 const INK_THRESHOLD = 15;
 const BRUSH_WIDTH = 22;
+const PREVIEW_SIZE = 28;
+const DIGIT_BOX_SIZE = 20;
 
 const drawCanvas = document.getElementById("draw-canvas");
 const previewCanvas = document.getElementById("preview-canvas");
@@ -175,48 +177,35 @@ function cropScaleToNormalizedArray(mainContext, cropCtx, previewCtx) {
     return null;
   }
 
-  const { x, y, width, height } = bounds;
+  const { x, y, width, height, centerOfMassX, centerOfMassY } = bounds;
 
-  const paddedSize = Math.ceil(Math.max(width, height) * 1.05);
-  cropCtx.canvas.width = paddedSize;
-  cropCtx.canvas.height = paddedSize;
+  // MNIST convention: scale the ink's bounding box so its longer side is
+  // DIGIT_BOX_SIZE px within the PREVIEW_SIZE frame (a fixed ~4px border,
+  // not a fixed 5% margin), then center on the ink's center of mass rather
+  // than the bounding box's geometric center.
+  const scale = DIGIT_BOX_SIZE / Math.max(width, height);
+  const scaledWidth = width * scale;
+  const scaledHeight = height * scale;
+
+  cropCtx.canvas.width = Math.max(1, Math.ceil(scaledWidth));
+  cropCtx.canvas.height = Math.max(1, Math.ceil(scaledHeight));
   configureSmoothScaling(cropCtx);
   cropCtx.fillStyle = "#000000";
-  cropCtx.fillRect(0, 0, paddedSize, paddedSize);
+  cropCtx.fillRect(0, 0, cropCtx.canvas.width, cropCtx.canvas.height);
+  cropCtx.drawImage(mainContext.canvas, x, y, width, height, 0, 0, scaledWidth, scaledHeight);
 
-  const leftPadding = (paddedSize - width) / 2;
-  const topPadding = (paddedSize - height) / 2;
-  cropCtx.drawImage(
-    mainContext.canvas,
-    x,
-    y,
-    width,
-    height,
-    leftPadding,
-    topPadding,
-    width,
-    height,
-  );
+  const offsetX = PREVIEW_SIZE / 2 - (centerOfMassX - x) * scale;
+  const offsetY = PREVIEW_SIZE / 2 - (centerOfMassY - y) * scale;
 
   previewCtx.save();
   previewCtx.setTransform(1, 0, 0, 1, 0, 0);
   configureSmoothScaling(previewCtx);
   previewCtx.fillStyle = "#000000";
-  previewCtx.fillRect(0, 0, 28, 28);
-  previewCtx.drawImage(
-    cropCtx.canvas,
-    0,
-    0,
-    paddedSize,
-    paddedSize,
-    0,
-    0,
-    28,
-    28,
-  );
+  previewCtx.fillRect(0, 0, PREVIEW_SIZE, PREVIEW_SIZE);
+  previewCtx.drawImage(cropCtx.canvas, offsetX, offsetY, scaledWidth, scaledHeight);
   previewCtx.restore();
 
-  const imageData = previewCtx.getImageData(0, 0, 28, 28);
+  const imageData = previewCtx.getImageData(0, 0, PREVIEW_SIZE, PREVIEW_SIZE);
   return rgbaToNormalizedGrayscale(imageData.data);
 }
 
@@ -224,6 +213,9 @@ function findInkBounds(ctx) {
   const { width, height, data } = ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
   const xs = [];
   const ys = [];
+  let massSum = 0;
+  let massX = 0;
+  let massY = 0;
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
@@ -231,9 +223,13 @@ function findInkBounds(ctx) {
       const r = data[index];
       const g = data[index + 1];
       const b = data[index + 2];
-      if (Math.max(r, g, b) > INK_THRESHOLD) {
+      const intensity = Math.max(r, g, b);
+      if (intensity > INK_THRESHOLD) {
         xs.push(x);
         ys.push(y);
+        massSum += intensity;
+        massX += intensity * x;
+        massY += intensity * y;
       }
     }
   }
@@ -255,6 +251,8 @@ function findInkBounds(ctx) {
     y: minY,
     width: maxX - minX + 1,
     height: maxY - minY + 1,
+    centerOfMassX: massX / massSum,
+    centerOfMassY: massY / massSum,
   };
 }
 
