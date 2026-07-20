@@ -96,9 +96,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn confusion_matrix_handler(
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+async fn confusion_matrix_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     match &state.confusion_matrix {
         Some(matrix) => (StatusCode::OK, Json(matrix)).into_response(),
         None => (
