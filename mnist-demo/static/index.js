@@ -365,7 +365,18 @@ function renderConfusionTable(matrix) {
   const table = document.createElement("table");
   table.className = "confusion-table";
 
-  const maxCount = matrix.flat().reduce((max, value) => Math.max(max, value), 0);
+  let maxDiagonal = 0;
+  let maxOffDiagonal = 0;
+  for (let actual = 0; actual < matrix.length; actual += 1) {
+    for (let predicted = 0; predicted < matrix[actual].length; predicted += 1) {
+      const count = matrix[actual][predicted];
+      if (actual === predicted) {
+        maxDiagonal = Math.max(maxDiagonal, count);
+      } else {
+        maxOffDiagonal = Math.max(maxOffDiagonal, count);
+      }
+    }
+  }
 
   const header = document.createElement("tr");
   header.appendChild(document.createElement("th")).textContent = "Actual \\ Predicted";
@@ -388,7 +399,15 @@ function renderConfusionTable(matrix) {
       const cell = document.createElement("td");
       cell.className = "cell";
       cell.textContent = String(count);
-      cell.style.backgroundColor = confusionCellColor(count, actual === predicted, maxCount);
+      const isCorrect = actual === predicted;
+      cell.style.backgroundColor = confusionCellColor(
+        count,
+        isCorrect,
+        isCorrect ? maxDiagonal : maxOffDiagonal,
+      );
+      if (isCorrect) {
+        cell.style.color = "#ffffff";
+      }
       row.appendChild(cell);
     }
 
@@ -399,16 +418,13 @@ function renderConfusionTable(matrix) {
 }
 
 function confusionCellColor(count, isCorrect, maxCount) {
-  if (count === 0) {
-    return "#ffffff";
+  const intensity = maxCount > 0 ? count / maxCount : 0;
+
+  if (isCorrect && count > 0) {
+    const lightness = 85 - intensity * 45;
+    return `hsl(210, 70%, ${lightness}%)`;
   }
 
-  const intensity = count / maxCount;
-  if (isCorrect) {
-    const green = Math.round(180 + intensity * 60);
-    return `rgb(220, ${green}, 220)`;
-  }
-
-  const red = Math.round(220 + intensity * 35);
-  return `rgb(${red}, 210, 210)`;
+  const hue = 120 - Math.sqrt(intensity) * 120;
+  return `hsl(${hue}, 70%, 55%)`;
 }
